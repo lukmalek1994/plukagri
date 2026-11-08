@@ -27,9 +27,9 @@ function defaultState() {
       { id: 'i1', ticker: 'CSPX', nazwa: 'iShares Core S&P 500 (Acc)', klasa: 'Akcje/ETF', koszyk: 'CSPX', waluta: 'USD', cena: '', dataCeny: '', symbol: 'LON:CSPX', cenaAuto: '' },
       { id: 'i2', ticker: 'IWDA', nazwa: 'iShares Core MSCI World (Acc)', klasa: 'Akcje/ETF', koszyk: 'IWDA', waluta: 'USD', cena: '', dataCeny: '', symbol: 'LON:IWDA', cenaAuto: '' },
       { id: 'i3', ticker: 'IB01', nazwa: 'iShares $ Treasury Bond 0-1yr', klasa: 'Obligacje', koszyk: 'IB01', waluta: 'USD', cena: '', dataCeny: '', symbol: 'LON:IB01', cenaAuto: '' },
-      { id: 'i4', ticker: 'ZŁOTO', nazwa: 'Złoto fizyczne (1 oz)', klasa: 'Złoto', koszyk: 'ZŁOTO', waluta: 'USD', cena: '', dataCeny: '', symbol: 'CURRENCY:XAUUSD', cenaAuto: '' },
-      { id: 'i5', ticker: 'SREBRO', nazwa: 'Srebro fizyczne (1 oz)', klasa: 'Srebro', koszyk: 'SREBRO', waluta: 'USD', cena: '', dataCeny: '', symbol: 'CURRENCY:XAGUSD', cenaAuto: '' },
-      { id: 'i6', ticker: 'BTC', nazwa: 'Bitcoin', klasa: 'Krypto', koszyk: 'BTC', waluta: 'USD', cena: '', dataCeny: '', symbol: 'CURRENCY:BTCUSD', cenaAuto: '' },
+      { id: 'i4', ticker: 'ZŁOTO', nazwa: 'Złoto fizyczne (1 oz)', klasa: 'Złoto', koszyk: 'ZŁOTO', waluta: 'USD', cena: '', dataCeny: '', symbol: 'YAHOO:GC=F', cenaAuto: '' },
+      { id: 'i5', ticker: 'SREBRO', nazwa: 'Srebro fizyczne (1 oz)', klasa: 'Srebro', koszyk: 'SREBRO', waluta: 'USD', cena: '', dataCeny: '', symbol: 'YAHOO:SI=F', cenaAuto: '' },
+      { id: 'i6', ticker: 'BTC', nazwa: 'Bitcoin', klasa: 'Krypto', koszyk: 'BTC', waluta: 'USD', cena: '', dataCeny: '', symbol: 'YAHOO:BTC-USD', cenaAuto: '' },
     ],
     transakcje: [], dywidendy: [], wplaty: [], inflacja: [], historia: [],
     cele: [

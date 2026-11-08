@@ -55,6 +55,17 @@ function fromRows(name, rows) {
   return objs;
 }
 
+/* ---------- formuła ceny w arkuszu ----------
+   YAHOO:GC=F  -> =YAHOO("GC=F","<data>")  (funkcja ze skryptu Portfel_Ceny.gs; data wymusza odświeżenie raz dziennie)
+   =COKOLWIEK  -> wpisane wprost jako formuła
+   inne        -> =GOOGLEFINANCE("SYMBOL") */
+function priceFormula(sym, day) {
+  sym = String(sym || '').trim(); if (!sym) return '';
+  if (sym.startsWith('=')) return sym;
+  if (/^YAHOO:/i.test(sym)) return `=YAHOO("${sym.slice(6).replace(/"/g, '')}","${day}")`;
+  return `=GOOGLEFINANCE("${sym.replace(/"/g, '')}")`;
+}
+
 /* ---------- Google: logowanie ---------- */
 // arkusz utworzony przez aplikację -> drive.file (dostęp tylko do niego); własny arkusz użytkownika -> spreadsheets
 const scopeNow = () => (CFG.sheetId && !CFG.createdByApp) ? 'https://www.googleapis.com/auth/spreadsheets' : 'https://www.googleapis.com/auth/drive.file';
@@ -126,6 +137,7 @@ async function afterLogin() {
     missing.forEach(t => DIRTY.add(t));
   }
   CFG.connectedOnce = true; saveCfg();
+  if (CFG.priceDay !== todayStr()) DIRTY.add('instrumenty');
   await pushDirty();
   setTimeout(() => refreshAutoPrices().catch(() => {}), 5000);   // ceny z GOOGLEFINANCE liczą się kilka sekund
 }
@@ -159,7 +171,9 @@ async function pushDirty() {
       data: names.map(n => ({ range: `'${TABLES[n].sheet}'!A1`, values: toRows(n) })) });
     if (names.includes('instrumenty')) {
       const ci = TABLES.instrumenty.cols.findIndex(c => c[0] === 'cenaAuto'), col = String.fromCharCode(65 + ci);
-      const vals = S.instrumenty.map(i => [i.symbol ? `=GOOGLEFINANCE("${String(i.symbol).replace(/"/g, '')}")` : '']);
+      const day = todayStr();
+      const vals = S.instrumenty.map(i => [priceFormula(i.symbol, day)]);
+      CFG.priceDay = day; saveCfg();
       if (vals.length) await gapi('POST', `${SHEETS}/${CFG.sheetId}/values:batchUpdate`, { valueInputOption: 'USER_ENTERED', data: [{ range: `'Instrumenty'!${col}2`, values: vals }] });
     }
     names.forEach(n => DIRTY.delete(n)); saveLocal();

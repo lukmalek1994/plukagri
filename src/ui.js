@@ -298,7 +298,7 @@ function vInflacja() {
 function vInstrumenty() {
   const rows = S.instrumenty;
   return ['Instrumenty i ceny', 'Cena ręczna ma pierwszeństwo przed ceną automatyczną z Google Finance', `
-    <div class="alert info">💡 Po połączeniu z Google Sheets ceny pobierają się same z Google Finance (kolumna „Symbol”, np. LON:CSPX, NASDAQ:AAPL, WSE:PKN, CURRENCY:XAUUSD). Wpisz cenę ręcznie, gdy symbol nie działa – zostaw puste, aby używać automatycznej.</div>
+    <div class="alert info">💡 Po połączeniu z Google Sheets ceny liczą się same w arkuszu. Symbol: <b>LON:CSPX</b>, NASDAQ:AAPL, WSE:PKN (Google Finance) albo <b>YAHOO:GC=F</b> złoto, YAHOO:SI=F srebro, YAHOO:BTC-USD, YAHOO:CSPX.L (Yahoo – wymaga skryptu Portfel_Ceny.gs w arkuszu). Wpisz cenę ręcznie, gdy symbol nie działa – zostaw puste, aby używać automatycznej.</div>
     <div class="card">${table([
       { h: 'Ticker', f: i => `<b>${esc(i.ticker)}</b>` }, { h: 'Nazwa', f: i => esc(i.nazwa) }, { h: 'Klasa', f: i => esc(i.klasa) }, { h: 'Koszyk 2.1', f: i => esc(i.koszyk) },
       { h: 'Waluta', f: i => esc(i.waluta) }, { h: 'Symbol', f: i => `<span class="mut">${esc(i.symbol)}</span>` },
@@ -465,7 +465,7 @@ function editInstrument(id) {
     { k: 'klasa', l: 'Klasa aktywów', t: 'select', o: ['Akcje/ETF', 'Obligacje', 'Złoto', 'Srebro', 'Krypto', 'Nieruchomości', 'Inne'] },
     { k: 'waluta', l: 'Waluta notowań', t: 'select', o: ['USD', 'PLN', 'EUR', 'GBP', 'CHF'] },
     { k: 'koszyk', l: 'Koszyk Portfela 2.1', t: 'select', o: [...new Set(['POZA MODELEM', ...S.cele.map(c => c.koszyk), i.koszyk].filter(Boolean))] },
-    { k: 'symbol', l: 'Symbol Google Finance', ph: 'np. LON:CSPX, NASDAQ:AAPL, WSE:PKN' },
+    { k: 'symbol', l: 'Symbol ceny', ph: 'LON:CSPX · WSE:PKN · YAHOO:GC=F · YAHOO:SI=F' },
     { k: 'cena', l: 'Cena ręczna (opcjonalnie)', t: 'number' }, { k: 'dataCeny', l: 'Data ceny', t: 'date' },
   ], i, o => {
     if (!o.ticker) return 'Podaj ticker';
@@ -512,6 +512,8 @@ function resetAll() { if (!confirm('Usunąć wszystkie dane z tej przeglądarki?
 
 /* ---------- start ---------- */
 function boot() {
+  const MIG = { 'CURRENCY:XAUUSD': 'YAHOO:GC=F', 'CURRENCY:XAGUSD': 'YAHOO:SI=F', 'CURRENCY:BTCUSD': 'YAHOO:BTC-USD' };
+  let mig = false; S.instrumenty.forEach(i => { if (MIG[i.symbol]) { i.symbol = MIG[i.symbol]; mig = true; } }); if (mig) changed('instrumenty');
   readHash(); render(); snapshot();
   if (CFG.clientId && CFG.connected) setSync('pending', 'Kliknij tutaj, aby połączyć z Google Sheets');
   else setSync('local', CFG.sheetId ? 'Kliknij, aby połączyć z Google Sheets' : 'Dane tylko w tej przeglądarce');
