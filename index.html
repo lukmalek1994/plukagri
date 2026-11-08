@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mój portfel</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231565c0'/><path d='M7 22l6-7 5 4 7-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/></svg>">
+<style>:root{--bg:#f3f5f9;--card:#fff;--ink:#1f2937;--muted:#6b7280;--line:#e5e9f0;--blue:#1565c0;--blue2:#e8f0fc;--green:#16a34a;--red:#dc2626;--amber:#b45309;--side:#0f2747;--r:12px}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{font-family:Inter,"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing:antialiased}
+a{color:var(--blue);text-decoration:none}
+.app{display:grid;grid-template-columns:236px 1fr;min-height:100vh}
+aside{background:var(--side);color:#c9d6ea;padding:18px 12px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:700;font-size:18px;padding:4px 10px 18px}
+.brand .logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#42a5f5,#1565c0);display:grid;place-items:center;font-size:17px}
+.nav-h{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#7f93b3;margin:16px 10px 6px}
+.nav a{display:flex;align-items:center;gap:10px;color:#c9d6ea;padding:8px 10px;border-radius:8px;margin:1px 0;font-size:14px;cursor:pointer}
+.nav a:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav a.on{background:#1e4a85;color:#fff}
+.nav a .dot{width:9px;height:9px;border-radius:50%;flex:none}
+.nav a .ic{width:18px;text-align:center;opacity:.9}
+.nav a.add{color:#7fb0ff;font-size:13px}
+main{padding:22px 28px 60px;min-width:0}
+.top{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+.top h1{font-size:22px;margin:0;font-weight:700;flex:1;min-width:200px}
+.top h1 small{display:block;font-size:13px;color:var(--muted);font-weight:400;margin-top:3px}
+.badge{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;padding:6px 11px;border-radius:999px;background:#eef2f7;color:var(--muted);cursor:pointer;white-space:nowrap}
+.badge i{width:8px;height:8px;border-radius:50%;background:#9aa4b2}
+.badge.ok i{background:var(--green)}.badge.busy i,.badge.pending i{background:#f59e0b}.badge.error i{background:var(--red)}.badge.error{color:var(--red);background:#fdecec}
+.btn{border:0;border-radius:9px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer;background:var(--blue);color:#fff;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{filter:brightness(1.08)}.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}.btn.sm{padding:6px 10px;font-size:13px}.btn.danger{background:#fff;color:var(--red);border:1px solid #f3c4c4}
+.grid{display:grid;gap:16px}.g2{grid-template-columns:2fr 1fr}.g2e{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:14px;margin-bottom:16px}
+.kpi{background:var(--card);border-radius:var(--r);padding:16px 18px;box-shadow:0 1px 2px rgba(16,24,40,.05);border:1px solid var(--line)}
+.kpi .l{font-size:12.5px;color:var(--muted);margin-bottom:6px}.kpi .v{font-size:21px;font-weight:700;letter-spacing:-.01em}.kpi .s{font-size:12.5px;margin-top:5px;color:var(--muted)}
+.kpi.main{background:linear-gradient(135deg,#1565c0,#0d47a1);color:#fff;border:0}.kpi.main .l,.kpi.main .s{color:#cfe0ff}
+.card{background:var(--card);border-radius:var(--r);padding:16px 18px;box-shadow:0 1px 2px rgba(16,24,40,.05);border:1px solid var(--line);min-width:0}
+.card h3{margin:0 0 12px;font-size:15px;display:flex;align-items:center;gap:8px}.card h3 .sp{flex:1}
+.card h3 small{font-weight:400;color:var(--muted);font-size:12.5px}
+.pos{color:var(--green)}.neg{color:var(--red)}.mut{color:var(--muted)}.warn{color:var(--amber)}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-weight:600;color:var(--muted);font-size:12px;padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px;border-bottom:1px solid #f0f2f6;white-space:nowrap}tr:hover td{background:#fafbfd}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.tbl{overflow:auto}
+tr.click{cursor:pointer}
+.tag{display:inline-block;font-size:11.5px;padding:2px 8px;border-radius:999px;background:#eef2f7;color:#475569}
+.tag.buy{background:#e7f6ee;color:#15803d}.tag.sell{background:#fdecec;color:#b91c1c}
+.bar{height:6px;border-radius:4px;background:#eef2f7;overflow:hidden;min-width:60px}.bar>i{display:block;height:100%;border-radius:4px}
+.chart{width:100%;height:auto;display:block}.chart .grid{stroke:#eef1f5}.chart .ax{fill:#8a94a6;font-size:11px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-top:6px}.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.donut{display:flex;align-items:center;gap:16px}.donut svg{width:150px;flex:none}.dlegend{flex:1;min-width:0}
+.dl{display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0}.dl i{width:10px;height:10px;border-radius:3px;flex:none}.dl span{flex:1;overflow:hidden;text-overflow:ellipsis}
+.dc1{font-size:17px;font-weight:700;fill:var(--ink)}.dc2{font-size:11px;fill:var(--muted)}
+.chart-empty{height:180px;display:grid;place-items:center;color:var(--muted);font-size:13px;background:repeating-linear-gradient(45deg,#fafbfd,#fafbfd 10px,#f5f7fa 10px,#f5f7fa 20px);border-radius:10px;text-align:center;padding:10px}
+.seg{display:inline-flex;background:#eef2f7;border-radius:8px;padding:2px}.seg button{border:0;background:none;padding:4px 9px;font:inherit;font-size:12px;border-radius:6px;cursor:pointer;color:var(--muted)}.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.alert{background:#fff8e6;border:1px solid #f6dfa5;color:#7a5410;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px}
+.alert.info{background:#eef5ff;border-color:#cfe0fb;color:#1e3a6b}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+select,input,textarea{font:inherit;padding:8px 10px;border:1px solid #d6dce5;border-radius:8px;background:#fff;color:var(--ink)}
+input:focus,select:focus,textarea:focus{outline:2px solid #bcd3f7;border-color:#7aa7e8}
+input.cell{padding:5px 7px;width:100px;text-align:right}
+.modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.45);display:grid;place-items:center;z-index:50;padding:16px}
+.modal{background:#fff;border-radius:14px;width:min(560px,100%);max-height:92vh;overflow:auto;padding:20px 22px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.modal h2{margin:0 0 14px;font-size:18px}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:12px}.form .full{grid-column:1/-1}
+.form input,.form select,.form textarea{width:100%;min-width:0}
+.form label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted)}.form .help{font-size:11.5px;color:#94a3b8}
+.actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}.actions .sp{flex:1}
+.empty{padding:30px;text-align:center;color:var(--muted)}
+.strat-head{display:flex;align-items:center;gap:12px;margin-bottom:6px}.strat-head .sw{width:14px;height:14px;border-radius:4px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;z-index:60;opacity:0;transition:.25s}.toast.on{opacity:1}
+.menu-btn{display:none}
+@media (max-width:1100px){.g2,.g2e,.g3{grid-template-columns:1fr}}
+@media (max-width:820px){.app{grid-template-columns:1fr}aside{position:fixed;left:-260px;width:240px;z-index:40;transition:.2s}aside.open{left:0}.menu-btn{display:inline-flex}main{padding:16px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav></aside>
+  <main>
+    <div class="top">
+      <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
+      <h1 id="title"></h1>
+      <span class="badge" id="sync" onclick="syncNow()"></span>
+      <div class="row" id="topActions"></div>
+    </div>
+    <div id="view"></div>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+/* ===================== SILNIK OBLICZEŃ ===================== */
+const EPS = 1e-9;
+const r2 = x => Math.round((x + Number.EPSILON) * 100) / 100;
+const num = v => { if (v === '' || v === null || v === undefined) return 0; const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : 0; };
+const has = v => v !== '' && v !== null && v !== undefined && !(typeof v === 'number' && isNaN(v));
+const ymd = d => { const x = new Date(d); return isNaN(x) ? '' : x.toISOString().slice(0, 10); };
+const todayStr = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+
+function defaultState() {
+  return {
+    strategie: [
+      { id: 's1', nazwa: 'Długi termin', konto: 'XTB USD', kapital: '', opis: 'ETF-y na lata', kolor: '#1565C0' },
+      { id: 's2', nazwa: 'Dywidendowa', konto: 'XTB USD', kapital: '', opis: '', kolor: '#26A69A' },
+      { id: 's3', nazwa: 'IKE', konto: 'XTB IKE', kapital: '', opis: '', kolor: '#7E57C2' },
+      { id: 's4', nazwa: 'Metale', konto: 'Sejf', kapital: '', opis: 'Kruszce fizyczne', kolor: '#F9A825' },
+      { id: 's5', nazwa: 'Krypto', konto: 'Krypto', kapital: '', opis: '', kolor: '#EF5350' },
+    ],
+    konta: [
+      { id: 'k1', nazwa: 'XTB USD', typ: 'Opodatkowane', waluta: 'USD', gotowka: '', model: 'TAK' },
+      { id: 'k2', nazwa: 'XTB PLN', typ: 'Opodatkowane', waluta: 'PLN', gotowka: '', model: 'TAK' },
+      { id: 'k3', nazwa: 'XTB IKE', typ: 'IKE', waluta: 'PLN', gotowka: '', model: 'TAK' },
+      { id: 'k4', nazwa: 'Sejf', typ: 'Poza PIT-38', waluta: 'PLN', gotowka: '', model: 'TAK' },
+      { id: 'k5', nazwa: 'Obligacje skarbowe', typ: 'Poza PIT-38', waluta: 'PLN', gotowka: '', model: 'TAK' },
+      { id: 'k6', nazwa: 'Krypto', typ: 'Opodatkowane', waluta: 'USD', gotowka: '', model: 'TAK' },
+    ],
+    instrumenty: [
+      { id: 'i1', ticker: 'CSPX', nazwa: 'iShares Core S&P 500 (Acc)', klasa: 'Akcje/ETF', koszyk: 'CSPX', waluta: 'USD', cena: '', dataCeny: '', symbol: 'LON:CSPX', cenaAuto: '' },
+      { id: 'i2', ticker: 'IWDA', nazwa: 'iShares Core MSCI World (Acc)', klasa: 'Akcje/ETF', koszyk: 'IWDA', waluta: 'USD', cena: '', dataCeny: '', symbol: 'LON:IWDA', cenaAuto: '' },
+      { id: 'i3', ticker: 'IB01', nazwa: 'iShares $ Treasury Bond 0-1yr', klasa: 'Obligacje', koszyk: 'IB01', waluta: 'USD', cena: '', dataCeny: '', symbol: 'LON:IB01', cenaAuto: '' },
+      { id: 'i4', ticker: 'ZŁOTO', nazwa: 'Złoto fizyczne (1 oz)', klasa: 'Złoto', koszyk: 'ZŁOTO', waluta: 'USD', cena: '', dataCeny: '', symbol: 'CURRENCY:XAUUSD', cenaAuto: '' },
+      { id: 'i5', ticker: 'SREBRO', nazwa: 'Srebro fizyczne (1 oz)', klasa: 'Srebro', koszyk: 'SREBRO', waluta: 'USD', cena: '', dataCeny: '', symbol: 'CURRENCY:XAGUSD', cenaAuto: '' },
+      { id: 'i6', ticker: 'BTC', nazwa: 'Bitcoin', klasa: 'Krypto', koszyk: 'BTC', waluta: 'USD', cena: '', dataCeny: '', symbol: 'CURRENCY:BTCUSD', cenaAuto: '' },
+    ],
+    transakcje: [], dywidendy: [], wplaty: [], inflacja: [], historia: [],
+    cele: [
+      { id: 'c1', koszyk: 'CSPX', grupa: 'CORE', cel: 39 }, { id: 'c2', koszyk: 'IWDA', grupa: 'CORE', cel: 26 },
+      { id: 'c3', koszyk: 'IB01', grupa: 'STABILIZATORY', cel: 17 }, { id: 'c4', koszyk: 'ZŁOTO', grupa: 'STABILIZATORY', cel: 6 },
+      { id: 'c5', koszyk: 'SREBRO', grupa: 'STABILIZATORY', cel: 4 }, { id: 'c6', koszyk: 'BTC', grupa: 'ASYMETRIA', cel: 8 },
+    ],
+    ustawienia: { kursy: { USD: '', EUR: '', GBP: '', CHF: '' }, kursyData: '', stawka: 19 },
+  };
+}
+
+/* indeks inflacji: miesiąc 'YYYY-MM' -> poziom cen na koniec miesiąca (start = 1) */
+function inflIndex(inflacja) {
+  const rows = (inflacja || []).filter(r => r.miesiac && has(r.mm)).sort((a, b) => a.miesiac.localeCompare(b.miesiac));
+  const idx = []; let lvl = 1;
+  for (const r of rows) { lvl *= 1 + num(r.mm) / 100; idx.push([r.miesiac, lvl]); }
+  const at = (ym) => { let v = 1; for (const [m, l] of idx) { if (m <= ym) v = l; else break; } return v; };
+  const prevMonth = (d) => { const x = new Date(d + 'T00:00:00'); x.setDate(0); return x.toISOString().slice(0, 7); };
+  return {
+    now: idx.length ? idx[idx.length - 1][1] : 1,
+    lastMonth: idx.length ? idx[idx.length - 1][0] : '',
+    before: (dateStr) => at(prevMonth(dateStr)),       // poziom cen przed danym dniem (koniec poprzedniego miesiąca)
+    atDate: (dateStr) => at(prevMonth(dateStr)),
+  };
+}
+
+function calc(S) {
+  const rates = S.ustawienia.kursy || {};
+  const rateNow = cur => (!cur || cur === 'PLN') ? 1 : num(rates[cur]);
+  const instr = {}; S.instrumenty.forEach(i => { if (i.ticker) instr[i.ticker] = i; });
+  const strat = {}; S.strategie.forEach(s => { strat[s.nazwa] = s; });
+  const konto = {}; S.konta.forEach(k => { konto[k.nazwa] = k; });
+  const curOf = t => (instr[t] && instr[t].waluta) || 'USD';
+  const priceOf = t => { const i = instr[t]; if (!i) return 0; return has(i.cena) ? num(i.cena) : num(i.cenaAuto); };
+  const warnings = [];
+
+  const txs = S.transakcje.filter(t => t.data && t.ticker && t.typ && num(t.ilosc) > 0)
+    .map((t, n) => ({ ...t, _n: n })).sort((a, b) => (a.data === b.data ? a._n - b._n : a.data.localeCompare(b.data)));
+
+  function fifo(keyFn) {
+    const lots = {}, realized = [];
+    for (const t of txs) {
+      const cur = curOf(t.ticker), q = num(t.ilosc), p = num(t.cena), fee = num(t.prowizja);
+      const kursOk = cur === 'PLN' || has(t.kurs);
+      const kurs = cur === 'PLN' ? 1 : (has(t.kurs) ? num(t.kurs) : rateNow(cur));
+      const key = keyFn(t);
+      if (!lots[key]) lots[key] = [];
+      if (t.typ === 'KUPNO') {
+        const cost = q * p + fee;
+        lots[key].push({ q, uc: cost / q, ucPLN: cost * kurs / q, data: t.data, id: t.id, kursOk });
+      } else if (t.typ === 'SPRZEDAŻ') {
+        let left = q, cost = 0, costPLN = 0, allOk = kursOk, firstBuy = null;
+        while (left > EPS && lots[key].length) {
+          const lot = lots[key][0], take = Math.min(left, lot.q);
+          cost += take * lot.uc; costPLN += take * lot.ucPLN; if (!lot.kursOk) allOk = false; if (!firstBuy) firstBuy = lot.data;
+          lot.q -= take; left -= take; if (lot.q <= EPS) lots[key].shift();
+        }
+        if (left > EPS) warnings.push(`Sprzedaż ${t.ticker} z ${t.data} (${t.strategia}): sprzedano więcej niż kupiono (${r2(left)} szt.).`);
+        const proceeds = q * p - fee;
+        realized.push({ id: t.id, data: t.data, rok: +t.data.slice(0, 4), ticker: t.ticker, strategia: t.strategia, waluta: cur,
+          ilosc: q, przychod: proceeds, koszt: cost, zysk: proceeds - cost, przychodPLN: proceeds * kurs, kosztPLN: costPLN,
+          zyskPLN: proceeds * kurs - costPLN, kursOk: allOk, kupiono: firstBuy });
+      }
+    }
+    return { lots, realized };
+  }
+
+  // pozycje i wynik strategii: FIFO w ramach strategii
+  const P = fifo(t => t.strategia + '|' + t.ticker);
+  // podatek: FIFO w ramach konta (rachunku)
+  const T = fifo(t => ((strat[t.strategia] || {}).konto || '?') + '|' + t.ticker);
+
+  const pozycje = [];
+  for (const [key, lots] of Object.entries(P.lots)) {
+    const qty = lots.reduce((a, l) => a + l.q, 0);
+    if (qty <= EPS) continue;
+    const [s, ticker] = key.split('|');
+    const i = instr[ticker] || {}; const cur = curOf(ticker);
+    const koszt = lots.reduce((a, l) => a + l.q * l.uc, 0), kosztPLN = lots.reduce((a, l) => a + l.q * l.ucPLN, 0);
+    const cena = priceOf(ticker), wartosc = qty * cena, wartoscPLN = wartosc * rateNow(cur);
+    pozycje.push({ strategia: s, konto: (strat[s] || {}).konto || '', ticker, nazwa: i.nazwa || '', klasa: i.klasa || 'Inne', koszyk: i.koszyk || '',
+      waluta: cur, ilosc: qty, koszt, kosztPLN, sredniaCena: koszt / qty, cena, brakCeny: !cena, wartosc, wartoscPLN,
+      zysk: wartosc - koszt, zyskPct: koszt ? (wartosc - koszt) / koszt : 0, zyskPLN: wartoscPLN - kosztPLN,
+      od: lots[0].data, kursBrak: lots.some(l => !l.kursOk) });
+  }
+
+  const dyw = S.dywidendy.filter(d => d.data && has(d.brutto)).map(d => {
+    const cur = d.ticker ? curOf(d.ticker) : (konto[(strat[d.strategia] || {}).konto] || {}).waluta || 'PLN';
+    const kurs = cur === 'PLN' ? 1 : (has(d.kurs) ? num(d.kurs) : rateNow(cur));
+    const typ = (konto[(strat[d.strategia] || {}).konto] || {}).typ || 'Opodatkowane';
+    const bruttoPLN = num(d.brutto) * kurs, podatekPLN = num(d.podatek) * kurs;
+    const doplata = typ === 'Opodatkowane' && cur !== 'PLN' ? Math.max(0, r2(S.ustawienia.stawka / 100 * bruttoPLN) - podatekPLN) : 0;
+    return { ...d, waluta: cur, kursOk: cur === 'PLN' || has(d.kurs), netto: num(d.brutto) - num(d.podatek), bruttoPLN, podatekPLN,
+      nettoPLN: bruttoPLN - podatekPLN, doplata, rok: +d.data.slice(0, 4), typ };
+  });
+
+  const gotowka = S.konta.map(k => ({ konto: k.nazwa, waluta: k.waluta, kwota: num(k.gotowka), pln: num(k.gotowka) * rateNow(k.waluta) }));
+  const sumPLN = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
+  const wartoscPozycji = sumPLN(pozycje, p => p.wartoscPLN);
+  const gotowkaPLN = sumPLN(gotowka, g => g.pln);
+  const wartosc = wartoscPozycji + gotowkaPLN;
+  const wplaty = S.wplaty.filter(w => w.data && has(w.kwotaPLN));
+  const kapital = sumPLN(wplaty, w => num(w.kwotaPLN));
+  const II = inflIndex(S.inflacja);
+  const kapitalRealny = sumPLN(wplaty, w => num(w.kwotaPLN) * II.now / II.before(w.data));
+  const kapitalRealnyNa = (d) => sumPLN(wplaty.filter(w => w.data <= d), w => num(w.kwotaPLN) * II.atDate(d) / II.before(w.data));
+
+  // strategie
+  const strategie = S.strategie.map(s => {
+    const poz = pozycje.filter(p => p.strategia === s.nazwa);
+    const real = P.realized.filter(r => r.strategia === s.nazwa);
+    const dv = dyw.filter(d => d.strategia === s.nazwa);
+    const w = sumPLN(poz, p => p.wartoscPLN), k = sumPLN(poz, p => p.kosztPLN);
+    const zr = sumPLN(real, r => r.zyskPLN), dn = sumPLN(dv, d => d.nettoPLN);
+    const kosztWal = sumPLN(poz, p => p.koszt), zrWal = sumPLN(real, r => r.zysk), dnWal = sumPLN(dv, d => d.netto);
+    const k_ = konto[s.konto] || {};
+    return { ...s, typ: k_.typ || '', walutaKonta: k_.waluta || '', pozycje: poz, zamkniete: real, dywidendy: dv, wartosc: w, koszt: k,
+      niezreal: w - k, niezrealPct: k ? (w - k) / k : 0, zrealizowany: zr, dywidendyNetto: dn, wynik: w - k + zr + dn,
+      wolne: has(s.kapital) ? num(s.kapital) - kosztWal + zrWal + dnWal : null,
+      udzial: wartosc ? w / wartosc : 0 };
+  });
+
+  // konta
+  const konta = S.konta.map(k => {
+    const w = sumPLN(pozycje.filter(p => p.konto === k.nazwa), p => p.wartoscPLN);
+    const g = num(k.gotowka) * rateNow(k.waluta);
+    const kap = sumPLN(wplaty.filter(x => x.konto === k.nazwa), x => num(x.kwotaPLN));
+    return { ...k, wartoscPozycji: w, gotowkaPLN: g, razem: w + g, kapital: kap, zysk: kap ? w + g - kap : null, zyskPct: kap ? (w + g - kap) / kap : null };
+  });
+
+  const groupBy = (arr, f, v) => { const m = {}; arr.forEach(x => { const k = f(x); m[k] = (m[k] || 0) + v(x); }); return m; };
+  const klasy = groupBy(pozycje, p => p.klasa, p => p.wartoscPLN); if (gotowkaPLN) klasy['Gotówka'] = gotowkaPLN;
+  const waluty = groupBy(pozycje, p => p.waluta, p => p.wartoscPLN); gotowka.forEach(g => { if (g.pln) waluty[g.waluta] = (waluty[g.waluta] || 0) + g.pln; });
+
+  // model 2.1
+  const wModelu = p => ((konto[p.konto] || {}).model || 'TAK') !== 'NIE';
+  const koszyki = groupBy(pozycje.filter(wModelu), p => p.koszyk || 'POZA MODELEM', p => p.wartoscPLN);
+  const cele = S.cele.filter(c => c.koszyk);
+  const totModel = cele.reduce((a, c) => a + (koszyki[c.koszyk] || 0), 0);
+  const model = cele.map(c => { const v = koszyki[c.koszyk] || 0, cel = num(c.cel) / 100;
+    return { ...c, celPct: cel, wartosc: v, udzial: totModel ? v / totModel : 0, roznica: cel * totModel - v,
+      odchylenie: totModel ? (v / totModel - cel) * 100 : 0 }; });
+  const poza = Object.entries(koszyki).filter(([k]) => !cele.some(c => c.koszyk === k)).reduce((a, [, v]) => a + v, 0);
+  function rozdziel(kwota) {
+    const T2 = totModel + kwota; const def = model.map(m => Math.max(0, m.celPct * T2 - m.wartosc)); const sd = def.reduce((a, b) => a + b, 0);
+    return model.map((m, i) => sd ? kwota * def[i] / sd : 0);
+  }
+
+  // podatki
+  const typKonta = s => (konto[(strat[s] || {}).konto] || {}).typ || 'Opodatkowane';
+  const klasaOf = t => (instr[t] || {}).klasa || '';
+  function podatki(rok, strataPrev = 0, kryptoPrev = 0) {
+    const stawka = num(S.ustawienia.stawka) / 100;
+    const sprzedaze = T.realized.filter(r => r.rok === rok && typKonta(r.strategia) === 'Opodatkowane');
+    const pap = sprzedaze.filter(r => klasaOf(r.ticker) !== 'Krypto');
+    const przychod = sumPLN(pap, r => r.przychodPLN), koszty = sumPLN(pap, r => r.kosztPLN), dochod = przychod - koszty;
+    const podstawa = Math.max(0, Math.round(dochod - strataPrev)), podatekPap = Math.round(podstawa * stawka);
+    const dv = dyw.filter(d => d.rok === rok && d.typ === 'Opodatkowane');
+    const dywBrutto = sumPLN(dv, d => d.bruttoPLN), dywPobrany = sumPLN(dv, d => d.podatekPLN), dywDoplata = Math.round(sumPLN(dv, d => d.doplata));
+    const kPrzych = sumPLN(sprzedaze.filter(r => klasaOf(r.ticker) === 'Krypto'), r => r.przychodPLN);
+    const kKoszt = sumPLN(txs.filter(t => t.typ === 'KUPNO' && +t.data.slice(0, 4) === rok && klasaOf(t.ticker) === 'Krypto' && typKonta(t.strategia) === 'Opodatkowane'),
+      t => { const cur = curOf(t.ticker); return (num(t.ilosc) * num(t.cena) + num(t.prowizja)) * (cur === 'PLN' ? 1 : (has(t.kurs) ? num(t.kurs) : rateNow(cur))); });
+    const kDochod = Math.max(0, kPrzych - kKoszt - kryptoPrev), kNadwyzka = Math.max(0, kKoszt + kryptoPrev - kPrzych);
+    const kPodatek = Math.round(Math.round(kDochod) * stawka);
+    return { rok, sprzedaze: pap, przychod, koszty, dochod, podstawa, podatekPap, dywBrutto, dywPobrany, dywDoplata, dywidendy: dv,
+      kPrzych, kKoszt, kDochod, kNadwyzka, kPodatek, razem: podatekPap + dywDoplata + kPodatek,
+      brakKursow: pap.some(r => !r.kursOk) || dv.some(d => !d.kursOk) };
+  }
+
+  const zrealizowany = sumPLN(P.realized, r => r.zyskPLN);
+  const dywNetto = sumPLN(dyw, d => d.nettoPLN);
+  const lata = [...new Set([...T.realized.map(r => r.rok), ...dyw.map(d => d.rok), new Date().getFullYear()])].sort((a, b) => b - a);
+
+  return { rateNow, pozycje, zamkniete: P.realized, dyw, strategie, konta, klasy, waluty, model, poza, rozdziel, podatki, lata,
+    wartosc, wartoscPozycji, gotowkaPLN, kapital, kapitalRealny, kapitalRealnyNa, inflNow: II.now, inflLast: II.lastMonth,
+    zysk: wartosc - kapital, zyskPct: kapital ? (wartosc - kapital) / kapital : 0,
+    zyskRealny: wartosc - kapitalRealny, zyskRealnyPct: kapitalRealny ? (wartosc - kapitalRealny) / kapitalRealny : 0,
+    niezreal: wartoscPozycji - sumPLN(pozycje, p => p.kosztPLN), zrealizowany, dywNetto, warnings,
+    usd: rateNow('USD') ? wartosc / rateNow('USD') : null };
+}
+
+
+
+/* ===================== WYKRESY SVG ===================== */
+const PAL = ['#1565C0', '#26A69A', '#F9A825', '#7E57C2', '#EF5350', '#8D6E63', '#78909C', '#AB47BC', '#29B6F6', '#9CCC65'];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtShort = v => { const a = Math.abs(v); if (a >= 1e6) return (v / 1e6).toFixed(1).replace('.', ',') + ' mln'; if (a >= 1e4) return Math.round(v / 1e3) + ' tys.'; if (a >= 1e3) return (v / 1e3).toFixed(1).replace('.', ',') + ' tys.'; if (a >= 100 || a === 0) return Math.round(v).toString(); return (+v.toFixed(a >= 10 ? 1 : 2)).toString().replace('.', ','); };
+function niceTicks(min, max, n = 5) {
+  if (min === max) { max = min + 1; }
+  const span = max - min, step0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= step0) || step0;
+  const lo = Math.floor(min / step) * step, hi = Math.ceil(max / step) * step, t = [];
+  for (let v = lo; v <= hi + step / 2; v += step) t.push(+v.toFixed(10));
+  return t;
+}
+function emptyChart(msg) { return `<div class="chart-empty">${esc(msg || 'Brak danych do wykresu')}</div>`; }
+
+/* series: [{name, color, points:[[dateStr, value]]}], opts: {pct, h} */
+function lineChart(series, opts = {}) {
+  const pts = series.flatMap(s => s.points);
+  if (pts.length < 2) return emptyChart(opts.empty || 'Wykres pojawi się po kilku dniach zapisów historii');
+  const W = 640, H = opts.h || 240, L = 58, R = 14, T = 12, B = 28;
+  const xs = pts.map(p => new Date(p[0]).getTime()), ys = pts.map(p => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  let y0 = Math.min(...ys), y1 = Math.max(...ys); if (!opts.pct) y0 = Math.min(y0, 0);
+  const ticks = niceTicks(y0, y1); y0 = ticks[0]; y1 = ticks[ticks.length - 1];
+  const X = t => L + (W - L - R) * (x1 === x0 ? 0.5 : (t - x0) / (x1 - x0));
+  const Y = v => T + (H - T - B) * (1 - (v - y0) / (y1 - y0));
+  const fy = v => opts.pct ? (v * 100).toFixed(0) + '%' : fmtShort(v);
+  let g = ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="grid"/><text x="${L - 6}" y="${Y(v) + 4}" class="ax" text-anchor="end">${fy(v)}</text>`).join('');
+  const nx = 5; for (let i = 0; i <= nx; i++) { const t = x0 + (x1 - x0) * i / nx; const d = new Date(t);
+    g += `<text x="${X(t)}" y="${H - 8}" class="ax" text-anchor="middle">${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(2)}</text>`; }
+  const paths = series.map((s, k) => { const c = s.color || PAL[k];
+    const sorted = s.points.slice().sort((a, b) => a[0].localeCompare(b[0]));
+    const d = sorted.map((p, i) => `${i ? 'L' : 'M'}${X(new Date(p[0]).getTime()).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
+    const area = k === 0 && opts.area ? `<path d="${d}L${X(new Date(sorted[sorted.length - 1][0]).getTime())},${Y(y0)}L${X(new Date(sorted[0][0]).getTime())},${Y(y0)}Z" fill="${c}" opacity=".08"/>` : '';
+    return area + `<path d="${d}" fill="none" stroke="${c}" stroke-width="2.2" ${s.dash ? 'stroke-dasharray="5 4"' : ''}/>`; }).join('');
+  const zero = !opts.pct || y0 >= 0 ? '' : `<line x1="${L}" x2="${W - R}" y1="${Y(0)}" y2="${Y(0)}" stroke="#9aa4b2"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart">${g}${zero}${paths}</svg>` + legend(series.map((s, k) => [s.name, s.color || PAL[k]]));
+}
+function legend(items) { return `<div class="legend">${items.map(([n, c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('')}</div>`; }
+
+/* data: [[label, value]] */
+function donut(data, opts = {}) {
+  data = data.filter(d => d[1] > 0).sort((a, b) => b[1] - a[1]);
+  const tot = data.reduce((a, d) => a + d[1], 0);
+  if (!tot) return emptyChart(opts.empty);
+  const R = 80, r = 52, C = 100; let a0 = -Math.PI / 2, out = '';
+  data.forEach(([, v], k) => {
+    const a1 = a0 + 2 * Math.PI * v / tot, big = a1 - a0 > Math.PI ? 1 : 0, c = opts.colors?.[k] || PAL[k % PAL.length];
+    if (data.length === 1) { out += `<circle cx="${C}" cy="${C}" r="${(R + r) / 2}" fill="none" stroke="${c}" stroke-width="${R - r}"/>`; }
+    else { const p = (ang, rad) => `${(C + rad * Math.cos(ang)).toFixed(2)},${(C + rad * Math.sin(ang)).toFixed(2)}`;
+      out += `<path d="M${p(a0, R)}A${R},${R} 0 ${big} 1 ${p(a1, R)}L${p(a1, r)}A${r},${r} 0 ${big} 0 ${p(a0, r)}Z" fill="${c}"/>`; }
+    a0 = a1; });
+  const center = opts.center ? `<text x="${C}" y="${C - 2}" text-anchor="middle" class="dc1">${esc(opts.center[0])}</text><text x="${C}" y="${C + 16}" text-anchor="middle" class="dc2">${esc(opts.center[1])}</text>` : '';
+  const leg = data.map(([n, v], k) => `<div class="dl"><i style="background:${opts.colors?.[k] || PAL[k % PAL.length]}"></i><span>${esc(n)}</span><b>${(v / tot * 100).toFixed(1).replace('.', ',')}%</b></div>`).join('');
+  return `<div class="donut"><svg viewBox="0 0 200 200">${out}${center}</svg><div class="dlegend">${leg}</div></div>`;
+}
+
+/* bars: labels[], series:[{name,color,values[]}], opts {h, fmt, horizontal} */
+function barChart(labels, series, opts = {}) {
+  const all = series.flatMap(s => s.values);
+  if (!all.some(v => v)) return emptyChart(opts.empty);
+  const W = 640, H = opts.h || 230, L = 58, R = 12, T = 12, B = 30;
+  let y0 = Math.min(0, ...all), y1 = Math.max(0, ...all); const ticks = niceTicks(y0, y1); y0 = ticks[0]; y1 = ticks[ticks.length - 1];
+  const Y = v => T + (H - T - B) * (1 - (v - y0) / (y1 - y0));
+  const n = labels.length, gw = (W - L - R) / n, bw = Math.min(28, gw * 0.7 / series.length);
+  const f = opts.fmt || fmtShort;
+  let g = ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="grid"/><text x="${L - 6}" y="${Y(v) + 4}" class="ax" text-anchor="end">${f(v)}</text>`).join('');
+  labels.forEach((lb, i) => { const cx = L + gw * (i + 0.5);
+    g += `<text x="${cx}" y="${H - 10}" class="ax" text-anchor="middle">${esc(String(lb).slice(0, 12))}</text>`;
+    series.forEach((s, k) => { const v = s.values[i] || 0, x = cx - bw * series.length / 2 + k * bw, y = Y(Math.max(v, 0)), h = Math.abs(Y(v) - Y(0));
+      const col = opts.signColors ? (v >= 0 ? '#26A69A' : '#EF5350') : (s.color || PAL[k]);
+      g += `<rect x="${x + 1}" y="${y}" width="${bw - 2}" height="${Math.max(h, v ? 1 : 0)}" rx="3" fill="${col}"><title>${esc(lb)}: ${esc(f(v))}</title></rect>`; }); });
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart">${g}</svg>` + (series.length > 1 ? legend(series.map((s, k) => [s.name, s.color || PAL[k]])) : '');
+}
+
+/* ===================== DANE, ZAPIS LOKALNY, GOOGLE SHEETS, NBP ===================== */
+const LS_DATA = 'portfel_dane_v1', LS_CFG = 'portfel_cfg_v1', LS_DIRTY = 'portfel_dirty_v1', LS_NBP = 'portfel_nbp_v1';
+const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
+
+const TABLES = {
+  transakcje: { sheet: 'Transakcje', cols: [['id', 'ID'], ['data', 'Data'], ['strategia', 'Strategia'], ['typ', 'Typ'], ['ticker', 'Ticker'], ['ilosc', 'Ilość'], ['cena', 'Cena'], ['prowizja', 'Prowizja'], ['kurs', 'Kurs NBP (D-1)'], ['notatka', 'Notatka']] },
+  dywidendy: { sheet: 'Dywidendy', cols: [['id', 'ID'], ['data', 'Data'], ['strategia', 'Strategia'], ['ticker', 'Ticker'], ['brutto', 'Kwota brutto'], ['podatek', 'Podatek u źródła'], ['kurs', 'Kurs NBP (D-1)'], ['notatka', 'Notatka']] },
+  wplaty: { sheet: 'Wpłaty', cols: [['id', 'ID'], ['data', 'Data'], ['konto', 'Konto'], ['kwotaPLN', 'Kwota PLN'], ['kwotaWal', 'Kwota w walucie konta'], ['notatka', 'Notatka']] },
+  strategie: { sheet: 'Strategie', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['konto', 'Konto'], ['kapital', 'Kapitał przeznaczony'], ['opis', 'Opis'], ['kolor', 'Kolor']] },
+  konta: { sheet: 'Konta', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['typ', 'Typ podatkowy'], ['waluta', 'Waluta'], ['gotowka', 'Gotówka'], ['model', 'W modelu 2.1']] },
+  instrumenty: { sheet: 'Instrumenty', cols: [['id', 'ID'], ['ticker', 'Ticker'], ['nazwa', 'Nazwa'], ['klasa', 'Klasa'], ['koszyk', 'Koszyk 2.1'], ['waluta', 'Waluta'], ['cena', 'Cena ręczna'], ['dataCeny', 'Data ceny'], ['symbol', 'Symbol Google Finance'], ['cenaAuto', 'Cena auto (Google)']] },
+  inflacja: { sheet: 'Inflacja', cols: [['miesiac', 'Miesiąc'], ['mm', 'Inflacja m/m %']] },
+  historia: { sheet: 'Historia', cols: [['data', 'Data'], ['wartosc', 'Wartość PLN'], ['kapital', 'Wpłacony kapitał PLN']] },
+  cele: { sheet: 'Cele 2.1', cols: [['id', 'ID'], ['koszyk', 'Koszyk'], ['grupa', 'Grupa'], ['cel', 'Cel %']] },
+  ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
+};
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+let S = lsGet(LS_DATA, null) || defaultState();
+let CFG = Object.assign({ clientId: '', sheetId: '', sheetUrl: '', strataPrev: {}, kryptoPrev: {} }, lsGet(LS_CFG, {}));
+let DIRTY = new Set(lsGet(LS_DIRTY, []));
+const SYNC = { token: null, exp: 0, state: 'local', msg: 'Dane tylko w tej przeglądarce', busy: false, timer: null, gisReady: false };
+
+function saveLocal() { lsSet(LS_DATA, S); lsSet(LS_DIRTY, [...DIRTY]); }
+function saveCfg() { lsSet(LS_CFG, CFG); }
+function changed(...tables) { tables.forEach(t => DIRTY.add(t)); saveLocal(); scheduleSync(); }
+
+/* ---------- konwersja tabel <-> wiersze arkusza ---------- */
+function toRows(name) {
+  const T = TABLES[name];
+  let list;
+  if (name === 'ustawienia') {
+    const u = S.ustawienia; list = [{ klucz: 'stawka', wartosc: u.stawka }, { klucz: 'kursyData', wartosc: u.kursyData || '' },
+      ...Object.entries(u.kursy || {}).map(([k, v]) => ({ klucz: 'kurs_' + k, wartosc: v }))];
+  } else list = S[name] || [];
+  return [T.cols.map(c => c[1]), ...list.map(o => T.cols.map(([k]) => (k === 'cenaAuto' ? '' : (o[k] ?? ''))))];
+}
+function fromRows(name, rows) {
+  const T = TABLES[name]; if (!rows || !rows.length) return null;
+  const head = rows[0].map(h => String(h).trim());
+  const idx = T.cols.map(([k, lab]) => head.indexOf(lab));
+  const objs = rows.slice(1).filter(r => r.some(v => v !== '' && v !== null)).map(r => {
+    const o = {}; T.cols.forEach(([k], i) => { let v = idx[i] >= 0 ? r[idx[i]] : ''; if (v === undefined || v === null) v = '';
+      if ((k === 'data' || k === 'dataCeny') && typeof v === 'number') v = new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0, 10);
+      o[k] = v; });
+    if ('id' in o && !o.id) o.id = uid();
+    return o; });
+  if (name === 'ustawienia') {
+    const u = { kursy: {}, kursyData: '', stawka: 19 };
+    objs.forEach(o => { if (o.klucz === 'stawka') u.stawka = num(o.wartosc) || 19; else if (o.klucz === 'kursyData') u.kursyData = String(o.wartosc);
+      else if (String(o.klucz).startsWith('kurs_')) u.kursy[o.klucz.slice(5)] = o.wartosc; });
+    return u;
+  }
+  return objs;
+}
+
+/* ---------- Google: logowanie ---------- */
+// arkusz utworzony przez aplikację -> drive.file (dostęp tylko do niego); własny arkusz użytkownika -> spreadsheets
+const scopeNow = () => (CFG.sheetId && !CFG.createdByApp) ? 'https://www.googleapis.com/auth/spreadsheets' : 'https://www.googleapis.com/auth/drive.file';
+let tokenClient = null;
+function setSync(state, msg) { SYNC.state = state; SYNC.msg = msg; if (typeof renderSyncBadge === 'function') renderSyncBadge(); }
+function loadGis() {
+  return new Promise((res, rej) => {
+    if (window.google && google.accounts && google.accounts.oauth2) return res();
+    const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
+    s.onload = () => res(); s.onerror = () => rej(new Error('Nie udało się wczytać logowania Google (brak internetu lub blokada).'));
+    document.head.appendChild(s);
+  });
+}
+async function googleConnect(interactive = true) {
+  if (!CFG.clientId) { setSync('local', 'Wpisz Client ID w Ustawieniach, aby połączyć z Google'); return false; }
+  try { await loadGis(); } catch (e) { setSync('error', e.message); return false; }
+  return new Promise(resolve => {
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: CFG.clientId, scope: scopeNow(),
+      callback: async (resp) => {
+        if (resp.error) { setSync('error', 'Logowanie przerwane: ' + resp.error); return resolve(false); }
+        SYNC.token = resp.access_token; SYNC.exp = Date.now() + (resp.expires_in - 60) * 1000;
+        CFG.connected = true; saveCfg();
+        try { await afterLogin(); resolve(true); } catch (e) { setSync('error', 'Błąd synchronizacji: ' + e.message); resolve(false); }
+      },
+      error_callback: (e) => { setSync('error', 'Logowanie Google: ' + (e.message || e.type)); resolve(false); },
+    });
+    tokenClient.requestAccessToken({ prompt: interactive && !CFG.connectedOnce ? 'consent' : '' });
+  });
+}
+function googleDisconnect() {
+  try { if (SYNC.token && window.google) google.accounts.oauth2.revoke(SYNC.token, () => {}); } catch (e) {}
+  SYNC.token = null; CFG.connected = false; saveCfg(); setSync('local', 'Rozłączono – dane tylko w tej przeglądarce');
+}
+async function ensureToken() { return !!(SYNC.token && Date.now() < SYNC.exp); }
+async function gapi(method, url, body) {
+  const r = await fetch(url, { method, headers: { Authorization: 'Bearer ' + SYNC.token, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401) { SYNC.token = null; throw new Error('Sesja Google wygasła – zaloguj się ponownie'); }
+  if (!r.ok) { let t = ''; try { t = (await r.json()).error.message; } catch (e) {} throw new Error(`Google API ${r.status} ${t}`); }
+  return r.json();
+}
+const SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets';
+
+async function createSpreadsheet() {
+  const res = await gapi('POST', SHEETS, { properties: { title: 'Portfel – dane' },
+    sheets: Object.values(TABLES).map(t => ({ properties: { title: t.sheet, gridProperties: { frozenRowCount: 1 } } })) });
+  CFG.sheetId = res.spreadsheetId; CFG.sheetUrl = res.spreadsheetUrl; CFG.createdByApp = true; saveCfg();
+  // nagłówki pogrubione
+  const reqs = res.sheets.map(sh => ({ repeatCell: { range: { sheetId: sh.properties.sheetId, startRowIndex: 0, endRowIndex: 1 },
+    cell: { userEnteredFormat: { textFormat: { bold: true }, backgroundColor: { red: .9, green: .93, blue: .98 } } }, fields: 'userEnteredFormat(textFormat,backgroundColor)' } }));
+  await gapi('POST', `${SHEETS}/${CFG.sheetId}:batchUpdate`, { requests: reqs });
+}
+async function ensureSheets() {
+  const meta = await gapi('GET', `${SHEETS}/${CFG.sheetId}?fields=sheets.properties.title,spreadsheetUrl`);
+  CFG.sheetUrl = meta.spreadsheetUrl; saveCfg();
+  const have = new Set(meta.sheets.map(s => s.properties.title));
+  const missing = Object.values(TABLES).filter(t => !have.has(t.sheet));
+  if (missing.length) await gapi('POST', `${SHEETS}/${CFG.sheetId}:batchUpdate`, { requests: missing.map(t => ({ addSheet: { properties: { title: t.sheet, gridProperties: { frozenRowCount: 1 } } } })) });
+  return missing.map(t => Object.keys(TABLES).find(k => TABLES[k] === t));
+}
+async function afterLogin() {
+  setSync('busy', 'Łączenie z arkuszem…');
+  let fresh = false;
+  if (!CFG.sheetId) { await createSpreadsheet(); fresh = true; }
+  const missing = await ensureSheets();
+  if (fresh) { Object.keys(TABLES).forEach(t => DIRTY.add(t)); }
+  else {
+    await pullAll();
+    missing.forEach(t => DIRTY.add(t));
+  }
+  CFG.connectedOnce = true; saveCfg();
+  await pushDirty();
+  setTimeout(() => refreshAutoPrices().catch(() => {}), 5000);   // ceny z GOOGLEFINANCE liczą się kilka sekund
+}
+async function pullAll() {
+  const names = Object.keys(TABLES).filter(n => !DIRTY.has(n));   // lokalne niezapisane zmiany mają pierwszeństwo
+  if (!names.length) return;
+  const q = names.map(n => 'ranges=' + encodeURIComponent(`'${TABLES[n].sheet}'!A1:Z5000`)).join('&');
+  const res = await gapi('GET', `${SHEETS}/${CFG.sheetId}/values:batchGet?${q}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`);
+  let any = false;
+  res.valueRanges.forEach((vr, i) => {
+    const name = names[i], rows = vr.values || [];
+    if (rows.length <= 1 && name !== 'ustawienia') { if ((S[name] || []).length) DIRTY.add(name); return; }  // pusty arkusz -> wyślij lokalne
+    const data = fromRows(name, rows); if (!data) return;
+    if (name === 'ustawienia') { S.ustawienia = Object.assign(S.ustawienia, data, { kursy: Object.assign({}, S.ustawienia.kursy, data.kursy) }); }
+    else if (name === 'instrumenty') {
+      S.instrumenty = data.map(o => { const c = String(o.cenaAuto); o.cenaAuto = typeof o.cenaAuto === 'number' ? o.cenaAuto : ''; return o; });
+    } else S[name] = data;
+    any = true;
+  });
+  saveLocal();
+  if (any && typeof render === 'function') render();
+}
+async function pushDirty() {
+  if (!CFG.sheetId || !DIRTY.size) { setSync('ok', 'Zapisano w Google Sheets ✓'); return; }
+  if (SYNC.busy) return; SYNC.busy = true;
+  const names = [...DIRTY];
+  try {
+    setSync('busy', 'Zapisywanie w Google Sheets…');
+    await gapi('POST', `${SHEETS}/${CFG.sheetId}/values:batchClear`, { ranges: names.map(n => `'${TABLES[n].sheet}'!A1:Z5000`) });
+    await gapi('POST', `${SHEETS}/${CFG.sheetId}/values:batchUpdate`, { valueInputOption: 'RAW',
+      data: names.map(n => ({ range: `'${TABLES[n].sheet}'!A1`, values: toRows(n) })) });
+    if (names.includes('instrumenty')) {
+      const ci = TABLES.instrumenty.cols.findIndex(c => c[0] === 'cenaAuto'), col = String.fromCharCode(65 + ci);
+      const vals = S.instrumenty.map(i => [i.symbol ? `=GOOGLEFINANCE("${String(i.symbol).replace(/"/g, '')}")` : '']);
+      if (vals.length) await gapi('POST', `${SHEETS}/${CFG.sheetId}/values:batchUpdate`, { valueInputOption: 'USER_ENTERED', data: [{ range: `'Instrumenty'!${col}2`, values: vals }] });
+    }
+    names.forEach(n => DIRTY.delete(n)); saveLocal();
+    setSync('ok', 'Zapisano w Google Sheets ✓ ' + new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }));
+  } catch (e) {
+    setSync('error', e.message + ' – zmiany czekają w przeglądarce');
+  } finally { SYNC.busy = false; }
+}
+function scheduleSync() {
+  if (!CFG.sheetId || !CFG.connected) { setSync('local', DIRTY.size && CFG.sheetId ? `${DIRTY.size} tabel czeka na wysłanie – połącz z Google` : 'Dane tylko w tej przeglądarce'); return; }
+  clearTimeout(SYNC.timer);
+  setSync('pending', 'Zmiany czekają na zapis…');
+  SYNC.timer = setTimeout(async () => { if (await ensureToken()) pushDirty(); else setSync('pending', `Kliknij tutaj, aby zapisać zmiany w Google Sheets`); }, 1500);
+}
+async function syncNow() {
+  if (!CFG.clientId) { go('ustawienia'); return; }
+  if (!SYNC.token || Date.now() > SYNC.exp) { await googleConnect(true); return; }
+  try { setSync('busy', 'Synchronizacja…'); await pushDirty(); await pullAll(); await refreshAutoPrices(); setSync('ok', 'Zsynchronizowano ✓'); }
+  catch (e) { setSync('error', e.message); }
+}
+async function refreshAutoPrices() {
+  if (!CFG.sheetId || !SYNC.token) return;
+  const res = await gapi('GET', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Instrumenty'!A1:Z500")}?valueRenderOption=UNFORMATTED_VALUE`);
+  const rows = res.values || []; if (rows.length < 2) return;
+  const head = rows[0], it = head.indexOf('Ticker'), ic = head.indexOf('Cena auto (Google)');
+  if (it < 0 || ic < 0) return;
+  rows.slice(1).forEach(r => { const i = S.instrumenty.find(x => x.ticker === r[it]); if (i) i.cenaAuto = typeof r[ic] === 'number' ? r[ic] : ''; });
+  saveLocal(); if (typeof render === 'function') render();
+}
+
+/* ---------- NBP ---------- */
+const NBP_CACHE = lsGet(LS_NBP, {});
+async function nbpRate(cur, dateStr) {
+  if (!cur || cur === 'PLN' || !dateStr) return 1;
+  const key = cur + '|' + dateStr; if (NBP_CACHE[key]) return NBP_CACHE[key];
+  const d = new Date(dateStr + 'T12:00:00'); d.setDate(d.getDate() - 1); const end = d.toISOString().slice(0, 10);
+  d.setDate(d.getDate() - 12); const start = d.toISOString().slice(0, 10);
+  const r = await fetch(`https://api.nbp.pl/api/exchangerates/rates/a/${cur.toLowerCase()}/${start}/${end}/?format=json`);
+  if (!r.ok) throw new Error('NBP nie zwrócił kursu ' + cur + ' dla ' + dateStr);
+  const j = await r.json(); const mid = j.rates[j.rates.length - 1].mid;
+  NBP_CACHE[key] = mid; lsSet(LS_NBP, NBP_CACHE); return mid;
+}
+async function nbpCurrent() {
+  const r = await fetch('https://api.nbp.pl/api/exchangerates/tables/a/?format=json');
+  if (!r.ok) throw new Error('NBP niedostępny');
+  const t = (await r.json())[0]; const m = {}; t.rates.forEach(x => m[x.code] = x.mid);
+  Object.keys(S.ustawienia.kursy).forEach(c => { if (m[c]) S.ustawienia.kursy[c] = m[c]; });
+  S.ustawienia.kursyData = t.effectiveDate; changed('ustawienia');
+  return t.effectiveDate;
+}
+
+/* ===================== INTERFEJS ===================== */
+const $ = s => document.querySelector(s);
+const nf2 = new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const nf0 = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 0 });
+const nfq = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 6 });
+const zl = (v, d = 2) => (v === null || v === undefined || isNaN(v)) ? '–' : (d ? nf2 : nf0).format(v) + ' zł';
+const money = (v, cur) => (v === null || isNaN(v)) ? '–' : nf2.format(v) + ' ' + (cur || '');
+const pct = v => (v === null || v === undefined || !isFinite(v)) ? '–' : (v * 100).toFixed(2).replace('.', ',') + '%';
+const sgn = v => v > 0.0049 ? 'pos' : v < -0.0049 ? 'neg' : '';
+const plus = v => (v > 0 ? '+' : '');
+let C = null, ROUTE = 'kokpit', PARAM = '', RANGE = 'all', FILT = {};
+
+function toast(msg) { let t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), 2600); }
+
+/* ---------- historia: dzienny zapis wartości ---------- */
+function snapshot() {
+  if (!C || C.wartosc <= 0) return;
+  const d = todayStr(), last = S.historia[S.historia.length - 1];
+  const rec = { data: d, wartosc: Math.round(C.wartosc * 100) / 100, kapital: Math.round(C.kapital * 100) / 100 };
+  if (last && last.data === d) { if (Math.abs(num(last.wartosc) - rec.wartosc) < 0.01 && Math.abs(num(last.kapital) - rec.kapital) < 0.01) return; Object.assign(last, rec); }
+  else S.historia.push(rec);
+  S.historia.sort((a, b) => String(a.data).localeCompare(String(b.data)));
+  changed('historia');
+}
+
+/* ---------- nawigacja ---------- */
+function go(route, param = '') { location.hash = param ? `${route}/${encodeURIComponent(param)}` : route; }
+window.addEventListener('hashchange', () => { readHash(); render(); $('aside').classList.remove('open'); });
+function readHash() { const h = decodeURIComponent(location.hash.slice(1) || 'kokpit'); const i = h.indexOf('/'); ROUTE = i < 0 ? h : h.slice(0, i); PARAM = i < 0 ? '' : h.slice(i + 1); }
+
+function renderNav() {
+  const it = (r, ic, label, p = '') => `<a class="${ROUTE === r && PARAM === p ? 'on' : ''}" onclick="go('${r}','${esc(p).replace(/'/g, "\\'")}')"><span class="ic">${ic}</span>${esc(label)}</a>`;
+  const st = S.strategie.map(s => `<a class="${ROUTE === 'strategia' && PARAM === s.id ? 'on' : ''}" onclick="go('strategia','${s.id}')"><span class="dot" style="background:${esc(s.kolor || '#1565c0')}"></span>${esc(s.nazwa)}</a>`).join('');
+  $('#nav').innerHTML = `
+    ${it('kokpit', '◧', 'Kokpit')}${it('portfel', '▤', 'Portfel – pozycje')}
+    <div class="nav-h">Strategie</div>${st}<a class="add" onclick="editStrategia()"><span class="ic">＋</span>Dodaj strategię</a>
+    <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◎', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}
+    <div class="nav-h">Analiza</div>${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}
+    <div class="nav-h">Konfiguracja</div>${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`;
+}
+function renderSyncBadge() {
+  const b = $('#sync'); if (!b) return;
+  b.className = 'badge ' + SYNC.state; b.innerHTML = `<i></i>${esc(SYNC.msg)}`;
+}
+
+function render() {
+  C = calc(S);
+  renderNav(); renderSyncBadge();
+  const V = { kokpit: vKokpit, portfel: vPortfel, strategia: vStrategia, transakcje: vTransakcje, dywidendy: vDywidendy, wplaty: vWplaty,
+    podatki: vPodatki, inflacja: vInflacja, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
+  const [title, sub, body, actions] = V();
+  $('#title').innerHTML = `${esc(title)}<small>${sub || ''}</small>`;
+  $('#topActions').innerHTML = actions || `<button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`;
+  $('#view').innerHTML = body;
+}
+
+/* ---------- elementy ---------- */
+const kpi = (l, v, s = '', cls = '') => `<div class="kpi ${cls}"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
+function table(cols, rows, opts = {}) {
+  if (!rows.length) return `<div class="empty">${opts.empty || 'Brak danych'}</div>`;
+  const th = cols.map(c => `<th class="${c.n ? 'n' : ''}">${c.h}</th>`).join('');
+  const tr = rows.map(r => `<tr class="${opts.click ? 'click' : ''}" ${opts.click ? `onclick="${opts.click(r)}"` : ''}>${cols.map(c => `<td class="${c.n ? 'n' : ''} ${c.cls ? c.cls(r) : ''}">${c.f(r)}</td>`).join('')}</tr>`).join('');
+  const foot = opts.foot ? `<tr>${opts.foot.map((f, i) => `<td class="${cols[i] && cols[i].n ? 'n' : ''}"><b>${f ?? ''}</b></td>`).join('')}</tr>` : '';
+  return `<div class="tbl"><table><thead><tr>${th}</tr></thead><tbody>${tr}${foot}</tbody></table></div>`;
+}
+const pl = v => `<span class="${sgn(v)}">${plus(v)}${zl(v)}</span>`;
+const pp = v => `<span class="${sgn(v)}">${plus(v)}${pct(v)}</span>`;
+function warningsBox() {
+  const w = [...C.warnings];
+  const noPrice = [...new Set(C.pozycje.filter(p => p.brakCeny).map(p => p.ticker))];
+  if (noPrice.length) w.push(`Brak ceny dla: <b>${noPrice.map(esc).join(', ')}</b> – uzupełnij w <a onclick="go('instrumenty')">Instrumenty i ceny</a>.`);
+  const needFx = C.pozycje.some(p => p.waluta !== 'PLN') && !num(S.ustawienia.kursy.USD);
+  if (needFx) w.push(`Brak bieżących kursów walut – <a onclick="pobierzKursy()">pobierz z NBP</a> lub wpisz w Ustawieniach.`);
+  return w.length ? `<div class="alert">⚠ ${w.join('<br>⚠ ')}</div>` : '';
+}
+function histSeries() {
+  let h = S.historia.filter(x => x.data && has(x.wartosc)).map(x => ({ d: String(x.data).slice(0, 10), w: num(x.wartosc), k: num(x.kapital) }));
+  if (RANGE !== 'all' && h.length) { const days = { '1m': 31, '3m': 92, '1r': 366, 'ytd': 0 }[RANGE];
+    const from = RANGE === 'ytd' ? new Date().getFullYear() + '-01-01' : new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
+    h = h.filter(x => x.d >= from); }
+  return h;
+}
+function rangeSeg() { return `<div class="seg">${[['1m', '1M'], ['3m', '3M'], ['ytd', 'YTD'], ['1r', '1R'], ['all', 'Całość']].map(([k, l]) => `<button class="${RANGE === k ? 'on' : ''}" onclick="RANGE='${k}';render()">${l}</button>`).join('')}</div>`; }
+
+/* ===================== WIDOKI ===================== */
+function vKokpit() {
+  const rok = new Date().getFullYear();
+  const dywRok = C.dyw.filter(d => d.rok === rok);
+  const dywRokNetto = dywRok.reduce((a, d) => a + d.nettoPLN, 0);
+  const prev = S.historia.filter(h => String(h.data) < todayStr()).slice(-1)[0];
+  const zmiana = prev ? C.wartosc - num(prev.wartosc) - (C.kapital - num(prev.kapital)) : null;
+  const h = histSeries();
+  const kursUsd = C.rateNow('USD');
+  const kp = `<div class="kpis">
+    ${kpi('Wartość portfela', zl(C.wartosc, 0), C.usd ? `≈ ${nf0.format(C.usd)} USD` : '', 'main')}
+    ${kpi('Zysk / strata', pl(C.zysk), pp(C.zyskPct) + ' od wpłat')}
+    ${kpi('Zysk realny (po inflacji)', pl(C.zyskRealny), pp(C.zyskRealnyPct) + (C.inflLast ? ` · inflacja do ${C.inflLast}` : ' · uzupełnij inflację'))}
+    ${kpi('Wpłacony kapitał', zl(C.kapital, 0), `po inflacji: ${zl(C.kapitalRealny, 0)}`)}
+    ${kpi('Dywidendy ' + rok, zl(dywRokNetto), 'netto, ' + dywRok.length + ' wypłat')}
+    ${kpi('Zmiana od ostatniego zapisu', zmiana === null ? '–' : pl(zmiana), prev ? 'vs ' + prev.data + ' (bez wpłat)' : 'historia zapisuje się codziennie')}
+  </div>`;
+  const line = lineChart([
+    { name: 'Wartość portfela', points: h.map(x => [x.d, x.w]) },
+    { name: 'Wpłacony kapitał', points: h.map(x => [x.d, x.k]), color: '#94a3b8', dash: true },
+    { name: 'Kapitał po inflacji', points: h.map(x => [x.d, C.kapitalRealnyNa(x.d)]), color: '#F9A825', dash: true },
+  ], { area: true });
+  const ret = lineChart([
+    { name: 'Stopa zwrotu', points: h.filter(x => x.k).map(x => [x.d, (x.w - x.k) / x.k]) },
+    { name: 'Realna (po inflacji)', points: h.filter(x => x.k).map(x => { const kr = C.kapitalRealnyNa(x.d); return [x.d, kr ? (x.w - kr) / kr : 0]; }), color: '#7E57C2' },
+  ], { pct: true, h: 200 });
+  const klasy = donut(Object.entries(C.klasy), { center: [nf0.format(C.wartosc / 1000) + ' tys.', 'PLN'], empty: 'Dodaj pierwszą transakcję' });
+  const waluty = donut(Object.entries(C.waluty), { empty: 'Brak pozycji' });
+  const strat = C.strategie.filter(s => s.wartosc || s.zrealizowany || s.dywidendyNetto);
+  const stratTbl = table([
+    { h: 'Strategia', f: s => `<span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${esc(s.kolor)};margin-right:7px"></span>${esc(s.nazwa)}` },
+    { h: 'Wartość', n: 1, f: s => zl(s.wartosc, 0) },
+    { h: 'Udział', f: s => `<div class="bar"><i style="width:${(s.udzial * 100).toFixed(1)}%;background:${esc(s.kolor)}"></i></div>` },
+    { h: 'Wynik', n: 1, f: s => pl(s.wynik) }, { h: '%', n: 1, f: s => pp(s.koszt ? s.wynik / s.koszt : 0) },
+  ], strat, { empty: 'Brak pozycji w strategiach', click: s => `go('strategia','${s.id}')` });
+  const nowa = num(CFG.nowaWplata);
+  const rozd = C.rozdziel(nowa);
+  const model = table([
+    { h: 'Koszyk', f: m => `<b>${esc(m.koszyk)}</b> <span class="mut">${esc(m.grupa || '')}</span>` },
+    { h: 'Cel', n: 1, f: m => pct(m.celPct) }, { h: 'Teraz', n: 1, f: m => pct(m.udzial) },
+    { h: '', f: m => `<div class="bar" style="position:relative"><i style="width:${Math.min(100, m.udzial * 100).toFixed(1)}%;background:#1565c0"></i><b style="position:absolute;top:-3px;left:${Math.min(99, m.celPct * 100)}%;width:2px;height:12px;background:#0f172a"></b></div>` },
+    { h: 'Różnica', n: 1, f: m => Math.abs(m.roznica) < 1 ? '<span class="mut">–</span>' : `<span class="${m.roznica > 0 ? 'pos' : 'neg'}">${m.roznica > 0 ? 'dokup ' : 'nadwyżka '}${zl(Math.abs(m.roznica), 0)}</span>` },
+    { h: 'Z nowej wpłaty', n: 1, f: (m) => nowa ? zl(rozd[C.model.indexOf(m)], 0) : '–' },
+  ], C.model, { empty: 'Ustaw alokację docelową w Ustawieniach' });
+  const months = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
+  const dm = months.map((_, i) => dywRok.filter(d => +d.data.slice(5, 7) === i + 1).reduce((a, d) => a + d.nettoPLN, 0));
+  const top = C.pozycje.slice().sort((a, b) => b.wartoscPLN - a.wartoscPLN).slice(0, 8);
+  const topTbl = table([
+    { h: 'Instrument', f: p => `<b>${esc(p.ticker)}</b> <span class="mut">${esc(p.strategia)}</span>` },
+    { h: 'Wartość', n: 1, f: p => zl(p.wartoscPLN, 0) }, { h: 'Udział', n: 1, f: p => pct(C.wartosc ? p.wartoscPLN / C.wartosc : 0) },
+    { h: 'Zysk', n: 1, f: p => pl(p.zyskPLN) }, { h: '%', n: 1, f: p => pp(p.kosztPLN ? p.zyskPLN / p.kosztPLN : 0) },
+  ], top, { empty: 'Brak otwartych pozycji', click: p => `go('portfel')` });
+  const sub = `Stan na ${new Date().toLocaleDateString('pl-PL')}${kursUsd ? ' · USD/PLN ' + kursUsd.toFixed(4).replace('.', ',') : ''}${S.ustawienia.kursyData ? ' (NBP ' + S.ustawienia.kursyData + ')' : ''}`;
+  const intro = !S.transakcje.length ? `<div class="alert info">👋 Zacznij od <a onclick="go('ustawienia')">Ustawień</a> (konta, połączenie z Google), potem dodaj <a onclick="editTransakcja()">pierwszą transakcję</a>. Ceny aktualizujesz w <a onclick="go('instrumenty')">Instrumentach</a>.</div>` : '';
+  return ['Kokpit', sub, intro + warningsBox() + kp + `
+    <div class="grid g2"><div class="card"><h3>Wartość portfela w czasie<span class="sp"></span>${rangeSeg()}</h3>${line}</div>
+      <div class="card"><h3>Struktura – klasy aktywów</h3>${klasy}</div></div>
+    <div class="grid g2" style="margin-top:16px"><div class="card"><h3>Stopa zwrotu: nominalna i realna<span class="sp"></span>${rangeSeg()}</h3>${ret}</div>
+      <div class="card"><h3>Ekspozycja walutowa</h3>${waluty}</div></div>
+    <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Strategie<span class="sp"></span><small>kliknij, aby otworzyć</small></h3>${stratTbl}</div>
+      <div class="card"><h3>Portfel 2.1 – rebalansing<span class="sp"></span><small>nowa wpłata</small><input class="cell" type="number" value="${nowa || ''}" placeholder="0 zł" onchange="CFG.nowaWplata=this.value;saveCfg();render()"></h3>${model}
+        ${C.poza ? `<div class="mut" style="font-size:12.5px;margin-top:8px">Poza modelem: ${zl(C.poza, 0)} · gotówka: ${zl(C.gotowkaPLN, 0)}</div>` : ''}</div></div>
+    <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Dywidendy i odsetki ${rok} <small>netto PLN</small></h3>${barChart(months, [{ name: 'Netto', values: dm, color: '#26A69A' }], { empty: 'Brak dywidend w tym roku', h: 200 })}</div>
+      <div class="card"><h3>Największe pozycje</h3>${topTbl}</div></div>`];
+}
+
+function vPortfel() {
+  const f = FILT.portfel || (FILT.portfel = { s: '', k: '', c: '' });
+  let rows = C.pozycje.filter(p => (!f.s || p.strategia === f.s) && (!f.k || p.konto === f.k) && (!f.c || p.klasa === f.c)).sort((a, b) => b.wartoscPLN - a.wartoscPLN);
+  const sel = (key, label, opts) => `<select onchange="FILT.portfel.${key}=this.value;render()"><option value="">${label}</option>${opts.map(o => `<option ${f[key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  const tot = rows.reduce((a, p) => ({ w: a.w + p.wartoscPLN, k: a.k + p.kosztPLN }), { w: 0, k: 0 });
+  const cols = [
+    { h: 'Instrument', f: p => `<b>${esc(p.ticker)}</b><br><span class="mut" style="font-size:12px">${esc(p.nazwa)}</span>` },
+    { h: 'Strategia', f: p => esc(p.strategia) }, { h: 'Konto', f: p => esc(p.konto) },
+    { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) }, { h: 'Śr. cena', n: 1, f: p => money(p.sredniaCena, p.waluta) },
+    { h: 'Cena', n: 1, f: p => p.brakCeny ? '<span class="warn">brak</span>' : money(p.cena, p.waluta) },
+    { h: 'Wartość', n: 1, f: p => money(p.wartosc, p.waluta) }, { h: 'Wartość PLN', n: 1, f: p => zl(p.wartoscPLN) },
+    { h: 'Zysk (waluta)', n: 1, f: p => `<span class="${sgn(p.zysk)}">${plus(p.zysk)}${money(p.zysk, p.waluta)}</span><br>${pp(p.zyskPct)}` },
+    { h: 'Zysk PLN', n: 1, f: p => pl(p.zyskPLN) }, { h: 'Udział', n: 1, f: p => pct(C.wartosc ? p.wartoscPLN / C.wartosc : 0) },
+  ];
+  return ['Portfel – pozycje', `${rows.length} otwartych pozycji`, `
+    <div class="filters">${sel('s', 'Wszystkie strategie', S.strategie.map(s => s.nazwa))}${sel('k', 'Wszystkie konta', S.konta.map(k => k.nazwa))}${sel('c', 'Wszystkie klasy', [...new Set(C.pozycje.map(p => p.klasa))])}</div>
+    <div class="kpis">${kpi('Wartość', zl(tot.w, 0))}${kpi('Koszt zakupu', zl(tot.k, 0))}${kpi('Zysk niezrealizowany', pl(tot.w - tot.k), pp(tot.k ? (tot.w - tot.k) / tot.k : 0))}</div>
+    <div class="card">${table(cols, rows, { empty: 'Brak otwartych pozycji' })}</div>`];
+}
+
+function vStrategia() {
+  const s = C.strategie.find(x => x.id === PARAM); if (!s) return ['Strategia', '', '<div class="empty">Nie znaleziono strategii</div>'];
+  const poz = s.pozycje.slice().sort((a, b) => b.wartoscPLN - a.wartoscPLN);
+  const struktura = donut(poz.map(p => [p.ticker, p.wartoscPLN]), { empty: 'Brak otwartych pozycji', center: [nf0.format(s.wartosc / 1000) + ' tys.', 'PLN'] });
+  const txs = S.transakcje.filter(t => t.strategia === s.nazwa).sort((a, b) => String(b.data).localeCompare(String(a.data)));
+  const wynikPct = s.koszt ? s.wynik / s.koszt : 0;
+  const pozTbl = table([
+    { h: 'Instrument', f: p => `<b>${esc(p.ticker)}</b> <span class="mut">${esc(p.nazwa)}</span>` },
+    { h: 'Od', f: p => esc(p.od) }, { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) },
+    { h: 'Śr. cena', n: 1, f: p => money(p.sredniaCena, p.waluta) }, { h: 'Cena', n: 1, f: p => p.brakCeny ? '<span class="warn">brak</span>' : money(p.cena, p.waluta) },
+    { h: 'Wartość PLN', n: 1, f: p => zl(p.wartoscPLN) }, { h: 'Zysk', n: 1, f: p => `<span class="${sgn(p.zysk)}">${plus(p.zysk)}${money(p.zysk, p.waluta)}</span>` },
+    { h: '%', n: 1, f: p => pp(p.zyskPct) }, { h: 'Zysk PLN', n: 1, f: p => pl(p.zyskPLN) },
+  ], poz, { empty: 'Brak otwartych pozycji – dodaj transakcję kupna' });
+  const zamTbl = table([
+    { h: 'Sprzedaż', f: r => esc(r.data) }, { h: 'Instrument', f: r => `<b>${esc(r.ticker)}</b>` }, { h: 'Ilość', n: 1, f: r => nfq.format(r.ilosc) },
+    { h: 'Koszt', n: 1, f: r => money(r.koszt, r.waluta) }, { h: 'Przychód', n: 1, f: r => money(r.przychod, r.waluta) },
+    { h: 'Zysk', n: 1, f: r => `<span class="${sgn(r.zysk)}">${plus(r.zysk)}${money(r.zysk, r.waluta)}</span>` },
+    { h: 'Zysk PLN', n: 1, f: r => pl(r.zyskPLN) },
+  ], s.zamkniete.slice().reverse(), { empty: 'Brak zamkniętych pozycji' });
+  const dywTbl = table([
+    { h: 'Data', f: d => esc(d.data) }, { h: 'Ticker', f: d => esc(d.ticker) }, { h: 'Brutto', n: 1, f: d => money(num(d.brutto), d.waluta) },
+    { h: 'Netto PLN', n: 1, f: d => zl(d.nettoPLN) }, { h: '', f: d => `<a onclick="editDywidenda('${d.id}')">edytuj</a>` },
+  ], s.dywidendy.slice().reverse(), { empty: 'Brak dywidend' });
+  const txTbl = table(txCols(), txs.slice(0, 50), { empty: 'Brak transakcji' });
+  return [s.nazwa, `${esc(s.konto)} · ${esc(s.typ)}${s.opis ? ' · ' + esc(s.opis) : ''}`, `
+    <div class="kpis">${kpi('Wartość', zl(s.wartosc, 0), pct(s.udzial) + ' portfela', 'main')}${kpi('Zysk niezrealizowany', pl(s.niezreal), pp(s.niezrealPct))}
+      ${kpi('Zysk zrealizowany', pl(s.zrealizowany), s.zamkniete.length + ' sprzedaży')}${kpi('Dywidendy netto', zl(s.dywidendyNetto), s.dywidendy.length + ' wypłat')}
+      ${kpi('Wynik łączny', pl(s.wynik), pp(wynikPct) + ' od kosztu')}${s.wolne !== null ? kpi('Wolne środki', money(s.wolne, s.walutaKonta), 'z kapitału ' + money(num(s.kapital), s.walutaKonta)) : ''}</div>
+    <div class="grid g2"><div class="card"><h3>Otwarte pozycje</h3>${pozTbl}</div><div class="card"><h3>Struktura strategii</h3>${struktura}</div></div>
+    <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Zamknięte pozycje</h3>${zamTbl}</div>
+      <div class="card"><h3>Dywidendy<span class="sp"></span><button class="btn sm ghost" onclick="editDywidenda(null,'${esc(s.nazwa)}')">＋ Dywidenda</button></h3>${dywTbl}</div></div>
+    <div class="card" style="margin-top:16px"><h3>Transakcje strategii</h3>${txTbl}</div>`,
+    `<button class="btn ghost" onclick="editStrategia('${s.id}')">Edytuj strategię</button><button class="btn" onclick="editTransakcja(null,'${esc(s.nazwa)}')">＋ Transakcja</button>`];
+}
+
+function txCols() {
+  return [
+    { h: 'Data', f: t => esc(t.data) }, { h: 'Typ', f: t => `<span class="tag ${t.typ === 'KUPNO' ? 'buy' : 'sell'}">${esc(t.typ)}</span>` },
+    { h: 'Strategia', f: t => esc(t.strategia) }, { h: 'Ticker', f: t => `<b>${esc(t.ticker)}</b>` },
+    { h: 'Ilość', n: 1, f: t => nfq.format(num(t.ilosc)) }, { h: 'Cena', n: 1, f: t => nf2.format(num(t.cena)) },
+    { h: 'Prowizja', n: 1, f: t => num(t.prowizja) ? nf2.format(num(t.prowizja)) : '–' },
+    { h: 'Wartość', n: 1, f: t => nf2.format(num(t.ilosc) * num(t.cena)) },
+    { h: 'Kurs NBP', n: 1, f: t => has(t.kurs) ? num(t.kurs).toFixed(4) : (((S.instrumenty.find(i => i.ticker === t.ticker) || {}).waluta || 'USD') === 'PLN' ? '–' : '<span class="warn">brak</span>') },
+    { h: '', f: t => `<a onclick="event.stopPropagation();editTransakcja('${t.id}')">edytuj</a>` },
+  ];
+}
+function vTransakcje() {
+  const f = FILT.tx || (FILT.tx = { s: '', t: '', r: '' });
+  const rows = S.transakcje.filter(t => (!f.s || t.strategia === f.s) && (!f.t || t.typ === f.t) && (!f.r || String(t.data).startsWith(f.r)))
+    .sort((a, b) => String(b.data).localeCompare(String(a.data)));
+  const lata = [...new Set(S.transakcje.map(t => String(t.data).slice(0, 4)))].sort().reverse();
+  const sel = (key, label, opts) => `<select onchange="FILT.tx.${key}=this.value;render()"><option value="">${label}</option>${opts.map(o => `<option ${f[key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  return ['Transakcje', `${rows.length} z ${S.transakcje.length}`, `
+    <div class="filters">${sel('s', 'Wszystkie strategie', S.strategie.map(s => s.nazwa))}${sel('t', 'Kupno i sprzedaż', ['KUPNO', 'SPRZEDAŻ'])}${sel('r', 'Wszystkie lata', lata)}</div>
+    <div class="card">${table(txCols(), rows, { empty: 'Brak transakcji – kliknij „＋ Transakcja”', click: t => `editTransakcja('${t.id}')` })}</div>`];
+}
+
+function vDywidendy() {
+  const rows = C.dyw.slice().sort((a, b) => b.data.localeCompare(a.data));
+  const byYear = {}; C.dyw.forEach(d => byYear[d.rok] = (byYear[d.rok] || 0) + d.nettoPLN);
+  const years = Object.keys(byYear).sort();
+  return ['Dywidendy i odsetki', 'Kwoty w walucie instrumentu, przeliczone kursem NBP z dnia przed wypłatą', `
+    <div class="grid g2e"><div class="card"><h3>Netto PLN wg lat</h3>${barChart(years, [{ name: 'Netto', values: years.map(y => byYear[y]), color: '#26A69A' }], { empty: 'Brak dywidend', h: 190 })}</div>
+    <div class="kpis" style="align-content:start">${kpi('Łącznie netto', zl(C.dywNetto))}${kpi('Liczba wypłat', rows.length)}${kpi('Do dopłaty w PL (' + new Date().getFullYear() + ')', zl(C.dyw.filter(d => d.rok === new Date().getFullYear()).reduce((a, d) => a + d.doplata, 0)))}</div></div>
+    <div class="card" style="margin-top:16px">${table([
+      { h: 'Data', f: d => esc(d.data) }, { h: 'Strategia', f: d => esc(d.strategia) }, { h: 'Ticker', f: d => `<b>${esc(d.ticker)}</b>` },
+      { h: 'Brutto', n: 1, f: d => money(num(d.brutto), d.waluta) }, { h: 'Podatek u źródła', n: 1, f: d => money(num(d.podatek), d.waluta) },
+      { h: 'Kurs', n: 1, f: d => d.waluta === 'PLN' ? '–' : (has(d.kurs) ? num(d.kurs).toFixed(4) : '<span class="warn">brak</span>') },
+      { h: 'Netto PLN', n: 1, f: d => zl(d.nettoPLN) }, { h: 'Dopłata PL', n: 1, f: d => d.doplata ? zl(d.doplata) : '–' },
+    ], rows, { empty: 'Brak dywidend – kliknij „＋ Dywidenda”', click: d => `editDywidenda('${d.id}')` })}</div>`,
+    `<button class="btn" onclick="editDywidenda()">＋ Dywidenda</button>`];
+}
+
+function vWplaty() {
+  const rows = S.wplaty.slice().sort((a, b) => String(b.data).localeCompare(String(a.data)));
+  let acc = 0; const cum = S.wplaty.slice().filter(w => w.data).sort((a, b) => String(a.data).localeCompare(String(b.data))).map(w => [String(w.data), acc += num(w.kwotaPLN)]);
+  return ['Wpłaty i wypłaty', 'Wypłatę wpisz jako kwotę ujemną', `
+    <div class="grid g2"><div class="card"><h3>Wpłacony kapitał narastająco</h3>${lineChart([{ name: 'Kapitał', points: cum }], { area: true, empty: 'Dodaj co najmniej dwie wpłaty' })}</div>
+    <div class="kpis" style="align-content:start;grid-template-columns:1fr">${kpi('Wpłacony kapitał', zl(C.kapital))}${kpi('W dzisiejszych złotych (po inflacji)', zl(C.kapitalRealny))}</div></div>
+    <div class="card" style="margin-top:16px">${table([
+      { h: 'Data', f: w => esc(w.data) }, { h: 'Konto', f: w => esc(w.konto) }, { h: 'Kwota PLN', n: 1, f: w => pl(num(w.kwotaPLN)) },
+      { h: 'Kwota w walucie konta', n: 1, f: w => has(w.kwotaWal) ? nf2.format(num(w.kwotaWal)) : '–' }, { h: 'Notatka', f: w => esc(w.notatka) },
+    ], rows, { empty: 'Brak wpłat', click: w => `editWplata('${w.id}')` })}</div>`,
+    `<button class="btn" onclick="editWplata()">＋ Wpłata</button>`];
+}
+
+function vPodatki() {
+  const rok = +(FILT.rok || new Date().getFullYear());
+  const P = C.podatki(rok, num(CFG.strataPrev[rok]), num(CFG.kryptoPrev[rok]));
+  const opts = C.lata.map(y => `<option ${y === rok ? 'selected' : ''}>${y}</option>`).join('');
+  const line = (l, v, b) => `<tr><td>${b ? '<b>' + l + '</b>' : l}</td><td class="n">${b ? '<b>' + v + '</b>' : v}</td></tr>`;
+  return ['Podatki – PIT-38', 'Konta „Opodatkowane”; FIFO w ramach rachunku; kursy NBP z dnia przed transakcją', `
+    <div class="filters"><select onchange="FILT.rok=this.value;render()">${opts}</select></div>
+    ${P.brakKursow ? '<div class="alert">⚠ Część transakcji nie ma kursu NBP – użyto bieżącego kursu. Uzupełnij kursy, aby wynik był zgodny z PIT-38.</div>' : ''}
+    <div class="kpis">${kpi('Podatek do zapłaty', zl(P.razem, 0), 'za rok ' + rok, 'main')}${kpi('Dochód z papierów', pl(P.dochod))}${kpi('Dopłata od dywidend', zl(P.dywDoplata, 0))}${kpi('Podatek od krypto', zl(P.kPodatek, 0))}</div>
+    <div class="grid g3">
+      <div class="card"><h3>Papiery wartościowe</h3><table>${line('Przychód', zl(P.przychod))}${line('Koszty uzyskania', zl(P.koszty))}${line('Dochód / strata', zl(P.dochod))}
+        <tr><td>Strata z lat ubiegłych</td><td class="n"><input class="cell" type="number" value="${CFG.strataPrev[rok] || ''}" onchange="CFG.strataPrev[${rok}]=this.value;saveCfg();render()"></td></tr>
+        ${line('Podstawa opodatkowania', zl(P.podstawa, 0))}${line('Podatek ' + S.ustawienia.stawka + '%', zl(P.podatekPap, 0), 1)}</table></div>
+      <div class="card"><h3>Dywidendy zagraniczne</h3><table>${line('Przychód brutto', zl(P.dywBrutto))}${line('Podatek pobrany za granicą', zl(P.dywPobrany))}${line('Do dopłaty w Polsce', zl(P.dywDoplata, 0), 1)}</table>
+        <div class="mut" style="font-size:12px;margin-top:8px">USA z W-8BEN: 15% pobrane → dopłacasz 4%.</div></div>
+      <div class="card"><h3>Kryptowaluty</h3><table>${line('Przychód', zl(P.kPrzych))}${line('Koszty zakupu w roku', zl(P.kKoszt))}
+        <tr><td>Nadwyżka kosztów z lat ubiegłych</td><td class="n"><input class="cell" type="number" value="${CFG.kryptoPrev[rok] || ''}" onchange="CFG.kryptoPrev[${rok}]=this.value;saveCfg();render()"></td></tr>
+        ${line('Dochód', zl(P.kDochod))}${line('Nadwyżka na kolejny rok', zl(P.kNadwyzka))}${line('Podatek', zl(P.kPodatek, 0), 1)}</table></div>
+    </div>
+    <div class="card" style="margin-top:16px"><h3>Sprzedaże w ${rok} (FIFO)</h3>${table([
+      { h: 'Data', f: r => esc(r.data) }, { h: 'Instrument', f: r => `<b>${esc(r.ticker)}</b>` }, { h: 'Strategia', f: r => esc(r.strategia) },
+      { h: 'Ilość', n: 1, f: r => nfq.format(r.ilosc) }, { h: 'Przychód PLN', n: 1, f: r => zl(r.przychodPLN) }, { h: 'Koszt PLN', n: 1, f: r => zl(r.kosztPLN) },
+      { h: 'Dochód PLN', n: 1, f: r => pl(r.zyskPLN) }, { h: '', f: r => r.kursOk ? '' : '<span class="warn">brak kursu</span>' },
+    ], P.sprzedaze, { empty: 'Brak sprzedaży w tym roku', foot: ['Razem', '', '', '', zl(P.przychod), zl(P.koszty), zl(P.dochod), ''] })}</div>
+    <div class="mut" style="font-size:12px;margin-top:10px">Porównaj z PIT-8C od brokera. To pomoc w rozliczeniu, nie doradztwo podatkowe.</div>`, ' '];
+}
+
+function vInflacja() {
+  const rows = S.inflacja.slice().sort((a, b) => String(b.miesiac).localeCompare(String(a.miesiac)));
+  const asc = rows.slice().reverse(); let lvl = 1;
+  const cum = asc.filter(r => has(r.mm)).map(r => { lvl *= 1 + num(r.mm) / 100; return [r.miesiac + '-01', lvl - 1]; });
+  return ['Inflacja', 'CPI z GUS, miesiąc do miesiąca (poprzedni miesiąc = 100 → 100,3 wpisz jako 0,3)', `
+    <div class="grid g2"><div class="card"><h3>Inflacja skumulowana</h3>${lineChart([{ name: 'Wzrost cen od początku danych', points: cum, color: '#EF5350' }], { pct: true, area: true, empty: 'Dodaj co najmniej dwa miesiące' })}</div>
+      <div class="kpis" style="align-content:start;grid-template-columns:1fr">${kpi('Wzrost cen w danych', pct(C.inflNow - 1), C.inflLast ? 'do ' + C.inflLast : 'brak danych')}${kpi('Zysk realny portfela', pl(C.zyskRealny), pp(C.zyskRealnyPct))}</div></div>
+    <div class="card" style="margin-top:16px"><h3>Dane miesięczne<span class="sp"></span><button class="btn sm" onclick="addInflacja()">＋ Miesiąc</button></h3>${table([
+      { h: 'Miesiąc', f: r => esc(r.miesiac) }, { h: 'Inflacja m/m %', n: 1, f: r => `<input class="cell" type="number" step="0.1" value="${esc(r.mm)}" onchange="setInfl('${esc(r.miesiac)}',this.value)">` },
+      { h: '', f: r => `<a onclick="delInfl('${esc(r.miesiac)}')">usuń</a>` },
+    ], rows, { empty: 'Brak danych – dodaj miesiące' })}</div>
+    <div class="mut" style="font-size:12px;margin-top:10px">Źródło: GUS – „Wskaźniki cen towarów i usług konsumpcyjnych” (stat.gov.pl). Wpłaty przeliczane są poziomem cen z końca miesiąca poprzedzającego wpłatę.</div>`, ' '];
+}
+
+function vInstrumenty() {
+  const rows = S.instrumenty;
+  return ['Instrumenty i ceny', 'Cena ręczna ma pierwszeństwo przed ceną automatyczną z Google Finance', `
+    <div class="alert info">💡 Po połączeniu z Google Sheets ceny pobierają się same z Google Finance (kolumna „Symbol”, np. LON:CSPX, NASDAQ:AAPL, WSE:PKN, CURRENCY:XAUUSD). Wpisz cenę ręcznie, gdy symbol nie działa – zostaw puste, aby używać automatycznej.</div>
+    <div class="card">${table([
+      { h: 'Ticker', f: i => `<b>${esc(i.ticker)}</b>` }, { h: 'Nazwa', f: i => esc(i.nazwa) }, { h: 'Klasa', f: i => esc(i.klasa) }, { h: 'Koszyk 2.1', f: i => esc(i.koszyk) },
+      { h: 'Waluta', f: i => esc(i.waluta) }, { h: 'Symbol', f: i => `<span class="mut">${esc(i.symbol)}</span>` },
+      { h: 'Cena auto', n: 1, f: i => has(i.cenaAuto) ? nf2.format(num(i.cenaAuto)) : '<span class="mut">–</span>' },
+      { h: 'Cena ręczna', n: 1, f: i => `<input class="cell" type="number" step="any" value="${esc(i.cena)}" onclick="event.stopPropagation()" onchange="setCena('${i.id}',this.value)">` },
+      { h: 'Data ceny', f: i => esc(i.dataCeny) },
+      { h: 'Ilość w portfelu', n: 1, f: i => { const q = C.pozycje.filter(p => p.ticker === i.ticker).reduce((a, p) => a + p.ilosc, 0); return q ? nfq.format(q) : '–'; } },
+      { h: '', f: i => `<a onclick="event.stopPropagation();editInstrument('${i.id}')">edytuj</a>` },
+    ], rows, { empty: 'Brak instrumentów' })}</div>`,
+    `${SYNC.token ? '<button class="btn ghost" onclick="refreshAutoPrices().then(()=>toast(\'Ceny odświeżone\'))">↻ Ceny z Google</button>' : ''}<button class="btn" onclick="editInstrument()">＋ Instrument</button>`];
+}
+
+function vUstawienia() {
+  const u = S.ustawienia;
+  const g = CFG.sheetId ? `<p>Arkusz: <a href="${esc(CFG.sheetUrl || ('https://docs.google.com/spreadsheets/d/' + CFG.sheetId))}" target="_blank">otwórz „Portfel – dane” ↗</a></p>` : '';
+  const kontaTbl = table([
+    { h: 'Konto', f: k => `<b>${esc(k.nazwa)}</b>` }, { h: 'Typ podatkowy', f: k => esc(k.typ) }, { h: 'Waluta', f: k => esc(k.waluta) },
+    { h: 'Gotówka', n: 1, f: k => has(k.gotowka) ? money(num(k.gotowka), k.waluta) : '–' }, { h: 'Model 2.1', f: k => esc(k.model) },
+    { h: 'Wartość', n: 1, f: k => zl(C.konta.find(x => x.id === k.id)?.razem || 0, 0) },
+  ], S.konta, { click: k => `editKonto('${k.id}')` });
+  const celeTbl = table([
+    { h: 'Koszyk', f: c => `<b>${esc(c.koszyk)}</b>` }, { h: 'Grupa', f: c => esc(c.grupa) }, { h: 'Cel', n: 1, f: c => num(c.cel) + '%' },
+  ], S.cele, { click: c => `editCel('${c.id}')`, foot: ['Suma', '', S.cele.reduce((a, c) => a + num(c.cel), 0) + '%'] });
+  return ['Ustawienia', 'Konta, kursy walut, alokacja docelowa, połączenie z Google Sheets i kopia zapasowa', `
+    <div class="grid g2e">
+      <div class="card"><h3>Google Sheets</h3>
+        <p class="mut" style="margin-top:0">Dane zapisują się w Twoim arkuszu Google (tylko Ty masz do niego dostęp). Instrukcja zdobycia Client ID jest w pliku README.</p>
+        <div class="form"><label class="full">Google OAuth Client ID<input id="cid" value="${esc(CFG.clientId)}" placeholder="123456-abc.apps.googleusercontent.com"></label>
+        <label class="full">ID arkusza (puste = aplikacja utworzy nowy)<input id="sid" value="${esc(CFG.sheetId)}" placeholder="z adresu docs.google.com/spreadsheets/d/<ID>/edit"><span class="help">Możesz wkleić ID własnego arkusza (z adresu między /d/ a /edit) – aplikacja sama doda w nim zakładki. Na drugim urządzeniu wklej to samo ID.</span></label></div>
+        ${g}<div class="actions" style="justify-content:flex-start">
+          <button class="btn" onclick="const nid=$('#sid').value.trim();if(nid!==CFG.sheetId){CFG.createdByApp=false;tokenClient=null;SYNC.token=null;}CFG.clientId=$('#cid').value.trim();CFG.sheetId=nid;saveCfg();googleConnect(true).then(ok=>{if(ok)toast('Połączono z Google Sheets');render()})">${SYNC.token ? 'Połącz ponownie' : 'Zaloguj przez Google'}</button>
+          ${SYNC.token ? '<button class="btn ghost" onclick="syncNow()">↻ Synchronizuj teraz</button><button class="btn danger" onclick="googleDisconnect();render()">Rozłącz</button>' : ''}</div></div>
+      <div class="card"><h3>Kursy walut (bieżące, do wyceny)</h3>
+        <div class="form">${Object.keys(u.kursy).map(c => `<label>${c}/PLN<input type="number" step="any" value="${esc(u.kursy[c])}" onchange="S.ustawienia.kursy['${c}']=this.value;changed('ustawienia');render()"></label>`).join('')}</div>
+        <div class="actions" style="justify-content:flex-start"><button class="btn ghost" onclick="pobierzKursy()">↻ Pobierz z NBP</button><span class="mut">${u.kursyData ? 'Tabela NBP z ' + esc(u.kursyData) : ''}</span></div>
+        <div class="form" style="margin-top:10px"><label>Stawka podatku Belki %<input type="number" value="${esc(u.stawka)}" onchange="S.ustawienia.stawka=num(this.value)||19;changed('ustawienia');render()"></label></div></div>
+    </div>
+    <div class="grid g2e" style="margin-top:16px">
+      <div class="card"><h3>Konta<span class="sp"></span><button class="btn sm" onclick="editKonto()">＋ Konto</button></h3>${kontaTbl}
+        <div class="mut" style="font-size:12px;margin-top:8px">„Opodatkowane” wchodzi do PIT-38. IKE/IKZE i „Poza PIT-38” są pomijane. Gotówkę u brokera aktualizuj ręcznie.</div></div>
+      <div class="card"><h3>Portfel 2.1 – alokacja docelowa<span class="sp"></span><button class="btn sm" onclick="editCel()">＋ Koszyk</button></h3>${celeTbl}
+        <div class="mut" style="font-size:12px;margin-top:8px">Koszyk przypisujesz instrumentowi w „Instrumenty i ceny”.</div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><h3>Kopia zapasowa</h3>
+      <div class="row"><button class="btn ghost" onclick="exportJSON()">⬇ Eksport (plik JSON)</button><button class="btn ghost" onclick="exportCSV()">⬇ Transakcje do Excela (CSV)</button>
+      <label class="btn ghost" style="cursor:pointer">⬆ Import z pliku<input type="file" accept=".json" style="display:none" onchange="importJSON(this.files[0])"></label>
+      <span class="sp" style="flex:1"></span><button class="btn danger" onclick="resetAll()">Wyczyść dane w przeglądarce</button></div></div>`, ' '];
+}
+
+/* ===================== FORMULARZE ===================== */
+function modal(title, fields, vals, onSave, onDelete) {
+  const f = fields.map(x => {
+    const v = vals[x.k] ?? '';
+    let inp;
+    if (x.t === 'select') inp = `<select name="${x.k}">${x.o.map(o => { const [val, lab] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(val)}" ${String(v) === String(val) ? 'selected' : ''}>${esc(lab)}</option>`; }).join('')}</select>`;
+    else if (x.t === 'textarea') inp = `<textarea name="${x.k}" rows="2">${esc(v)}</textarea>`;
+    else inp = `<input name="${x.k}" type="${x.t || 'text'}" ${x.t === 'number' ? 'step="any"' : ''} value="${esc(v)}" ${x.ph ? `placeholder="${esc(x.ph)}"` : ''}>`;
+    return `<label class="${x.full ? 'full' : ''}">${x.l}${inp}${x.help ? `<span class="help" id="help_${x.k}">${x.help}</span>` : ''}</label>`;
+  }).join('');
+  const bg = document.createElement('div'); bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal"><h2>${esc(title)}</h2><form class="form">${f}</form><div class="actions">${onDelete ? '<button class="btn danger" data-a="del">Usuń</button>' : ''}<span class="sp"></span><button class="btn ghost" data-a="cancel">Anuluj</button><button class="btn" data-a="save">Zapisz</button></div></div>`;
+  document.body.appendChild(bg);
+  const form = bg.querySelector('form');
+  const read = () => { const o = {}; fields.forEach(x => { const el = form.elements[x.k]; let v = el.value.trim(); if (x.t === 'number' && v !== '') v = num(v); o[x.k] = v; }); return o; };
+  const close = () => bg.remove();
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+  bg.querySelector('[data-a=cancel]').onclick = close;
+  bg.querySelector('[data-a=save]').onclick = () => { const o = read(); const err = onSave(o); if (err) { toast(err); return; } close(); render(); };
+  if (onDelete) bg.querySelector('[data-a=del]').onclick = () => { if (confirm('Usunąć?')) { onDelete(); close(); render(); } };
+  form.addEventListener('submit', e => e.preventDefault());
+  setTimeout(() => { const first = form.querySelector('input,select'); first && first.focus(); }, 30);
+  return form;
+}
+const curOfTicker = t => (S.instrumenty.find(i => i.ticker === t) || {}).waluta || 'USD';
+function wireNbp(form, dateKey, tickerKey) {
+  const upd = async () => {
+    const d = form.elements[dateKey].value, t = form.elements[tickerKey].value, cur = curOfTicker(t), help = form.querySelector('#help_kurs');
+    if (cur === 'PLN') { form.elements.kurs.value = ''; help.textContent = 'Instrument w PLN – kurs niepotrzebny'; return; }
+    if (!d) return; help.textContent = `Pobieranie kursu ${cur} z NBP…`;
+    try { const k = await nbpRate(cur, d); form.elements.kurs.value = k; help.textContent = `Kurs średni NBP ${cur} z dnia roboczego przed ${d}`; }
+    catch (e) { help.textContent = 'Nie udało się pobrać kursu – wpisz ręcznie'; }
+  };
+  form.elements[dateKey].addEventListener('change', upd); form.elements[tickerKey].addEventListener('change', upd);
+  if (!form.elements.kurs.value) upd();
+}
+function editTransakcja(id, strategia) {
+  const t = S.transakcje.find(x => x.id === id) || { data: todayStr(), typ: 'KUPNO', strategia: strategia || (S.strategie[0] || {}).nazwa, ticker: (S.instrumenty[0] || {}).ticker };
+  if (!S.instrumenty.length) { toast('Najpierw dodaj instrument'); return editInstrument(); }
+  const form = modal(id ? 'Edytuj transakcję' : 'Nowa transakcja', [
+    { k: 'data', l: 'Data', t: 'date' }, { k: 'typ', l: 'Typ', t: 'select', o: ['KUPNO', 'SPRZEDAŻ'] },
+    { k: 'strategia', l: 'Strategia', t: 'select', o: S.strategie.map(s => s.nazwa) },
+    { k: 'ticker', l: 'Instrument', t: 'select', o: S.instrumenty.map(i => [i.ticker, `${i.ticker} – ${i.nazwa} (${i.waluta})`]) },
+    { k: 'ilosc', l: 'Ilość', t: 'number' }, { k: 'cena', l: 'Cena za sztukę (waluta instrumentu)', t: 'number' },
+    { k: 'prowizja', l: 'Prowizja (waluta instrumentu)', t: 'number', ph: '0' }, { k: 'kurs', l: 'Kurs NBP (D-1)', t: 'number', help: 'Pobiera się automatycznie z NBP' },
+    { k: 'notatka', l: 'Notatka', full: 1 },
+  ], t, o => {
+    if (!o.data || !o.ticker || !(o.ilosc > 0)) return 'Uzupełnij datę, instrument i ilość';
+    if (id) Object.assign(t, o); else S.transakcje.push({ id: uid(), ...o });
+    changed('transakcje'); toast('Zapisano transakcję');
+  }, id ? () => { S.transakcje = S.transakcje.filter(x => x.id !== id); changed('transakcje'); } : null);
+  wireNbp(form, 'data', 'ticker');
+}
+function editDywidenda(id, strategia) {
+  const d = S.dywidendy.find(x => x.id === id) || { data: todayStr(), strategia: strategia || (S.strategie[0] || {}).nazwa, ticker: (S.instrumenty[0] || {}).ticker };
+  const form = modal(id ? 'Edytuj dywidendę' : 'Nowa dywidenda / odsetki', [
+    { k: 'data', l: 'Data wypłaty', t: 'date' }, { k: 'strategia', l: 'Strategia', t: 'select', o: S.strategie.map(s => s.nazwa) },
+    { k: 'ticker', l: 'Instrument', t: 'select', o: S.instrumenty.map(i => [i.ticker, `${i.ticker} (${i.waluta})`]) },
+    { k: 'brutto', l: 'Kwota brutto (waluta instrumentu)', t: 'number' }, { k: 'podatek', l: 'Podatek pobrany u źródła', t: 'number', ph: 'np. 15% z USA' },
+    { k: 'kurs', l: 'Kurs NBP (D-1)', t: 'number', help: 'Pobiera się automatycznie' }, { k: 'notatka', l: 'Notatka', full: 1 },
+  ], d, o => {
+    if (!o.data || !has(o.brutto)) return 'Uzupełnij datę i kwotę';
+    if (id) Object.assign(d, o); else S.dywidendy.push({ id: uid(), ...o });
+    changed('dywidendy'); toast('Zapisano dywidendę');
+  }, id ? () => { S.dywidendy = S.dywidendy.filter(x => x.id !== id); changed('dywidendy'); } : null);
+  wireNbp(form, 'data', 'ticker');
+}
+function editWplata(id) {
+  const w = S.wplaty.find(x => x.id === id) || { data: todayStr(), konto: (S.konta[0] || {}).nazwa };
+  modal(id ? 'Edytuj wpłatę' : 'Nowa wpłata / wypłata', [
+    { k: 'data', l: 'Data', t: 'date' }, { k: 'konto', l: 'Konto', t: 'select', o: S.konta.map(k => k.nazwa) },
+    { k: 'kwotaPLN', l: 'Kwota PLN (wypłata z minusem)', t: 'number' }, { k: 'kwotaWal', l: 'Kwota w walucie konta (opcjonalnie)', t: 'number' },
+    { k: 'notatka', l: 'Notatka', full: 1 },
+  ], w, o => {
+    if (!o.data || !has(o.kwotaPLN)) return 'Uzupełnij datę i kwotę';
+    if (id) Object.assign(w, o); else S.wplaty.push({ id: uid(), ...o });
+    changed('wplaty'); toast('Zapisano wpłatę');
+  }, id ? () => { S.wplaty = S.wplaty.filter(x => x.id !== id); changed('wplaty'); } : null);
+}
+function editStrategia(id) {
+  const s = S.strategie.find(x => x.id === id) || { kolor: PAL[S.strategie.length % PAL.length], konto: (S.konta[0] || {}).nazwa };
+  const old = s.nazwa;
+  modal(id ? 'Edytuj strategię' : 'Nowa strategia', [
+    { k: 'nazwa', l: 'Nazwa', full: 1 }, { k: 'konto', l: 'Konto', t: 'select', o: S.konta.map(k => k.nazwa) },
+    { k: 'kolor', l: 'Kolor', t: 'color' }, { k: 'kapital', l: 'Kapitał przeznaczony (opcjonalnie, waluta konta)', t: 'number', full: 1 },
+    { k: 'opis', l: 'Opis / zasady strategii', t: 'textarea', full: 1 },
+  ], s, o => {
+    if (!o.nazwa) return 'Podaj nazwę';
+    if (S.strategie.some(x => x.nazwa === o.nazwa && x.id !== id)) return 'Strategia o tej nazwie już istnieje';
+    if (id) { Object.assign(s, o); if (old !== o.nazwa) { S.transakcje.forEach(t => { if (t.strategia === old) t.strategia = o.nazwa; }); S.dywidendy.forEach(d => { if (d.strategia === old) d.strategia = o.nazwa; }); changed('transakcje', 'dywidendy'); } }
+    else { const n = { id: uid(), ...o }; S.strategie.push(n); setTimeout(() => go('strategia', n.id), 0); }
+    changed('strategie');
+  }, id ? () => {
+    if (S.transakcje.some(t => t.strategia === old) || S.dywidendy.some(d => d.strategia === old)) { toast('Strategia ma transakcje – najpierw je usuń lub przenieś'); return; }
+    S.strategie = S.strategie.filter(x => x.id !== id); changed('strategie'); go('kokpit');
+  } : null);
+}
+function editKonto(id) {
+  const k = S.konta.find(x => x.id === id) || { typ: 'Opodatkowane', waluta: 'PLN', model: 'TAK' }; const old = k.nazwa;
+  modal(id ? 'Edytuj konto' : 'Nowe konto', [
+    { k: 'nazwa', l: 'Nazwa', full: 1 }, { k: 'typ', l: 'Typ podatkowy', t: 'select', o: ['Opodatkowane', 'IKE', 'IKZE', 'Poza PIT-38'] },
+    { k: 'waluta', l: 'Waluta', t: 'select', o: ['PLN', 'USD', 'EUR', 'GBP', 'CHF'] }, { k: 'gotowka', l: 'Gotówka u brokera (waluta konta)', t: 'number' },
+    { k: 'model', l: 'Wliczaj do modelu 2.1', t: 'select', o: ['TAK', 'NIE'] },
+  ], k, o => {
+    if (!o.nazwa) return 'Podaj nazwę';
+    if (id) { Object.assign(k, o); if (old !== o.nazwa) { S.strategie.forEach(s => { if (s.konto === old) s.konto = o.nazwa; }); S.wplaty.forEach(w => { if (w.konto === old) w.konto = o.nazwa; }); changed('strategie', 'wplaty'); } }
+    else S.konta.push({ id: uid(), ...o });
+    changed('konta');
+  }, id ? () => { if (S.strategie.some(s => s.konto === old)) { toast('Konto jest używane przez strategię'); return; } S.konta = S.konta.filter(x => x.id !== id); changed('konta'); } : null);
+}
+function editInstrument(id) {
+  const i = S.instrumenty.find(x => x.id === id) || { klasa: 'Akcje/ETF', waluta: 'USD', koszyk: 'POZA MODELEM' }; const old = i.ticker;
+  modal(id ? 'Edytuj instrument' : 'Nowy instrument', [
+    { k: 'ticker', l: 'Ticker' }, { k: 'nazwa', l: 'Nazwa' },
+    { k: 'klasa', l: 'Klasa aktywów', t: 'select', o: ['Akcje/ETF', 'Obligacje', 'Złoto', 'Srebro', 'Krypto', 'Nieruchomości', 'Inne'] },
+    { k: 'waluta', l: 'Waluta notowań', t: 'select', o: ['USD', 'PLN', 'EUR', 'GBP', 'CHF'] },
+    { k: 'koszyk', l: 'Koszyk Portfela 2.1', t: 'select', o: [...new Set(['POZA MODELEM', ...S.cele.map(c => c.koszyk), i.koszyk].filter(Boolean))] },
+    { k: 'symbol', l: 'Symbol Google Finance', ph: 'np. LON:CSPX, NASDAQ:AAPL, WSE:PKN' },
+    { k: 'cena', l: 'Cena ręczna (opcjonalnie)', t: 'number' }, { k: 'dataCeny', l: 'Data ceny', t: 'date' },
+  ], i, o => {
+    if (!o.ticker) return 'Podaj ticker';
+    if (S.instrumenty.some(x => x.ticker === o.ticker && x.id !== id)) return 'Taki ticker już istnieje';
+    if (id) { Object.assign(i, o); if (old !== o.ticker) { S.transakcje.forEach(t => { if (t.ticker === old) t.ticker = o.ticker; }); S.dywidendy.forEach(d => { if (d.ticker === old) d.ticker = o.ticker; }); changed('transakcje', 'dywidendy'); } }
+    else S.instrumenty.push({ id: uid(), cenaAuto: '', ...o });
+    changed('instrumenty');
+  }, id ? () => { if (S.transakcje.some(t => t.ticker === old)) { toast('Instrument ma transakcje'); return; } S.instrumenty = S.instrumenty.filter(x => x.id !== id); changed('instrumenty'); } : null);
+}
+function editCel(id) {
+  const c = S.cele.find(x => x.id === id) || {};
+  modal(id ? 'Edytuj koszyk' : 'Nowy koszyk', [{ k: 'koszyk', l: 'Koszyk' }, { k: 'grupa', l: 'Grupa (np. CORE)' }, { k: 'cel', l: 'Cel %', t: 'number' }], c, o => {
+    if (!o.koszyk) return 'Podaj nazwę koszyka';
+    if (id) Object.assign(c, o); else S.cele.push({ id: uid(), ...o }); changed('cele');
+  }, id ? () => { S.cele = S.cele.filter(x => x.id !== id); changed('cele'); } : null);
+}
+function setCena(id, v) { const i = S.instrumenty.find(x => x.id === id); i.cena = v === '' ? '' : num(v); i.dataCeny = v === '' ? '' : todayStr(); changed('instrumenty'); render(); }
+function addInflacja() {
+  const last = S.inflacja.map(r => r.miesiac).sort().pop();
+  let m; if (last) { const d = new Date(last + '-01T12:00:00'); d.setMonth(d.getMonth() + 1); m = d.toISOString().slice(0, 7); } else { const d = new Date(); d.setMonth(d.getMonth() - 1); m = d.toISOString().slice(0, 7); }
+  const v = prompt('Miesiąc (RRRR-MM):', m); if (!v || !/^\d{4}-\d{2}$/.test(v)) return;
+  if (!S.inflacja.some(r => r.miesiac === v)) S.inflacja.push({ miesiac: v, mm: '' }); changed('inflacja'); render();
+}
+function setInfl(m, v) { const r = S.inflacja.find(x => x.miesiac === m); r.mm = v === '' ? '' : num(v); changed('inflacja'); render(); }
+function delInfl(m) { S.inflacja = S.inflacja.filter(x => x.miesiac !== m); changed('inflacja'); render(); }
+async function pobierzKursy() { try { const d = await nbpCurrent(); toast('Kursy NBP z ' + d); render(); } catch (e) { toast(e.message); } }
+
+/* ---------- eksport / import ---------- */
+function download(name, text, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+function exportJSON() { download(`portfel-${todayStr()}.json`, JSON.stringify(S, null, 1), 'application/json'); }
+function exportCSV() {
+  const cols = TABLES.transakcje.cols; const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const lines = [cols.map(c => q(c[1])).join(';'), ...S.transakcje.map(t => cols.map(([k]) => typeof t[k] === 'number' ? String(t[k]).replace('.', ',') : q(t[k])).join(';'))];
+  download(`transakcje-${todayStr()}.csv`, '﻿' + lines.join('\r\n'), 'text/csv');
+}
+function importJSON(file) {
+  if (!file) return; const r = new FileReader();
+  r.onload = () => { try { const d = JSON.parse(r.result); if (!d.transakcje || !d.strategie) throw new Error(); if (!confirm('Zastąpić obecne dane danymi z pliku?')) return;
+    S = Object.assign(defaultState(), d); Object.keys(TABLES).forEach(t => DIRTY.add(t)); saveLocal(); scheduleSync(); render(); toast('Zaimportowano dane'); }
+    catch (e) { toast('To nie jest plik eksportu Portfela'); } };
+  r.readAsText(file);
+}
+function resetAll() { if (!confirm('Usunąć wszystkie dane z tej przeglądarki? (arkusz Google zostaje bez zmian)')) return; S = defaultState(); DIRTY = new Set(); saveLocal(); render(); }
+
+/* ---------- start ---------- */
+function boot() {
+  readHash(); render(); snapshot();
+  if (CFG.clientId && CFG.connected) setSync('pending', 'Kliknij tutaj, aby połączyć z Google Sheets');
+  else setSync('local', CFG.sheetId ? 'Kliknij, aby połączyć z Google Sheets' : 'Dane tylko w tej przeglądarce');
+  const kd = S.ustawienia.kursyData; if (!kd || kd < todayStr().slice(0, 10) && navigator.onLine) nbpCurrent().then(() => { render(); snapshot(); }).catch(() => {});
+}
+
+boot();
+</script>
+</body>
+</html>

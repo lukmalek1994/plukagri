@@ -1,0 +1,4 @@
+# eksporty z aplikacji – nigdy nie wrzucaj danych do repozytorium
+*.json
+*.csv
+*.xlsx

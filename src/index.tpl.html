@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mój portfel</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231565c0'/><path d='M7 22l6-7 5 4 7-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/></svg>">
+<style>/*CSS*/</style>
+</head>
+<body>
+<div class="app">
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav></aside>
+  <main>
+    <div class="top">
+      <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
+      <h1 id="title"></h1>
+      <span class="badge" id="sync" onclick="syncNow()"></span>
+      <div class="row" id="topActions"></div>
+    </div>
+    <div id="view"></div>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+/*JS*/
+boot();
+</script>
+</body>
+</html>
