@@ -13,7 +13,17 @@ let C = null, ROUTE = 'kokpit', PARAM = '', RANGE = 'all', FILT = {};
 function toast(msg) { let t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), 2600); }
 
 /* ---------- historia: dzienny zapis wartości ---------- */
+const LS_INTRA = 'portfel_intraday_v1';
+function snapshotIntraday() {
+  if (!C || C.wartosc <= 0) return;
+  const arr = lsGet(LS_INTRA, []), now = new Date(), last = arr[arr.length - 1];
+  const w = Math.round(C.wartosc * 100) / 100, k = Math.round(C.kapital * 100) / 100;
+  if (last && now - new Date(last.t) < 10 * 60000) { if (last.w === w && last.k === k) return; last.w = w; last.k = k; last.t = now.toISOString(); }
+  else arr.push({ t: now.toISOString(), w, k });
+  const cut = Date.now() - 3 * 864e5; lsSet(LS_INTRA, arr.filter(p => new Date(p.t).getTime() > cut));
+}
 function snapshot() {
+  snapshotIntraday();
   if (!C || C.wartosc <= 0) return;
   const d = todayStr(), last = S.historia[S.historia.length - 1];
   const rec = { data: d, wartosc: Math.round(C.wartosc * 100) / 100, kapital: Math.round(C.kapital * 100) / 100 };
@@ -76,13 +86,21 @@ function warningsBox() {
   return w.length ? `<div class="alert">⚠ ${w.join('<br>⚠ ')}</div>` : '';
 }
 function histSeries() {
+  if (RANGE === '1d') {
+    const from = Date.now() - 864e5;
+    let h = lsGet(LS_INTRA, []).filter(p => new Date(p.t).getTime() >= from).map(p => ({ d: localIso(p.t), w: p.w, k: p.k }));
+    if (h.length < 2) { const d = S.historia.filter(x => x.data && has(x.wartosc)).slice(-2).map(x => ({ d: String(x.data).slice(0, 10), w: num(x.wartosc), k: num(x.kapital) })); if (d.length === 2) h = d; }
+    return h;
+  }
   let h = S.historia.filter(x => x.data && has(x.wartosc)).map(x => ({ d: String(x.data).slice(0, 10), w: num(x.wartosc), k: num(x.kapital) }));
-  if (RANGE !== 'all' && h.length) { const days = { '1m': 31, '3m': 92, '1r': 366, 'ytd': 0 }[RANGE];
+  if (RANGE !== 'all' && h.length) { const days = { '1w': 7, '1m': 31, '3m': 92, '1r': 366, 'ytd': 0 }[RANGE];
     const from = RANGE === 'ytd' ? new Date().getFullYear() + '-01-01' : new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
     h = h.filter(x => x.d >= from); }
   return h;
 }
-function rangeSeg() { return `<div class="seg">${[['1m', '1M'], ['3m', '3M'], ['ytd', 'YTD'], ['1r', '1R'], ['all', 'Całość']].map(([k, l]) => `<button class="${RANGE === k ? 'on' : ''}" onclick="RANGE='${k}';render()">${l}</button>`).join('')}</div>`; }
+const localIso = t => { const d = new Date(t); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+function emptyMsg() { return { '1d': 'Wykres dzienny pojawi się po kilku aktualizacjach w ciągu dnia (otwórz aplikację ponownie za jakiś czas)', '1w': 'Wykres tygodniowy pojawi się po co najmniej dwóch dniach zapisów' }[RANGE] || 'Wykres pojawi się po kilku dniach zapisów historii'; }
+function rangeSeg() { return `<div class="seg">${[['1d', '1D'], ['1w', '1T'], ['1m', '1M'], ['3m', '3M'], ['ytd', 'YTD'], ['1r', '1R'], ['all', 'Całość']].map(([k, l]) => `<button class="${RANGE === k ? 'on' : ''}" onclick="RANGE='${k}';render()">${l}</button>`).join('')}</div>`; }
 
 /* ===================== WIDOKI ===================== */
 function vKokpit() {
@@ -101,15 +119,16 @@ function vKokpit() {
     ${kpi('Dywidendy ' + rok, zl(dywRokNetto), 'netto, ' + dywRok.length + ' wypłat')}
     ${kpi('Zmiana od ostatniego zapisu', zmiana === null ? '–' : pl(zmiana), prev ? 'vs ' + prev.data + ' (bez wpłat)' : 'historia zapisuje się codziennie')}
   </div>`;
+  const short = ['1d', '1w', '1m'].includes(RANGE);
   const line = lineChart([
     { name: 'Wartość portfela', points: h.map(x => [x.d, x.w]) },
-    { name: 'Wpłacony kapitał', points: h.map(x => [x.d, x.k]), color: '#94a3b8', dash: true },
-    { name: 'Kapitał po inflacji', points: h.map(x => [x.d, C.kapitalRealnyNa(x.d)]), color: '#F9A825', dash: true },
-  ], { area: true });
+    ...(short ? [] : [{ name: 'Wpłacony kapitał', points: h.map(x => [x.d, x.k]), color: '#94a3b8', dash: true },
+    { name: 'Kapitał po inflacji', points: h.map(x => [x.d, C.kapitalRealnyNa(x.d.slice(0, 10))]), color: '#F9A825', dash: true }]),
+  ], { area: true, empty: emptyMsg(), zero: !['1d', '1w', '1m'].includes(RANGE) });
   const ret = lineChart([
     { name: 'Stopa zwrotu', points: h.filter(x => x.k).map(x => [x.d, (x.w - x.k) / x.k]) },
-    { name: 'Realna (po inflacji)', points: h.filter(x => x.k).map(x => { const kr = C.kapitalRealnyNa(x.d); return [x.d, kr ? (x.w - kr) / kr : 0]; }), color: '#7E57C2' },
-  ], { pct: true, h: 200 });
+    { name: 'Realna (po inflacji)', points: h.filter(x => x.k).map(x => { const kr = C.kapitalRealnyNa(x.d.slice(0, 10)); return [x.d, kr ? (x.w - kr) / kr : 0]; }), color: '#7E57C2' },
+  ], { pct: true, h: 200, empty: emptyMsg() });
   const klasy = donut(Object.entries(C.klasy), { center: [nf0.format(C.wartosc / 1000) + ' tys.', 'PLN'], empty: 'Dodaj pierwszą transakcję' });
   const waluty = donut(Object.entries(C.waluty), { empty: 'Brak pozycji' });
   const strat = C.strategie.filter(s => s.wartosc || s.zrealizowany || s.dywidendyNetto);
@@ -617,6 +636,7 @@ function importJSON(file) {
 function resetAll() { if (!confirm('Usunąć wszystkie dane z tej przeglądarki? (arkusz Google zostaje bez zmian)')) return; S = defaultState(); DIRTY = new Set(); saveLocal(); render(); }
 
 /* ---------- start ---------- */
+setInterval(() => { if (document.visibilityState === 'visible') { C = calc(S); snapshotIntraday(); if (ROUTE === 'kokpit' && RANGE === '1d') render(); } }, 15 * 60000);
 function boot() {
   const MIG = { 'CURRENCY:XAUUSD': 'YAHOO:GC=F', 'CURRENCY:XAGUSD': 'YAHOO:SI=F', 'CURRENCY:BTCUSD': 'YAHOO:BTC-USD' };
   let mig = false; S.instrumenty.forEach(i => { if (MIG[i.symbol]) { i.symbol = MIG[i.symbol]; mig = true; } }); if (mig) changed('instrumenty');

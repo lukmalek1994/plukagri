@@ -16,18 +16,21 @@ function emptyChart(msg) { return `<div class="chart-empty">${esc(msg || 'Brak d
 function lineChart(series, opts = {}) {
   const pts = series.flatMap(s => s.points);
   if (pts.length < 2) return emptyChart(opts.empty || 'Wykres pojawi się po kilku dniach zapisów historii');
-  const W = 640, H = opts.h || 240, L = 58, R = 14, T = 12, B = 28;
+  const W = 640, H = opts.h || 240, L = 66, R = 14, T = 12, B = 28;
   const xs = pts.map(p => new Date(p[0]).getTime()), ys = pts.map(p => p[1]);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
-  let y0 = Math.min(...ys), y1 = Math.max(...ys); if (!opts.pct) y0 = Math.min(y0, 0);
+  let y0 = Math.min(...ys), y1 = Math.max(...ys); if (!opts.pct && opts.zero !== false) y0 = Math.min(y0, 0);
+  if (y1 - y0 < Math.abs(y1) * 0.002) { const pad = Math.max(Math.abs(y1) * 0.002, 1); y0 -= pad; y1 += pad; }
   const ticks = niceTicks(y0, y1); y0 = ticks[0]; y1 = ticks[ticks.length - 1];
   const X = t => L + (W - L - R) * (x1 === x0 ? 0.5 : (t - x0) / (x1 - x0));
   const Y = v => T + (H - T - B) * (1 - (v - y0) / (y1 - y0));
   const stepT = ticks.length > 1 ? Math.abs(ticks[1] - ticks[0]) : 1;
-  const fy = v => opts.pct ? (v * 100).toFixed(stepT < 0.01 ? 1 : 0).replace('.', ',') + '%' : fmtShort(v);
+  const fy = v => opts.pct ? (v * 100).toFixed(stepT < 0.01 ? 1 : 0).replace('.', ',') + '%' : (stepT < 1000 && Math.abs(v) >= 1000 ? Math.round(v).toLocaleString('pl-PL') : fmtShort(v));
   let g = ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="grid"/><text x="${L - 6}" y="${Y(v) + 4}" class="ax" text-anchor="end">${fy(v)}</text>`).join('');
+  const span = x1 - x0, p2 = n => String(n).padStart(2, '0');
+  const fx = d => span < 2 * 864e5 ? `${p2(d.getHours())}:${p2(d.getMinutes())}` : span < 120 * 864e5 ? `${p2(d.getDate())}.${p2(d.getMonth() + 1)}` : `${p2(d.getMonth() + 1)}.${String(d.getFullYear()).slice(2)}`;
   const nx = 5; for (let i = 0; i <= nx; i++) { const t = x0 + (x1 - x0) * i / nx; const d = new Date(t);
-    g += `<text x="${X(t)}" y="${H - 8}" class="ax" text-anchor="middle">${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(2)}</text>`; }
+    g += `<text x="${X(t)}" y="${H - 8}" class="ax" text-anchor="middle">${fx(d)}</text>`; }
   const paths = series.map((s, k) => { const c = s.color || PAL[k];
     const sorted = s.points.slice().sort((a, b) => a[0].localeCompare(b[0]));
     const d = sorted.map((p, i) => `${i ? 'L' : 'M'}${X(new Date(p[0]).getTime()).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
