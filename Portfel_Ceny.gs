@@ -87,18 +87,20 @@ function YAHOO_SZUKAJ(zapytanie) {
 }
 
 /**
- * Dane z DBnomics (zapasowo dla aplikacji, gdy przeglądarka nie może pobrać inflacji sama).
- * Zwraca kolumny: okres (RRRR-MM), wartość.
- * @param {string} kod Kod serii DBnomics, np. "BLS/cu/CUUR0000SA0" (opcjonalnie z "|cokolwiek").
+ * Dane z FRED (zapasowo dla aplikacji, gdy przeglądarka nie może pobrać inflacji sama).
+ * Zwraca kolumny: miesiąc (RRRR-MM), wartość indeksu.
+ * @param {string} id Identyfikator serii FRED, np. "CPIAUCNS" (opcjonalnie z "|cokolwiek").
  * @customfunction
  */
-function DANE_DBNOMICS(kod) {
-  kod = String(kod || '').split('|')[0].trim();
-  if (!kod) return '';
-  var res = UrlFetchApp.fetch('https://api.db.nomics.world/v22/series/' + kod + '?observations=1&format=json', { muteHttpExceptions: true });
-  if (res.getResponseCode() !== 200) throw new Error('DBnomics ' + res.getResponseCode());
-  var d = JSON.parse(res.getContentText()).series.docs[0];
+function DANE_FRED(id) {
+  id = String(id || '').split('|')[0].trim();
+  if (!id) return '';
+  var res = UrlFetchApp.fetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + encodeURIComponent(id), { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('FRED ' + res.getResponseCode());
   var out = [];
-  for (var i = 0; i < d.period.length; i++) if (typeof d.value[i] === 'number' && String(d.period[i]) >= '2014-01') out.push([String(d.period[i]).slice(0, 7), d.value[i]]);
+  res.getContentText().trim().split(/\r?\n/).slice(1).forEach(function (l) {
+    var p = l.split(','), v = parseFloat(p[1]);
+    if (isFinite(v) && p[0] >= '2014-01') out.push([p[0].slice(0, 7), v]);
+  });
   return out.length ? out : [['BRAK', '']];
 }

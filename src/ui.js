@@ -329,26 +329,27 @@ function vInflacja() {
   const lastPL = yPL[yPL.length - 1], lastUS = yUS[yUS.length - 1];
   const yoyMap = (arr) => Object.fromEntries(arr.map(([d, v]) => [d.slice(0, 7), v]));
   const mPL = yoyMap(yPL), mUS = yoyMap(yUS);
-  return ['Inflacja', `Pobierana automatycznie raz dziennie · Polska: Eurostat HICP · USA: BLS CPI-U${CFG.inflDay ? ' · aktualizacja ' + esc(CFG.inflDay) : ''}`, `
+  return ['Inflacja', `Pobierana automatycznie raz dziennie z FRED · Polska: Eurostat HICP · USA: BLS CPI-U${CFG.inflDay ? ' · aktualizacja ' + esc(CFG.inflDay) : ''}`, `
     <div class="kpis">${kpi('Inflacja r/r – Polska', lastPL ? pct(lastPL[1]) : '–', lastPL ? lastPL[0].slice(0, 7) : 'brak danych', 'main')}
       ${kpi('Inflacja r/r – USA', lastUS ? pct(lastUS[1]) : '–', lastUS ? lastUS[0].slice(0, 7) : 'brak danych')}
       ${kpi('Wzrost cen w PL od 2015', pct(C.inflNow - 1), C.inflLast ? 'do ' + C.inflLast : '')}
       ${kpi('Zysk realny portfela', pl(C.zyskRealny), pp(C.zyskRealnyPct) + ' ponad inflację PL')}</div>
     <div class="card"><h3>Inflacja r/r: Polska vs USA</h3>${lineChart([{ name: 'Polska', points: yPL, color: '#EF5350' }, { name: 'USA', points: yUS, color: '#1565C0' }], { pct: true, empty: 'Kliknij „Pobierz dane teraz”' })}</div>
-    <div class="card" style="margin-top:16px"><h3>Dane miesięczne<span class="sp"></span><small>możesz poprawić wartość ręcznie</small></h3>${table([
+    <div style="margin-top:16px"><button class="btn ghost" onclick="FILT.inflTab=!FILT.inflTab;render()">${FILT.inflTab ? '▲ Ukryj dane miesięczne' : '▼ Pokaż dane miesięczne'}</button></div>
+    ${!FILT.inflTab ? '' : `<div class="card" style="margin-top:12px"><h3>Dane miesięczne<span class="sp"></span><small>możesz poprawić wartość ręcznie</small></h3>${table([
       { h: 'Miesiąc', f: r => esc(r.miesiac) },
       { h: 'Polska m/m %', n: 1, f: r => `<input class="cell" type="number" step="0.01" value="${esc(r.mm)}" onchange="setInfl('${esc(r.miesiac)}',this.value,'mm')">` },
       { h: 'Polska r/r', n: 1, f: r => mPL[r.miesiac] !== undefined ? pct(mPL[r.miesiac]) : '–' },
       { h: 'USA m/m %', n: 1, f: r => `<input class="cell" type="number" step="0.01" value="${esc(r.mmUS ?? '')}" onchange="setInfl('${esc(r.miesiac)}',this.value,'mmUS')">` },
       { h: 'USA r/r', n: 1, f: r => mUS[r.miesiac] !== undefined ? pct(mUS[r.miesiac]) : '–' },
-    ], rows.slice(0, 120), { empty: 'Brak danych – kliknij „Pobierz dane teraz”' })}</div>
-    <div class="mut" style="font-size:12px;margin-top:10px">Zysk realny liczony jest inflacją polską (portfel wyceniany w PLN). Dla Polski używany jest zharmonizowany wskaźnik HICP z Eurostatu – zwykle różni się od CPI GUS o kilka dziesiątych punktu procentowego. Dane pobierane z DBnomics (agregator danych Eurostatu i BLS).</div>`,
+    ], rows.slice(0, 120), { empty: 'Brak danych – kliknij „Pobierz dane teraz”' })}</div>`}
+    <div class="mut" style="font-size:12px;margin-top:10px">Zysk realny liczony jest inflacją polską (portfel wyceniany w PLN). Dla Polski używany jest zharmonizowany wskaźnik HICP z Eurostatu – zwykle różni się od CPI GUS o kilka dziesiątych punktu procentowego. Dane pobierane z FRED (Federal Reserve Bank of St. Louis). Statystyki publikowane są z opóźnieniem ok. 2–6 tygodni, więc ostatni miesiąc zwykle jeszcze nie jest dostępny.</div>`,
     `<button class="btn" onclick="pobierzInflacjeTeraz()">↻ Pobierz dane teraz</button>`];
 }
 async function pobierzInflacjeTeraz() {
   toast('Pobieram dane o inflacji…');
   try { const r = await pobierzInflacje(false); if (!r) throw new Error('brak danych'); render();
-    toast(`Inflacja zaktualizowana${r.pl ? ' · PL do ' + r.pl[0] : ''}${r.us ? ' · USA do ' + r.us[0] : ''}`); }
+    toast(`Inflacja zaktualizowana${r.pl ? ' · PL do ' + r.pl[0] : ''}${r.us ? ' · USA do ' + r.us[0] : ''}${r.errs.length ? ' · problem: ' + r.errs.join('; ') : ''}`); }
   catch (e) { toast(e.message); }
 }
 function vInstrumenty() {
@@ -622,6 +623,6 @@ function boot() {
   readHash(); render(); snapshot();
   if (CFG.clientId && CFG.connected) setSync('pending', 'Kliknij tutaj, aby połączyć z Google Sheets');
   else setSync('local', CFG.sheetId ? 'Kliknij, aby połączyć z Google Sheets' : 'Dane tylko w tej przeglądarce');
-  if (CFG.inflDay !== todayStr()) pobierzInflacje(true).then(r => { if (r) { render(); snapshot(); } }).catch(() => {});
+  if (CFG.inflDay !== todayStr() || CFG.inflSrc !== 'fred') pobierzInflacje(true).then(r => { if (r) { render(); snapshot(); } }).catch(() => {});
   const kd = S.ustawienia.kursyData; if (!kd || kd < todayStr().slice(0, 10) && navigator.onLine) nbpCurrent().then(() => { render(); snapshot(); }).catch(() => {});
 }

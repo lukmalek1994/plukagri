@@ -224,50 +224,49 @@ async function searchSymbols(q) {
   throw new Error('Wyszukiwanie trwa zbyt długo – spróbuj ponownie');
 }
 
-/* ---------- inflacja PL i USA (DBnomics: Eurostat HICP dla Polski, BLS CPI-U dla USA) ---------- */
+/* ---------- inflacja PL i USA (FRED: HICP Polska z Eurostatu, CPI-U USA z BLS) ---------- */
 const INFL_SRC = {
-  PL: { code: 'Eurostat/prc_hicp_mmor/M.RCH_M.CP00.PL', kind: 'rate', label: 'Eurostat HICP (Polska)' },
-  US: { code: 'BLS/cu/CUUR0000SA0', kind: 'index', label: 'BLS CPI-U (USA)' },
+  PL: { fred: 'CP0000PLM086NEST', label: 'Eurostat HICP (Polska)' },
+  US: { fred: 'CPIAUCNS', label: 'BLS CPI-U (USA)' },
 };
-function inflRows(periods, values, kind) {
-  const pts = periods.map((p, i) => [String(p).slice(0, 7), values[i]]).filter(x => typeof x[1] === 'number' && /^\d{4}-\d{2}$/.test(x[0]));
-  if (kind === 'rate') return pts.map(([m, v]) => [m, Math.round(v * 100) / 100]);
+function mmFromIndex(pts) {   // pts: [['RRRR-MM', indeks]] -> [['RRRR-MM', zmiana m/m %]]
+  pts = pts.filter(x => typeof x[1] === 'number' && isFinite(x[1]) && /^\d{4}-\d{2}$/.test(x[0])).sort((a, b) => a[0].localeCompare(b[0]));
   const out = []; for (let i = 1; i < pts.length; i++) out.push([pts[i][0], Math.round((pts[i][1] / pts[i - 1][1] - 1) * 10000) / 100]);
   return out;
 }
-async function dbnomicsBrowser(code) {
-  const r = await fetch('https://api.db.nomics.world/v22/series/' + code + '?observations=1&format=json');
-  if (!r.ok) throw new Error('DBnomics ' + r.status);
-  const d = (await r.json()).series.docs[0]; return [d.period, d.value];
+async function fredBrowser(id) {
+  const r = await fetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + id);
+  if (!r.ok) throw new Error('FRED ' + r.status);
+  return (await r.text()).trim().split(/\r?\n/).slice(1).map(l => { const [d, v] = l.split(','); return [String(d).slice(0, 7), parseFloat(v)]; });
 }
-async function dbnomicsViaSheet(code) {   // zapasowo przez arkusz (gdy przeglądarka blokuje zapytanie)
-  if (!CFG.sheetId || !SYNC.token || Date.now() > SYNC.exp) throw new Error('brak połączenia z arkuszem');
+async function fredViaSheet(id) {   // zapasowo przez arkusz (gdy przeglądarka blokuje zapytanie)
+  if (!CFG.sheetId || !SYNC.token || Date.now() > SYNC.exp) throw new Error('połącz z Google Sheets');
   try { await gapi('POST', `${SHEETS}/${CFG.sheetId}:batchUpdate`, { requests: [{ addSheet: { properties: { title: 'Szukaj' } } }] }); } catch (e) {}
-  await gapi('PUT', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Szukaj'!H1")}?valueInputOption=USER_ENTERED`, { values: [[`=DANE_DBNOMICS("${code}|${Date.now()}")`]] });
+  await gapi('PUT', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Szukaj'!H1")}?valueInputOption=USER_ENTERED`, { values: [[`=DANE_FRED("${id}|${Date.now()}")`]] });
   for (let i = 0; i < 20; i++) {
     await new Promise(r => setTimeout(r, 1500));
-    const res = await gapi('GET', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Szukaj'!H1:I600")}?valueRenderOption=UNFORMATTED_VALUE`);
+    const res = await gapi('GET', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Szukaj'!H1:I700")}?valueRenderOption=UNFORMATTED_VALUE`);
     const rows = res.values || []; const f = rows[0] && rows[0][0];
     if (f === undefined || f === '' || /Loading|Wczytywanie/i.test(String(f))) continue;
-    if (String(f).startsWith('#')) throw new Error('brak funkcji DANE_DBNOMICS w skrypcie');
-    return [rows.map(r => r[0]), rows.map(r => r[1])];
+    if (String(f).startsWith('#')) throw new Error('brak funkcji DANE_FRED – wklej aktualny skrypt Portfel_Ceny.gs');
+    return rows.map(r => [String(r[0]).slice(0, 7), typeof r[1] === 'number' ? r[1] : parseFloat(r[1])]);
   }
   throw new Error('przekroczono czas');
 }
 async function pobierzInflacje(quiet) {
-  const got = {};
+  const got = {}, errs = [];
   for (const [k, src] of Object.entries(INFL_SRC)) {
-    let pv = null;
-    try { pv = await dbnomicsBrowser(src.code); } catch (e) { try { pv = await dbnomicsViaSheet(src.code); } catch (e2) { if (!quiet) throw new Error('Nie udało się pobrać inflacji ' + k + ': ' + e2.message); } }
-    if (pv) got[k] = inflRows(pv[0], pv[1], src.kind).filter(([m]) => m >= '2015-01');
+    let pts = null;
+    try { pts = await fredBrowser(src.fred); } catch (e) { try { pts = await fredViaSheet(src.fred); } catch (e2) { errs.push(k + ': ' + e2.message); } }
+    if (pts) got[k] = mmFromIndex(pts).filter(([m]) => m >= '2015-01');
   }
-  if (!got.PL && !got.US) return null;
+  if (!got.PL && !got.US) { if (!quiet) throw new Error('Nie udało się pobrać inflacji (' + errs.join('; ') + ')'); return null; }
   const map = {}; S.inflacja.forEach(r => map[r.miesiac] = r);
   (got.PL || []).forEach(([m, v]) => { (map[m] = map[m] || { miesiac: m, mm: '', mmUS: '' }).mm = v; });
   (got.US || []).forEach(([m, v]) => { (map[m] = map[m] || { miesiac: m, mm: '', mmUS: '' }).mmUS = v; });
   S.inflacja = Object.values(map).sort((a, b) => a.miesiac.localeCompare(b.miesiac));
-  CFG.inflDay = todayStr(); saveCfg(); changed('inflacja');
-  return { pl: (got.PL || []).slice(-1)[0], us: (got.US || []).slice(-1)[0] };
+  CFG.inflDay = todayStr(); CFG.inflSrc = 'fred'; saveCfg(); changed('inflacja');
+  return { pl: (got.PL || []).slice(-1)[0], us: (got.US || []).slice(-1)[0], errs };
 }
 
 /* ---------- NBP ---------- */

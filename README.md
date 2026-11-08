@@ -75,7 +75,7 @@ Ceny odświeżają się raz dziennie, przy pierwszym otwarciu aplikacji. Inne in
 - **Ceny:** arkusz liczy je sam funkcją GOOGLEFINANCE na podstawie symbolu z „Instrumenty i ceny” (np. `LON:CSPX`, `NASDAQ:AAPL`, `WSE:PKN`, `CURRENCY:XAUUSD`). Gdy symbol nie działa, wpisz cenę ręcznie.
 - **Kursy walut:** pobierają się z NBP przy otwarciu aplikacji. Kurs NBP z dnia poprzedzającego transakcję (do PIT-38) uzupełnia się sam w formularzu.
 - **Historia wartości:** aplikacja zapisuje wartość portfela raz dziennie, przy pierwszym otwarciu danego dnia.
-- **Inflacja:** pobiera się automatycznie raz dziennie (Polska: Eurostat HICP, USA: BLS CPI-U, przez DBnomics). Na jej podstawie kokpit pokazuje zysk realny.
+- **Inflacja:** pobiera się automatycznie raz dziennie (Polska: Eurostat HICP, USA: BLS CPI-U, z bazy FRED). Na jej podstawie kokpit pokazuje zysk realny.
 - **Konta:** każde konto ma w menu własną stronę (pozycje, strategie, gotówka, wpłaty). Nowe dodajesz przez „＋ Dodaj konto”, usuwasz w „Edytuj / usuń konto”.
 - **Kopia zapasowa:** dane są w arkuszu Google (z historią wersji: *Plik → Historia wersji*), w przeglądarce, a dodatkowo możesz je zapisać przyciskiem *Eksport* w Ustawieniach.
 
