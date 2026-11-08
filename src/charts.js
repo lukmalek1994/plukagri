@@ -23,7 +23,8 @@ function lineChart(series, opts = {}) {
   const ticks = niceTicks(y0, y1); y0 = ticks[0]; y1 = ticks[ticks.length - 1];
   const X = t => L + (W - L - R) * (x1 === x0 ? 0.5 : (t - x0) / (x1 - x0));
   const Y = v => T + (H - T - B) * (1 - (v - y0) / (y1 - y0));
-  const fy = v => opts.pct ? (v * 100).toFixed(0) + '%' : fmtShort(v);
+  const stepT = ticks.length > 1 ? Math.abs(ticks[1] - ticks[0]) : 1;
+  const fy = v => opts.pct ? (v * 100).toFixed(stepT < 0.01 ? 1 : 0).replace('.', ',') + '%' : fmtShort(v);
   let g = ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="grid"/><text x="${L - 6}" y="${Y(v) + 4}" class="ax" text-anchor="end">${fy(v)}</text>`).join('');
   const nx = 5; for (let i = 0; i <= nx; i++) { const t = x0 + (x1 - x0) * i / nx; const d = new Date(t);
     g += `<text x="${X(t)}" y="${H - 8}" class="ax" text-anchor="middle">${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(2)}</text>`; }

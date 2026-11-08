@@ -85,3 +85,20 @@ function YAHOO_SZUKAJ(zapytanie) {
     return [x.symbol, x.longname || x.shortname || '', x.exchDisp || x.exchange || '', x.quoteType || '', cur, cena];
   });
 }
+
+/**
+ * Dane z DBnomics (zapasowo dla aplikacji, gdy przeglądarka nie może pobrać inflacji sama).
+ * Zwraca kolumny: okres (RRRR-MM), wartość.
+ * @param {string} kod Kod serii DBnomics, np. "BLS/cu/CUUR0000SA0" (opcjonalnie z "|cokolwiek").
+ * @customfunction
+ */
+function DANE_DBNOMICS(kod) {
+  kod = String(kod || '').split('|')[0].trim();
+  if (!kod) return '';
+  var res = UrlFetchApp.fetch('https://api.db.nomics.world/v22/series/' + kod + '?observations=1&format=json', { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('DBnomics ' + res.getResponseCode());
+  var d = JSON.parse(res.getContentText()).series.docs[0];
+  var out = [];
+  for (var i = 0; i < d.period.length; i++) if (typeof d.value[i] === 'number' && String(d.period[i]) >= '2014-01') out.push([String(d.period[i]).slice(0, 7), d.value[i]]);
+  return out.length ? out : [['BRAK', '']];
+}

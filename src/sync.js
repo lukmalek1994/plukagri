@@ -10,7 +10,7 @@ const TABLES = {
   strategie: { sheet: 'Strategie', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['konto', 'Konto'], ['kapital', 'Kapitał przeznaczony'], ['opis', 'Opis'], ['kolor', 'Kolor']] },
   konta: { sheet: 'Konta', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['typ', 'Typ podatkowy'], ['waluta', 'Waluta'], ['gotowka', 'Gotówka'], ['model', 'W modelu 2.1']] },
   instrumenty: { sheet: 'Instrumenty', cols: [['id', 'ID'], ['ticker', 'Ticker'], ['nazwa', 'Nazwa'], ['klasa', 'Klasa'], ['koszyk', 'Koszyk 2.1'], ['waluta', 'Waluta'], ['cena', 'Cena ręczna'], ['dataCeny', 'Data ceny'], ['symbol', 'Symbol Google Finance'], ['cenaAuto', 'Cena auto (Google)']] },
-  inflacja: { sheet: 'Inflacja', cols: [['miesiac', 'Miesiąc'], ['mm', 'Inflacja m/m %']] },
+  inflacja: { sheet: 'Inflacja', cols: [['miesiac', 'Miesiąc'], ['mm', 'Inflacja PL m/m %'], ['mmUS', 'Inflacja USA m/m %']] },
   historia: { sheet: 'Historia', cols: [['data', 'Data'], ['wartosc', 'Wartość PLN'], ['kapital', 'Wpłacony kapitał PLN']] },
   cele: { sheet: 'Cele 2.1', cols: [['id', 'ID'], ['koszyk', 'Koszyk'], ['grupa', 'Grupa'], ['cel', 'Cel %']] },
   ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
@@ -222,6 +222,52 @@ async function searchSymbols(q) {
     return rows.filter(r => r[0]).map(r => ({ symbol: r[0], nazwa: r[1] || '', gielda: r[2] || '', typ: r[3] || '', waluta: r[4] || '', cena: typeof r[5] === 'number' ? r[5] : '' }));
   }
   throw new Error('Wyszukiwanie trwa zbyt długo – spróbuj ponownie');
+}
+
+/* ---------- inflacja PL i USA (DBnomics: Eurostat HICP dla Polski, BLS CPI-U dla USA) ---------- */
+const INFL_SRC = {
+  PL: { code: 'Eurostat/prc_hicp_mmor/M.RCH_M.CP00.PL', kind: 'rate', label: 'Eurostat HICP (Polska)' },
+  US: { code: 'BLS/cu/CUUR0000SA0', kind: 'index', label: 'BLS CPI-U (USA)' },
+};
+function inflRows(periods, values, kind) {
+  const pts = periods.map((p, i) => [String(p).slice(0, 7), values[i]]).filter(x => typeof x[1] === 'number' && /^\d{4}-\d{2}$/.test(x[0]));
+  if (kind === 'rate') return pts.map(([m, v]) => [m, Math.round(v * 100) / 100]);
+  const out = []; for (let i = 1; i < pts.length; i++) out.push([pts[i][0], Math.round((pts[i][1] / pts[i - 1][1] - 1) * 10000) / 100]);
+  return out;
+}
+async function dbnomicsBrowser(code) {
+  const r = await fetch('https://api.db.nomics.world/v22/series/' + code + '?observations=1&format=json');
+  if (!r.ok) throw new Error('DBnomics ' + r.status);
+  const d = (await r.json()).series.docs[0]; return [d.period, d.value];
+}
+async function dbnomicsViaSheet(code) {   // zapasowo przez arkusz (gdy przeglądarka blokuje zapytanie)
+  if (!CFG.sheetId || !SYNC.token || Date.now() > SYNC.exp) throw new Error('brak połączenia z arkuszem');
+  try { await gapi('POST', `${SHEETS}/${CFG.sheetId}:batchUpdate`, { requests: [{ addSheet: { properties: { title: 'Szukaj' } } }] }); } catch (e) {}
+  await gapi('PUT', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Szukaj'!H1")}?valueInputOption=USER_ENTERED`, { values: [[`=DANE_DBNOMICS("${code}|${Date.now()}")`]] });
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 1500));
+    const res = await gapi('GET', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Szukaj'!H1:I600")}?valueRenderOption=UNFORMATTED_VALUE`);
+    const rows = res.values || []; const f = rows[0] && rows[0][0];
+    if (f === undefined || f === '' || /Loading|Wczytywanie/i.test(String(f))) continue;
+    if (String(f).startsWith('#')) throw new Error('brak funkcji DANE_DBNOMICS w skrypcie');
+    return [rows.map(r => r[0]), rows.map(r => r[1])];
+  }
+  throw new Error('przekroczono czas');
+}
+async function pobierzInflacje(quiet) {
+  const got = {};
+  for (const [k, src] of Object.entries(INFL_SRC)) {
+    let pv = null;
+    try { pv = await dbnomicsBrowser(src.code); } catch (e) { try { pv = await dbnomicsViaSheet(src.code); } catch (e2) { if (!quiet) throw new Error('Nie udało się pobrać inflacji ' + k + ': ' + e2.message); } }
+    if (pv) got[k] = inflRows(pv[0], pv[1], src.kind).filter(([m]) => m >= '2015-01');
+  }
+  if (!got.PL && !got.US) return null;
+  const map = {}; S.inflacja.forEach(r => map[r.miesiac] = r);
+  (got.PL || []).forEach(([m, v]) => { (map[m] = map[m] || { miesiac: m, mm: '', mmUS: '' }).mm = v; });
+  (got.US || []).forEach(([m, v]) => { (map[m] = map[m] || { miesiac: m, mm: '', mmUS: '' }).mmUS = v; });
+  S.inflacja = Object.values(map).sort((a, b) => a.miesiac.localeCompare(b.miesiac));
+  CFG.inflDay = todayStr(); saveCfg(); changed('inflacja');
+  return { pl: (got.PL || []).slice(-1)[0], us: (got.US || []).slice(-1)[0] };
 }
 
 /* ---------- NBP ---------- */
