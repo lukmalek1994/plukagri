@@ -298,7 +298,7 @@ function vInflacja() {
 function vInstrumenty() {
   const rows = S.instrumenty;
   return ['Instrumenty i ceny', 'Cena ręczna ma pierwszeństwo przed ceną automatyczną z Google Finance', `
-    <div class="alert info">💡 Po połączeniu z Google Sheets ceny liczą się same w arkuszu. Symbol: <b>LON:CSPX</b>, NASDAQ:AAPL, WSE:PKN (Google Finance) albo <b>YAHOO:GC=F</b> złoto, YAHOO:SI=F srebro, YAHOO:BTC-USD, YAHOO:CSPX.L (Yahoo – wymaga skryptu Portfel_Ceny.gs w arkuszu). Wpisz cenę ręcznie, gdy symbol nie działa – zostaw puste, aby używać automatycznej.</div>
+    <div class="alert info">💡 Po połączeniu z Google Sheets ceny liczą się same w arkuszu. Symbol: <b>LON:CSPX</b>, NASDAQ:AAPL, WSE:PKN (Google Finance) albo <b>YAHOO:GC=F</b> złoto, <b>YAHOO:SI=F</b> srebro, YAHOO:BTC-USD (Yahoo – wymaga skryptu Portfel_Ceny.gs w arkuszu). Możesz też wpisać dowolną formułę zaczynającą się od „=”. Wpisz cenę ręcznie, gdy symbol nie działa – zostaw puste, aby używać automatycznej.</div>
     <div class="card">${table([
       { h: 'Ticker', f: i => `<b>${esc(i.ticker)}</b>` }, { h: 'Nazwa', f: i => esc(i.nazwa) }, { h: 'Klasa', f: i => esc(i.klasa) }, { h: 'Koszyk 2.1', f: i => esc(i.koszyk) },
       { h: 'Waluta', f: i => esc(i.waluta) }, { h: 'Symbol', f: i => `<span class="mut">${esc(i.symbol)}</span>` },

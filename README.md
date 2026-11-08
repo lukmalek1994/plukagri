@@ -61,9 +61,9 @@ Google Finance słabo radzi sobie z kruszcami, dlatego dla złota, srebra i BTC 
 
 1. Otwórz arkusz z danymi i wybierz **Rozszerzenia → Apps Script**.
 2. Usuń przykładowy kod, wklej zawartość pliku `Portfel_Ceny.gs` z tego repozytorium i kliknij **Zapisz**.
-3. W aplikacji, w zakładce **Instrumenty i ceny**, wpisz symbol z przedrostkiem `YAHOO:`, np. `YAHOO:GC=F` (złoto), `YAHOO:SI=F` (srebro), `YAHOO:BTC-USD`. Dla złota, srebra i BTC te symbole są już ustawione domyślnie.
+3. Dla złota, srebra i BTC aplikacja domyślnie ustawia symbole `YAHOO:GC=F`, `YAHOO:SI=F` i `YAHOO:BTC-USD` i wpisuje do arkusza formuły `=GOLD_YF_USD()`, `=SILVER_YF_USD()` oraz `=BTC_YF_USD()`.
 
-Ceny odświeżają się raz dziennie, przy pierwszym otwarciu aplikacji. Inne instrumenty mogą dalej korzystać z Google Finance (np. `LON:CSPX`, `WSE:PKN`) albo również z Yahoo (`YAHOO:CSPX.L`, `YAHOO:PKN.WA`).
+Ceny odświeżają się raz dziennie, przy pierwszym otwarciu aplikacji. Inne instrumenty korzystają z Google Finance (np. `LON:CSPX`, `WSE:PKN`). W polu symbolu możesz też wpisać dowolną formułę zaczynającą się od `=`.
 
 ## Jak to działa na co dzień
 
