@@ -7,18 +7,19 @@
  * Użycie w komórce:  =YAHOO("GC=F")   złoto (USD za uncję)
  *                    =YAHOO("SI=F")   srebro (USD za uncję)
  *                    =YAHOO("BTC-USD"), =YAHOO("CSPX.L"), =YAHOO("PKN.WA") …
- * Drugi argument (data) jest ignorowany – aplikacja dodaje go, żeby cena odświeżała się codziennie.
+ * Aplikacja dopisuje do symbolu datę po znaku „|” (np. "GC=F|2026-11-08"), żeby cena odświeżała się codziennie –
+ * wszystko po „|” jest ignorowane. Jeden argument = brak problemu z przecinkiem/średnikiem w polskim arkuszu.
  */
 
 /**
  * Bieżąca cena instrumentu z Yahoo Finance.
- * @param {string} symbol Symbol Yahoo, np. "GC=F" (złoto), "SI=F" (srebro), "BTC-USD".
+ * @param {string} symbol Symbol Yahoo, np. "GC=F" (złoto), "SI=F" (srebro), "BTC-USD" (opcjonalnie z "|data").
  * @param {string} odswiez Opcjonalnie dowolna wartość (np. data) wymuszająca odświeżenie.
  * @return {number} Cena w walucie notowania.
  * @customfunction
  */
 function YAHOO(symbol, odswiez) {
-  symbol = String(symbol || '').trim();
+  symbol = String(symbol || '').split('|')[0].trim();
   if (!symbol) return '';
   var cache = CacheService.getScriptCache();
   var key = 'yf_' + symbol;

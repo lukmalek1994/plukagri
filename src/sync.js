@@ -56,13 +56,13 @@ function fromRows(name, rows) {
 }
 
 /* ---------- formuła ceny w arkuszu ----------
-   YAHOO:GC=F  -> =YAHOO("GC=F","<data>")  (funkcja ze skryptu Portfel_Ceny.gs; data wymusza odświeżenie raz dziennie)
+   YAHOO:GC=F  -> =YAHOO("GC=F|<data>")  (funkcja ze skryptu Portfel_Ceny.gs; data po „|” wymusza odświeżenie raz dziennie)
    =COKOLWIEK  -> wpisane wprost jako formuła
    inne        -> =GOOGLEFINANCE("SYMBOL") */
 function priceFormula(sym, day) {
   sym = String(sym || '').trim(); if (!sym) return '';
   if (sym.startsWith('=')) return sym;
-  if (/^YAHOO:/i.test(sym)) return `=YAHOO("${sym.slice(6).replace(/"/g, '')}","${day}")`;
+  if (/^YAHOO:/i.test(sym)) return `=YAHOO("${sym.slice(6).replace(/"/g, '')}|${day}")`;   // jeden argument – bez separatora
   return `=GOOGLEFINANCE("${sym.replace(/"/g, '')}")`;
 }
 
