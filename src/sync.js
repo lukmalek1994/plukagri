@@ -204,6 +204,26 @@ async function refreshAutoPrices() {
   saveLocal(); if (typeof render === 'function') render();
 }
 
+/* ---------- wyszukiwanie symboli (Yahoo przez arkusz) ---------- */
+async function searchSymbols(q) {
+  if (!CFG.sheetId || !SYNC.token || Date.now() > SYNC.exp) throw new Error('Połącz z Google Sheets, aby wyszukiwać');
+  try { await gapi('POST', `${SHEETS}/${CFG.sheetId}:batchUpdate`, { requests: [{ addSheet: { properties: { title: 'Szukaj' } } }] }); } catch (e) { /* już istnieje */ }
+  const safe = q.replace(/["|]/g, '').trim();
+  await gapi('PUT', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Szukaj'!A1")}?valueInputOption=USER_ENTERED`,
+    { values: [[`=YAHOO_SZUKAJ("${safe}|${Date.now()}")`]] });
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, i < 3 ? 1500 : 1000));
+    const res = await gapi('GET', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Szukaj'!A1:F10")}?valueRenderOption=UNFORMATTED_VALUE`);
+    const rows = res.values || []; const first = rows[0] && rows[0][0];
+    if (first === undefined || first === '' || /Loading|Wczytywanie|Ładowanie/i.test(String(first))) continue;
+    if (String(first).startsWith('#')) throw new Error('Brak funkcji YAHOO_SZUKAJ – wklej aktualny skrypt Portfel_Ceny.gs do arkusza');
+    if (first === 'BRAK') return [];
+    if (first === 'BŁĄD') throw new Error(rows[0][1] || 'Błąd Yahoo');
+    return rows.filter(r => r[0]).map(r => ({ symbol: r[0], nazwa: r[1] || '', gielda: r[2] || '', typ: r[3] || '', waluta: r[4] || '', cena: typeof r[5] === 'number' ? r[5] : '' }));
+  }
+  throw new Error('Wyszukiwanie trwa zbyt długo – spróbuj ponownie');
+}
+
 /* ---------- NBP ---------- */
 const NBP_CACHE = lsGet(LS_NBP, {});
 async function nbpRate(cur, dateStr) {

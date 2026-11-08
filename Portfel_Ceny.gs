@@ -55,3 +55,33 @@ function GOLD_YF_USD() { return YAHOO('GC=F'); }
 
 /** Zgodność ze starym arkuszem: srebro w USD za uncję. @customfunction */
 function SILVER_YF_USD() { return YAHOO('SI=F'); }
+
+/**
+ * Wyszukiwarka symboli Yahoo dla aplikacji (zakładka „Szukaj” w arkuszu).
+ * Zwraca do 8 wierszy: symbol, nazwa, giełda, typ, waluta, cena.
+ * @param {string} zapytanie Nazwa lub ticker (opcjonalnie z "|cokolwiek" – ignorowane).
+ * @customfunction
+ */
+function YAHOO_SZUKAJ(zapytanie) {
+  var q = String(zapytanie || '').split('|')[0].trim();
+  if (!q) return '';
+  var url = 'https://query2.finance.yahoo.com/v1/finance/search?q=' + encodeURIComponent(q) + '&quotesCount=8&newsCount=0';
+  var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (res.getResponseCode() !== 200) res = UrlFetchApp.fetch(url.replace('query2', 'query1'), { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (res.getResponseCode() !== 200) return [['BŁĄD', 'Yahoo nie odpowiada (' + res.getResponseCode() + ')', '', '', '', '']];
+  var quotes = (JSON.parse(res.getContentText()).quotes || []).filter(function (x) { return x.symbol; }).slice(0, 8);
+  if (!quotes.length) return [['BRAK', '', '', '', '', '']];
+  return quotes.map(function (x) {
+    var cur = '', cena = '';
+    try {
+      var r = UrlFetchApp.fetch('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(x.symbol) + '?range=1d&interval=1d',
+        { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (r.getResponseCode() === 200) {
+        var m = JSON.parse(r.getContentText()).chart.result[0].meta;
+        cur = m.currency || ''; cena = Number(m.regularMarketPrice) || '';
+        if (cur === 'GBp' || cur === 'GBX') { cur = 'GBP'; if (cena) cena = cena / 100; }
+      }
+    } catch (e) {}
+    return [x.symbol, x.longname || x.shortname || '', x.exchDisp || x.exchange || '', x.quoteType || '', cur, cena];
+  });
+}

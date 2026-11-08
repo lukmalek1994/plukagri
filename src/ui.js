@@ -349,7 +349,7 @@ function vUstawienia() {
 }
 
 /* ===================== FORMULARZE ===================== */
-function modal(title, fields, vals, onSave, onDelete) {
+function modal(title, fields, vals, onSave, onDelete, pre = '') {
   const f = fields.map(x => {
     const v = vals[x.k] ?? '';
     let inp;
@@ -359,7 +359,7 @@ function modal(title, fields, vals, onSave, onDelete) {
     return `<label class="${x.full ? 'full' : ''}">${x.l}${inp}${x.help ? `<span class="help" id="help_${x.k}">${x.help}</span>` : ''}</label>`;
   }).join('');
   const bg = document.createElement('div'); bg.className = 'modal-bg';
-  bg.innerHTML = `<div class="modal"><h2>${esc(title)}</h2><form class="form">${f}</form><div class="actions">${onDelete ? '<button class="btn danger" data-a="del">Usuń</button>' : ''}<span class="sp"></span><button class="btn ghost" data-a="cancel">Anuluj</button><button class="btn" data-a="save">Zapisz</button></div></div>`;
+  bg.innerHTML = `<div class="modal"><h2>${esc(title)}</h2>${pre}<form class="form">${f}</form><div class="actions">${onDelete ? '<button class="btn danger" data-a="del">Usuń</button>' : ''}<span class="sp"></span><button class="btn ghost" data-a="cancel">Anuluj</button><button class="btn" data-a="save">Zapisz</button></div></div>`;
   document.body.appendChild(bg);
   const form = bg.querySelector('form');
   const read = () => { const o = {}; fields.forEach(x => { const el = form.elements[x.k]; let v = el.value.trim(); if (x.t === 'number' && v !== '') v = num(v); o[x.k] = v; }); return o; };
@@ -460,12 +460,14 @@ function editKonto(id) {
 }
 function editInstrument(id) {
   const i = S.instrumenty.find(x => x.id === id) || { klasa: 'Akcje/ETF', waluta: 'USD', koszyk: 'POZA MODELEM' }; const old = i.ticker;
-  modal(id ? 'Edytuj instrument' : 'Nowy instrument', [
+  const pre = `<div class="search"><div class="row"><input id="sq" placeholder="Szukaj: nazwa lub ticker, np. cspx, orlen, złoto, bitcoin" style="flex:1">
+    <button class="btn" id="sbtn" type="button">Szukaj</button></div><div id="sres" class="sres"></div></div>`;
+  const form = modal(id ? 'Edytuj instrument' : 'Nowy instrument', [
     { k: 'ticker', l: 'Ticker' }, { k: 'nazwa', l: 'Nazwa' },
-    { k: 'klasa', l: 'Klasa aktywów', t: 'select', o: ['Akcje/ETF', 'Obligacje', 'Złoto', 'Srebro', 'Krypto', 'Nieruchomości', 'Inne'] },
+    { k: 'klasa', l: 'Klasa aktywów', t: 'select', o: KLASY },
     { k: 'waluta', l: 'Waluta notowań', t: 'select', o: ['USD', 'PLN', 'EUR', 'GBP', 'CHF'] },
     { k: 'koszyk', l: 'Koszyk Portfela 2.1', t: 'select', o: [...new Set(['POZA MODELEM', ...S.cele.map(c => c.koszyk), i.koszyk].filter(Boolean))] },
-    { k: 'symbol', l: 'Symbol ceny', ph: 'LON:CSPX · WSE:PKN · YAHOO:GC=F · YAHOO:SI=F' },
+    { k: 'symbol', l: 'Symbol ceny', ph: 'uzupełni się po wyszukaniu – albo wpisz ręcznie' },
     { k: 'cena', l: 'Cena ręczna (opcjonalnie)', t: 'number' }, { k: 'dataCeny', l: 'Data ceny', t: 'date' },
   ], i, o => {
     if (!o.ticker) return 'Podaj ticker';
@@ -473,7 +475,48 @@ function editInstrument(id) {
     if (id) { Object.assign(i, o); if (old !== o.ticker) { S.transakcje.forEach(t => { if (t.ticker === old) t.ticker = o.ticker; }); S.dywidendy.forEach(d => { if (d.ticker === old) d.ticker = o.ticker; }); changed('transakcje', 'dywidendy'); } }
     else S.instrumenty.push({ id: uid(), cenaAuto: '', ...o });
     changed('instrumenty');
-  }, id ? () => { if (S.transakcje.some(t => t.ticker === old)) { toast('Instrument ma transakcje'); return; } S.instrumenty = S.instrumenty.filter(x => x.id !== id); changed('instrumenty'); } : null);
+  }, id ? () => { if (S.transakcje.some(t => t.ticker === old)) { toast('Instrument ma transakcje'); return; } S.instrumenty = S.instrumenty.filter(x => x.id !== id); changed('instrumenty'); } : null, pre);
+  wireSearch(form, !!id);
+}
+const KLASY = ['Akcje/ETF', 'Obligacje', 'Złoto', 'Srebro', 'Krypto', 'Nieruchomości', 'Inne'];
+function guessKlasa(r) {
+  const s = r.symbol.toUpperCase(), n = (r.nazwa || '').toLowerCase(), t = r.typ.toUpperCase();
+  if (s.startsWith('GC=') || s.startsWith('XAU') || /gold|złot/.test(n)) return 'Złoto';
+  if (s.startsWith('SI=') || s.startsWith('XAG') || /silver|srebr/.test(n)) return 'Srebro';
+  if (t === 'CRYPTOCURRENCY') return 'Krypto';
+  if (/treasury|bond|obligac/.test(n)) return 'Obligacje';
+  if (/reit|real estate/.test(n)) return 'Nieruchomości';
+  if (t === 'ETF' || t === 'EQUITY' || t === 'MUTUALFUND' || t === 'INDEX') return 'Akcje/ETF';
+  return 'Inne';
+}
+function wireSearch(form, editing) {
+  const box = form.closest('.modal'), q = box.querySelector('#sq'), out = box.querySelector('#sres'), btn = box.querySelector('#sbtn');
+  const E = form.elements;
+  const run = async () => {
+    const v = q.value.trim() || E.nazwa.value.trim() || E.ticker.value.trim(); if (!v) return;
+    q.value = v; btn.disabled = true; out.innerHTML = '<div class="mut">Szukam w Yahoo Finance… (kilka sekund)</div>';
+    try {
+      const res = await searchSymbols(v);
+      if (!res.length) { out.innerHTML = '<div class="mut">Nic nie znaleziono – wpisz dane i symbol ręcznie poniżej.</div>'; E.ticker.focus(); return; }
+      out.innerHTML = res.map((r, k) => `<div class="sr" data-k="${k}"><b>${esc(r.symbol)}</b><span>${esc(r.nazwa)}</span><i>${esc(r.gielda)} · ${esc(r.typ)}${r.waluta ? ' · ' + esc(r.waluta) : ''}${r.cena !== '' ? ' · ' + nf2.format(r.cena) : ''}</i></div>`).join('');
+      out.querySelectorAll('.sr').forEach(el => el.onclick = () => {
+        const r = res[+el.dataset.k];
+        out.querySelectorAll('.sr').forEach(x => x.classList.remove('on')); el.classList.add('on');
+        const base = r.symbol.replace(/\.[A-Z]{1,3}$/, '').replace(/=F$/, '').replace(/-USD$/, '');
+        const map = { GC: 'ZŁOTO', SI: 'SREBRO' };
+        if (!editing || !E.ticker.value) E.ticker.value = map[base] || base;
+        E.nazwa.value = ({ GC: 'Złoto (1 oz)', SI: 'Srebro (1 oz)' })[base] || r.nazwa || E.nazwa.value;
+        E.klasa.value = guessKlasa(r);
+        if (['USD', 'PLN', 'EUR', 'GBP', 'CHF'].includes(r.waluta)) E.waluta.value = r.waluta;
+        E.symbol.value = 'YAHOO:' + r.symbol;
+        const kosz = [...E.koszyk.options].map(o => o.value).find(v => v === E.ticker.value); if (kosz) E.koszyk.value = kosz;
+        toast('Uzupełniono dane – sprawdź i kliknij Zapisz');
+      });
+    } catch (e) { out.innerHTML = `<div class="warn">${esc(e.message)}. Możesz wpisać dane ręcznie.</div>`; }
+    finally { btn.disabled = false; }
+  };
+  btn.onclick = run; q.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); run(); } });
+  if (!SYNC.token) out.innerHTML = '<div class="mut">Wyszukiwanie działa po połączeniu z Google Sheets (plakietka u góry). Bez tego wpisz dane ręcznie.</div>';
 }
 function editCel(id) {
   const c = S.cele.find(x => x.id === id) || {};

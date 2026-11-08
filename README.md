@@ -65,6 +65,8 @@ Google Finance słabo radzi sobie z kruszcami, dlatego dla złota, srebra i BTC 
 
 Ceny odświeżają się raz dziennie, przy pierwszym otwarciu aplikacji. Inne instrumenty mogą dalej korzystać z Google Finance (np. `LON:CSPX`, `WSE:PKN`) albo również z Yahoo (`YAHOO:CSPX.L`, `YAHOO:PKN.WA`).
 
+**Wyszukiwanie symboli:** w „Instrumenty i ceny → ＋ Instrument” wpisz nazwę lub ticker (np. `cspx`, `orlen`, `złoto`) i kliknij **Szukaj**. Aplikacja zapyta Yahoo Finance przez Twój arkusz (funkcja `YAHOO_SZUKAJ` ze skryptu, wyniki w zakładce „Szukaj”). Kliknięcie wyniku uzupełnia ticker, nazwę, klasę, walutę i symbol. Gdy nic się nie znajdzie, wpisz dane ręcznie.
+
 ## Jak to działa na co dzień
 
 - **Zapis:** każda zmiana w aplikacji trafia do arkusza w ciągu 1–2 sekund. Stan widać w plakietce u góry („Zapisano w Google Sheets ✓”).
