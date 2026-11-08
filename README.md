@@ -77,6 +77,7 @@ Ceny odświeżają się raz dziennie, przy pierwszym otwarciu aplikacji. Inne in
 - **Historia wartości:** aplikacja zapisuje wartość portfela raz dziennie, przy pierwszym otwarciu danego dnia.
 - **Inflacja:** pobiera się automatycznie raz dziennie (Polska: Eurostat HICP, USA: BLS CPI-U, z bazy FRED). Na jej podstawie kokpit pokazuje zysk realny.
 - **Konta:** każde konto ma w menu własną stronę (pozycje, strategie, gotówka, wpłaty). Nowe dodajesz przez „＋ Dodaj konto”, usuwasz w „Edytuj / usuń konto”.
+- **Zakładka „Podsumowanie” w arkuszu:** aplikacja buduje ją sama (kafelki, strategie, konta, instrumenty z alokacją 2.1, wykresy). Liczy się formułami z danych arkusza, więc działa także bez aplikacji. Przebudowuje się po dodaniu nowej strategii, konta lub instrumentu; ręcznie: Ustawienia → „Odśwież Podsumowanie w arkuszu”.
 - **Kopia zapasowa:** dane są w arkuszu Google (z historią wersji: *Plik → Historia wersji*), w przeglądarce, a dodatkowo możesz je zapisać przyciskiem *Eksport* w Ustawieniach.
 
 ## Bezpieczeństwo

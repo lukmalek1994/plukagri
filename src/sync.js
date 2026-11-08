@@ -34,7 +34,8 @@ function toRows(name) {
     const u = S.ustawienia; list = [{ klucz: 'stawka', wartosc: u.stawka }, { klucz: 'kursyData', wartosc: u.kursyData || '' },
       ...Object.entries(u.kursy || {}).map(([k, v]) => ({ klucz: 'kurs_' + k, wartosc: v }))];
   } else list = S[name] || [];
-  return [T.cols.map(c => c[1]), ...list.map(o => T.cols.map(([k]) => (k === 'cenaAuto' ? '' : (o[k] ?? ''))))];
+  const cell = (k, v) => { if (k === 'cenaAuto') return ''; v = v ?? ''; if (typeof v === 'string' && !['id', 'miesiac', 'data', 'dataCeny', 'klucz', 'ticker', 'nazwa'].includes(k) && /^-?\d+(\.\d+)?$/.test(v.trim())) return Number(v); return v; };
+  return [T.cols.map(c => c[1]), ...list.map(o => T.cols.map(([k]) => cell(k, o[k])))];
 }
 function fromRows(name, rows) {
   const T = TABLES[name]; if (!rows || !rows.length) return null;
@@ -177,6 +178,7 @@ async function pushDirty() {
       if (vals.length) await gapi('POST', `${SHEETS}/${CFG.sheetId}/values:batchUpdate`, { valueInputOption: 'USER_ENTERED', data: [{ range: `'Instrumenty'!${col}2`, values: vals }] });
     }
     names.forEach(n => DIRTY.delete(n)); saveLocal();
+    try { await buildSummary(false); } catch (e) { console.warn('Podsumowanie:', e); }
     setSync('ok', 'Zapisano w Google Sheets ✓ ' + new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }));
   } catch (e) {
     setSync('error', e.message + ' – zmiany czekają w przeglądarce');
@@ -202,6 +204,149 @@ async function refreshAutoPrices() {
   if (it < 0 || ic < 0) return;
   rows.slice(1).forEach(r => { const i = S.instrumenty.find(x => x.ticker === r[it]); if (i) i.cenaAuto = typeof r[ic] === 'number' ? r[ic] : ''; });
   saveLocal(); if (typeof render === 'function') render();
+}
+
+/* ---------- zakładka „Podsumowanie” w arkuszu (formuły – działa bez aplikacji) ---------- */
+async function detectSep() {
+  CFG.sep = CFG.sep || {}; if (CFG.sep[CFG.sheetId]) return CFG.sep[CFG.sheetId];
+  try { await gapi('POST', `${SHEETS}/${CFG.sheetId}:batchUpdate`, { requests: [{ addSheet: { properties: { title: 'Szukaj' } } }] }); } catch (e) {}
+  await gapi('PUT', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Szukaj'!Z1")}?valueInputOption=USER_ENTERED`, { values: [['=SUM(1,2)']] });
+  const r = await gapi('GET', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Szukaj'!Z1")}?valueRenderOption=UNFORMATTED_VALUE`);
+  const sep = (r.values && r.values[0] && r.values[0][0] === 3) ? ',' : ';';
+  CFG.sep[CFG.sheetId] = sep; saveCfg(); return sep;
+}
+function summarySig() {
+  const pairs = [...new Set(S.transakcje.map(t => t.strategia + '|' + t.ticker))].sort();
+  return JSON.stringify([pairs, S.strategie.map(s => s.nazwa), S.konta.map(k => k.nazwa), S.instrumenty.map(i => i.ticker), 2]);
+}
+async function buildSummary(force) {
+  if (!CFG.sheetId || !SYNC.token) return;
+  const sig = summarySig(); if (!force && CFG.sumSig && CFG.sumSig[CFG.sheetId] === sig) return;
+  const SEP = await detectSep();
+  const f = x => x.replace(/§/g, SEP);
+  const q = s => '"' + String(s).replace(/"/g, '""') + '"';
+  const pairs = [...new Set(S.transakcje.filter(t => t.strategia && t.ticker).map(t => t.strategia + '|' + t.ticker))].sort().map(p => p.split('|'));
+  const strat = S.strategie.map(s => s.nazwa), konta = S.konta, instr = S.instrumenty.filter(i => i.ticker);
+  const N = 3000, T = (c) => `Transakcje!$${c}$2:$${c}$${N}`;
+  const kursF = cur => `IF(${cur}="PLN"§1§IFERROR(VALUE(INDEX(Ustawienia!$B:$B§MATCH("kurs_"&${cur}§Ustawienia!$A:$A§0)))§0))`;
+  // --- pomocnicza tabela strategia × instrument (kolumny T:AC) ---
+  const H0 = 2, HL = Math.max(H0, H0 + pairs.length - 1);
+  const help = [['Strategia', 'Ticker', 'Ilość', 'Cena', 'Kurs', 'Waluta', 'Wartość PLN', 'Koszt PLN', 'Konto', 'Klasa']];
+  pairs.forEach(([st, tk], i) => { const r = H0 + i, m = `MATCH($U${r}§Instrumenty!$B:$B§0)`;
+    help.push([st, tk,
+      f(`=SUMIFS(Transakcje!$F:$F§Transakcje!$C:$C§$T${r}§Transakcje!$E:$E§$U${r}§Transakcje!$D:$D§"KUPNO")-SUMIFS(Transakcje!$F:$F§Transakcje!$C:$C§$T${r}§Transakcje!$E:$E§$U${r}§Transakcje!$D:$D§"SPRZEDAŻ")`),
+      f(`=IFERROR(IF(INDEX(Instrumenty!$G:$G§${m})<>""§INDEX(Instrumenty!$G:$G§${m})§INDEX(Instrumenty!$J:$J§${m}))§0)`),
+      f('=' + kursF(`$Y${r}`)),
+      f(`=IFERROR(INDEX(Instrumenty!$F:$F§${m})§"PLN")`),
+      f(`=IFERROR($V${r}*$W${r}*$X${r}§0)`),
+      f(`=IFERROR(IF(SUMIFS(Transakcje!$F:$F§Transakcje!$C:$C§$T${r}§Transakcje!$E:$E§$U${r}§Transakcje!$D:$D§"KUPNO")=0§0§SUMPRODUCT((${T('C')}=$T${r})*(${T('E')}=$U${r})*(${T('D')}="KUPNO")*(${T('F')}*${T('G')}+${T('H')})*IF($Y${r}="PLN"§1§${T('I')}+(${T('I')}="")*$X${r}))*$V${r}/SUMIFS(Transakcje!$F:$F§Transakcje!$C:$C§$T${r}§Transakcje!$E:$E§$U${r}§Transakcje!$D:$D§"KUPNO"))§0)`),
+      f(`=IFERROR(INDEX(Strategie!$C:$C§MATCH($T${r}§Strategie!$B:$B§0))§"")`),
+      f(`=IFERROR(INDEX(Instrumenty!$D:$D§${m})§"Inne")`)]); });
+  const HR = (c) => `$${c}$${H0}:$${c}$${HL}`;
+  // --- część widoczna (kolumny B:I) ---
+  const rows = []; const put = (r, c, v) => { while (rows.length < r) rows.push([]); const row = rows[r - 1]; while (row.length < c) row.push(''); row[c - 1] = v; };
+  put(1, 2, 'Mój portfel – podsumowanie');
+  put(2, 2, 'Liczy się samo z zakładek tego arkusza – działa także bez aplikacji. Koszt pozycji liczony średnią ceną zakupu (dokładny FIFO i podatki są w aplikacji).');
+  const sK0 = 9 + strat.length + 3, sKL = sK0 + konta.length - 1, sKT = sKL + 1;
+  const sI0 = sKT + 4, sIL = sI0 + Math.max(instr.length, 1) - 1;
+  const VAL = `$F$${sKT}`;
+  [['Wartość portfela', f(`=F${sKT}`)], ['Wpłacony kapitał', f(`=SUM('Wpłaty'!$D:$D)`)], ['Zysk / strata', '=B5-D5'], ['Zysk / strata %', f(`=IF(D5=0§""§F5/D5)`)]]
+    .forEach(([l, v], k) => { put(4, 2 + k * 2, l); put(5, 2 + k * 2, v); });
+  put(6, 2, f(`=IFERROR("≈ "&TEXT(B5/${kursF('"USD"')}§"# ##0")&" USD"§"")`));
+  put(6, 8, f(`="Kursy z "&IFERROR(INDEX(Ustawienia!$B:$B§MATCH("kursyData"§Ustawienia!$A:$A§0))§"–")`));
+  // strategie
+  put(8, 2, 'STRATEGIE');
+  ['Strategia', 'Konto', 'Wartość PLN', 'Koszt PLN', 'Zysk PLN', 'Zysk %', 'Udział'].forEach((h, k) => put(9, 2 + k, h));
+  strat.forEach((st, i) => { const r = 10 + i;
+    put(r, 2, st); put(r, 3, f(`=IFERROR(INDEX(Strategie!$C:$C§MATCH(B${r}§Strategie!$B:$B§0))§"")`));
+    put(r, 4, f(`=SUMIF(${HR('T')}§B${r}§${HR('Z')})`)); put(r, 5, f(`=SUMIF(${HR('T')}§B${r}§${HR('AA')})`));
+    put(r, 6, `=D${r}-E${r}`); put(r, 7, f(`=IF(E${r}=0§""§F${r}/E${r})`)); put(r, 8, f(`=IF(${VAL}=0§""§D${r}/${VAL})`)); });
+  // konta
+  put(sK0 - 2, 2, 'KONTA');
+  ['Konto', 'Typ', 'Pozycje PLN', 'Gotówka PLN', 'Razem PLN', 'Wpłacono PLN', 'Zysk PLN', 'Zysk %'].forEach((h, k) => put(sK0 - 1, 2 + k, h));
+  konta.forEach((k, i) => { const r = sK0 + i, m = `MATCH(B${r}§Konta!$B:$B§0)`;
+    put(r, 2, k.nazwa); put(r, 3, f(`=IFERROR(INDEX(Konta!$C:$C§${m})§"")`));
+    put(r, 4, f(`=SUMIF(${HR('AB')}§B${r}§${HR('Z')})`));
+    put(r, 5, f(`=IFERROR(N(INDEX(Konta!$E:$E§${m}))*${kursF(`INDEX(Konta!$D:$D§${m})`)}§0)`));
+    put(r, 6, `=D${r}+E${r}`); put(r, 7, f(`=SUMIF('Wpłaty'!$C:$C§B${r}§'Wpłaty'!$D:$D)`));
+    put(r, 8, f(`=IF(G${r}=0§""§F${r}-G${r})`)); put(r, 9, f(`=IF(G${r}=0§""§H${r}/G${r})`)); });
+  put(sKT, 2, 'RAZEM'); ['D', 'E', 'F', 'G'].forEach((c, k) => put(sKT, 4 + k, `=SUM(${c}${sK0}:${c}${sKL})`));
+  put(sKT, 8, f(`=IF(G${sKT}=0§""§F${sKT}-G${sKT})`)); put(sKT, 9, f(`=IF(G${sKT}=0§""§H${sKT}/G${sKT})`));
+  // instrumenty
+  put(sI0 - 2, 2, 'INSTRUMENTY I ALOKACJA (PORTFEL 2.1)');
+  ['Ticker', 'Nazwa', 'Ilość', 'Cena', 'Wartość PLN', 'Udział', 'Cel 2.1', 'Odchylenie'].forEach((h, k) => put(sI0 - 1, 2 + k, h));
+  instr.forEach((it, i) => { const r = sI0 + i, m = `MATCH(B${r}§Instrumenty!$B:$B§0)`;
+    put(r, 2, it.ticker); put(r, 3, f(`=IFERROR(INDEX(Instrumenty!$C:$C§${m})§"")`));
+    put(r, 4, f(`=SUMIF(${HR('U')}§B${r}§${HR('V')})`));
+    put(r, 5, f(`=IFERROR(IF(INDEX(Instrumenty!$G:$G§${m})<>""§INDEX(Instrumenty!$G:$G§${m})§INDEX(Instrumenty!$J:$J§${m}))§"")`));
+    put(r, 6, f(`=SUMIF(${HR('U')}§B${r}§${HR('Z')})`)); put(r, 7, f(`=IF(${VAL}=0§""§F${r}/${VAL})`));
+    put(r, 8, f(`=IFERROR(INDEX('Cele 2.1'!$D:$D§MATCH(INDEX(Instrumenty!$E:$E§${m})§'Cele 2.1'!$B:$B§0))/100§"")`));
+    put(r, 9, f(`=IF(OR(H${r}=""§G${r}="")§""§G${r}-H${r})`)); });
+  put(sIL + 2, 2, f(`="Ostatnia przebudowa przez aplikację: ${new Date().toLocaleString('pl-PL')}"`));
+
+  // --- arkusz: usuń stary, utwórz nowy ---
+  const meta = await gapi('GET', `${SHEETS}/${CFG.sheetId}?fields=sheets.properties(sheetId,title)`);
+  const old = meta.sheets.find(x => x.properties.title === 'Podsumowanie');
+  const hist = meta.sheets.find(x => x.properties.title === 'Historia');
+  const reqs = [];
+  if (old) reqs.push({ deleteSheet: { sheetId: old.properties.sheetId } });
+  reqs.push({ addSheet: { properties: { title: 'Podsumowanie', index: 0, tabColor: { red: .08, green: .4, blue: .75 }, gridProperties: { rowCount: Math.max(200, HL + 10), columnCount: 30, hideGridlines: true, frozenRowCount: 0 } } } });
+  const add = await gapi('POST', `${SHEETS}/${CFG.sheetId}:batchUpdate`, { requests: reqs });
+  const sid = add.replies[add.replies.length - 1].addSheet.properties.sheetId;
+  await gapi('POST', `${SHEETS}/${CFG.sheetId}/values:batchUpdate`, { valueInputOption: 'USER_ENTERED', data: [
+    { range: "'Podsumowanie'!A1", values: rows }, { range: `'Podsumowanie'!T1`, values: help }] });
+
+  // --- formatowanie ---
+  const C = (r0, r1, c0, c1) => ({ sheetId: sid, startRowIndex: r0 - 1, endRowIndex: r1, startColumnIndex: c0 - 1, endColumnIndex: c1 });
+  const rgb = h => ({ red: parseInt(h.slice(0, 2), 16) / 255, green: parseInt(h.slice(2, 4), 16) / 255, blue: parseInt(h.slice(4, 6), 16) / 255 });
+  const fmt = (range, uf, fields) => ({ repeatCell: { range, cell: { userEnteredFormat: uf }, fields: 'userEnteredFormat(' + fields + ')' } });
+  const money = { numberFormat: { type: 'NUMBER', pattern: '#,##0.00 "zł";[Red]-#,##0.00 "zł";"–"' } };
+  const pctF = { numberFormat: { type: 'PERCENT', pattern: '0.0%;[Red]-0.0%;"–"' } };
+  const head = (r, c0, c1) => fmt(C(r, r, c0, c1), { backgroundColor: rgb('0B3D91'), textFormat: { bold: true, foregroundColor: rgb('FFFFFF'), fontSize: 9 }, horizontalAlignment: 'CENTER', verticalAlignment: 'MIDDLE', wrapStrategy: 'WRAP' }, 'backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy');
+  const sect = r => fmt(C(r, r, 2, 9), { textFormat: { bold: true, fontSize: 11, foregroundColor: rgb('0B3D91') }, borders: { bottom: { style: 'SOLID_MEDIUM', color: rgb('0B3D91') } } }, 'textFormat,borders');
+  const R = [
+    fmt(C(1, 200, 1, 30), { textFormat: { fontFamily: 'Arial', fontSize: 10, foregroundColor: rgb('1F2937') }, verticalAlignment: 'MIDDLE' }, 'textFormat,verticalAlignment'),
+    fmt(C(1, 1, 2, 2), { textFormat: { fontFamily: 'Arial', bold: true, fontSize: 18, foregroundColor: rgb('0B3D91') } }, 'textFormat'),
+    fmt(C(2, 2, 2, 2), { textFormat: { fontFamily: 'Arial', italic: true, fontSize: 9, foregroundColor: rgb('6B7280') } }, 'textFormat'),
+    fmt(C(4, 5, 2, 9), { backgroundColor: rgb('EEF4FC') }, 'backgroundColor'),
+    fmt(C(4, 4, 2, 9), { textFormat: { fontFamily: 'Arial', fontSize: 9, foregroundColor: rgb('6B7280') } }, 'textFormat'),
+    fmt(C(5, 5, 2, 9), { textFormat: { fontFamily: 'Arial', bold: true, fontSize: 16, foregroundColor: rgb('0B3D91') }, ...money }, 'textFormat,numberFormat'),
+    fmt(C(5, 5, 8, 9), { ...pctF }, 'numberFormat'),
+    fmt(C(4, 5, 2, 3), { backgroundColor: rgb('1565C0'), textFormat: { fontFamily: 'Arial', bold: true, fontSize: 16, foregroundColor: rgb('FFFFFF') } }, 'backgroundColor,textFormat'),
+    fmt(C(4, 4, 2, 3), { textFormat: { fontFamily: 'Arial', fontSize: 9, foregroundColor: rgb('CFE0FF') } }, 'textFormat'),
+    fmt(C(6, 6, 2, 9), { textFormat: { fontFamily: 'Arial', italic: true, fontSize: 9, foregroundColor: rgb('6B7280') } }, 'textFormat'),
+    sect(8), head(9, 2, 8), fmt(C(10, 9 + strat.length, 4, 6), money, 'numberFormat'), fmt(C(10, 9 + strat.length, 7, 8), pctF, 'numberFormat'),
+    sect(sK0 - 2), head(sK0 - 1, 2, 9), fmt(C(sK0, sKT, 4, 8), money, 'numberFormat'), fmt(C(sK0, sKT, 9, 9), pctF, 'numberFormat'),
+    fmt(C(sKT, sKT, 2, 9), { textFormat: { bold: true }, borders: { top: { style: 'SOLID', color: rgb('0B3D91') } } }, 'textFormat,borders'),
+    sect(sI0 - 2), head(sI0 - 1, 2, 9), fmt(C(sI0, sIL, 4, 4), { numberFormat: { type: 'NUMBER', pattern: '#,##0.######' } }, 'numberFormat'),
+    fmt(C(sI0, sIL, 5, 5), { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' } }, 'numberFormat'), fmt(C(sI0, sIL, 6, 6), money, 'numberFormat'),
+    fmt(C(sI0, sIL, 7, 9), pctF, 'numberFormat'),
+    fmt(C(sIL + 2, sIL + 2, 2, 2), { textFormat: { italic: true, fontSize: 8, foregroundColor: rgb('9CA3AF') } }, 'textFormat'),
+    { updateDimensionProperties: { range: { sheetId: sid, dimension: 'COLUMNS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 18 }, fields: 'pixelSize' } },
+    { updateDimensionProperties: { range: { sheetId: sid, dimension: 'COLUMNS', startIndex: 1, endIndex: 9 }, properties: { pixelSize: 125 }, fields: 'pixelSize' } },
+    { updateDimensionProperties: { range: { sheetId: sid, dimension: 'COLUMNS', startIndex: 9, endIndex: 10 }, properties: { pixelSize: 24 }, fields: 'pixelSize' } },
+    { updateDimensionProperties: { range: { sheetId: sid, dimension: 'ROWS', startIndex: 4, endIndex: 5 }, properties: { pixelSize: 40 }, fields: 'pixelSize' } },
+    { updateDimensionProperties: { range: { sheetId: sid, dimension: 'COLUMNS', startIndex: 19, endIndex: 29 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } },
+    ...[2, 4, 6, 8].map(c => ({ mergeCells: { range: C(4, 4, c, c + 1), mergeType: 'MERGE_ALL' } })),
+    ...[2, 4, 6, 8].map(c => ({ mergeCells: { range: C(5, 5, c, c + 1), mergeType: 'MERGE_ALL' } })),
+  ];
+  // pasy w tabelach
+  [[10, 9 + strat.length, 8], [sK0, sKL, 9], [sI0, sIL, 9]].forEach(([a, b, c]) => { if (b >= a) R.push({ addBanding: { bandedRange: { range: C(a, b, 2, c), rowProperties: { firstBandColor: rgb('FFFFFF'), secondBandColor: rgb('F5F8FC') } } } }); });
+  // wykresy
+  const src = (r0, r1, c) => ({ sourceRange: { sources: [C(r0, r1, c, c)] } });
+  const pie = (title, r0, r1, labCol, valCol, anchorRow) => ({ addChart: { chart: { spec: { title, titleTextFormat: { bold: true, fontFamily: 'Arial' }, fontName: 'Arial',
+    pieChart: { legendPosition: 'RIGHT_LEGEND', pieHole: 0.5, domain: src(r0, r1, labCol), series: src(r0, r1, valCol) } },
+    position: { overlayPosition: { anchorCell: { sheetId: sid, rowIndex: anchorRow, columnIndex: 10 }, widthPixels: 520, heightPixels: 300 } } } } });
+  if (instr.length) R.push(pie('Struktura – instrumenty', sI0, sIL, 2, 6, 2));
+  if (konta.length) R.push(pie('Konta', sK0, sKL, 2, 6, 19));
+  if (hist) R.push({ addChart: { chart: { spec: { title: 'Wartość portfela i wpłacony kapitał', titleTextFormat: { bold: true, fontFamily: 'Arial' }, fontName: 'Arial',
+    basicChart: { chartType: 'LINE', legendPosition: 'BOTTOM_LEGEND', headerCount: 1,
+      axis: [{ position: 'BOTTOM_AXIS' }, { position: 'LEFT_AXIS' }],
+      domains: [{ domain: { sourceRange: { sources: [{ sheetId: hist.properties.sheetId, startRowIndex: 0, endRowIndex: 5000, startColumnIndex: 0, endColumnIndex: 1 }] } } }],
+      series: [1, 2].map(c => ({ series: { sourceRange: { sources: [{ sheetId: hist.properties.sheetId, startRowIndex: 0, endRowIndex: 5000, startColumnIndex: c, endColumnIndex: c + 1 }] } }, targetAxis: 'LEFT_AXIS' })) } },
+    position: { overlayPosition: { anchorCell: { sheetId: sid, rowIndex: 36, columnIndex: 10 }, widthPixels: 520, heightPixels: 300 } } } } });
+  await gapi('POST', `${SHEETS}/${CFG.sheetId}:batchUpdate`, { requests: R });
+  CFG.sumSig = CFG.sumSig || {}; CFG.sumSig[CFG.sheetId] = sig; saveCfg();
 }
 
 /* ---------- wyszukiwanie symboli (Yahoo przez arkusz) ---------- */
