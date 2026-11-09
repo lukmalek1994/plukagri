@@ -143,11 +143,13 @@ function cofnijSprzedaz(id) {
   S.transakcje = S.transakcje.filter(x => x.id !== id); changed('transakcje'); toast('Cofnięto sprzedaż'); render();
 }
 const zamSub = r => r.loty && r.loty.length ? r.loty.map(l => ({ ...l, _r: r })) : [];
+const zamLotKP = l => l._r.koszt ? l._r.kosztPLN * (l.q * l.uc) / l._r.koszt : 0, zamLotPP = l => l._r.ilosc ? l._r.przychodPLN * l.q / l._r.ilosc : 0;
 const zamKey = r => 'zam|' + r.id;
 const zamSubCols = (n) => { const c = [
   { f: l => `<span class="mut">↳ z zakupu ${esc(l.data)}</span>` }, { f: () => '' }, { n: 1, f: l => nfq.format(l.q) },
-  { n: 1, f: l => money(l.q * l.uc, l._r.waluta) }, { n: 1, f: l => money(l.q * l._r.cena, l._r.waluta) },
-  { n: 1, f: l => { const z = l.q * l._r.cena - l.q * l.uc; return `<span class="${sgn(z)}">${plus(z)}${money(z, l._r.waluta)}</span>`; } }]; while (c.length < n) c.push({ f: () => '' }); return c; };
+  // część sprzedaży przypadająca na ten zakup – w walucie prezentacji (koszt wg udziału w koszcie, przychód wg ilości)
+  { n: 1, f: l => zl(zamLotKP(l)) }, { n: 1, f: l => zl(zamLotPP(l)) },
+  { n: 1, f: l => pl(zamLotPP(l) - zamLotKP(l)) }]; while (c.length < n) c.push({ f: () => '' }); return c; };
 const pp = v => `<span class="${sgn(v)}">${plus(v)}${pct(v)}</span>`;
 function warningsBox() {
   const w = [...C.warnings];
@@ -273,15 +275,13 @@ function vPortfel() {
     { h: 'Strategia', f: p => `${esc(p.strategia)}<br><span class="mut" style="font-size:12px">${esc(p.konto)}</span>` },
     { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) }, { h: 'Śr. cena', n: 1, f: p => p.os ? osKupno(p) : money(p.sredniaCena, p.waluta) },
     { h: 'Cena', n: 1, f: p => p.os ? osWartosc(p) : p.brakCeny ? '<span class="warn">brak</span>' : money(p.cena, p.waluta) },
-    { h: 'Wartość', n: 1, f: p => `${zl(p.wartoscPLN)}<br><span class="mut" style="font-size:12px">${money(p.wartosc, p.waluta)}</span>` },
-    { h: 'Zysk (waluta)', n: 1, f: p => `<span class="${sgn(p.zysk)}">${plus(p.zysk)}${money(p.zysk, p.waluta)}</span><br>${pp(p.zyskPct)}` },
-    { h: 'Zysk ' + WL(), n: 1, f: p => pl(p.zyskPLN) }, { h: 'Udział', n: 1, f: p => pct(C.wartosc ? p.wartoscPLN / C.wartosc : 0) }, { h: '', f: pozAkcje },
+    { h: 'Wartość ' + WL(), n: 1, f: p => zl(p.wartoscPLN) },
+    { h: 'Zysk ' + WL(), n: 1, f: p => `${pl(p.zyskPLN)}<br>${pp(p.kosztPLN ? p.zyskPLN / p.kosztPLN : 0)}` }, { h: 'Udział', n: 1, f: p => pct(C.wartosc ? p.wartoscPLN / C.wartosc : 0) }, { h: '', f: pozAkcje },
   ];
   const subCols = [
     { f: lotOpis }, { f: () => '' }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => l._p.os ? money(l.koszt, l._p.waluta) : money(l.cenaZakupu, l._p.waluta) },
-    { n: 1, f: l => l._p.os ? osInput(l._p.ticker, l) : l._p.brakCeny ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => `${zl(l.wartoscPLN)}<br><span class="mut" style="font-size:11.5px">${money(l.wartosc, l._p.waluta)}</span>` },
-    { n: 1, f: l => `<span class="${sgn(l.zysk)}">${plus(l.zysk)}${money(l.zysk, l._p.waluta)}</span><br>${pp(l.zyskPct)}` },
-    { n: 1, f: l => pl(l.zyskPLN) }, { f: () => '' }, { f: lotAkcje }];
+    { n: 1, f: l => l._p.os ? osInput(l._p.ticker, l) : l._p.brakCeny ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => zl(l.wartoscPLN) },
+    { n: 1, f: l => `${pl(l.zyskPLN)}<br>${pp(l.kosztPLN ? l.zyskPLN / l.kosztPLN : 0)}` }, { f: () => '' }, { f: lotAkcje }];
   return ['Portfel – pozycje', `${rows.length} otwartych pozycji`, `
     <div class="filters">${sel('s', 'Wszystkie strategie', S.strategie.map(s => s.nazwa))}${sel('k', 'Wszystkie konta', S.konta.map(k => k.nazwa))}${sel('c', 'Wszystkie klasy', [...new Set(C.pozycje.map(p => p.klasa))])}</div>
     <div class="kpis">${kpi('Wartość', zl(tot.w, 0))}${kpi('Koszt zakupu', zl(tot.k, 0))}${kpi('Zysk niezrealizowany', pl(tot.w - tot.k), pp(tot.k ? (tot.w - tot.k) / tot.k : 0))}</div>
@@ -298,19 +298,17 @@ function vStrategia() {
     { h: 'Instrument', f: p => `<b>${esc(p.ticker)}</b> <span class="mut">${esc(p.nazwa)}</span>` },
     { h: 'Od', f: p => esc(p.od) }, { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) },
     { h: 'Śr. cena', n: 1, f: p => p.os ? osKupno(p) : money(p.sredniaCena, p.waluta) }, { h: 'Cena', n: 1, f: p => p.os ? osWartosc(p) : p.brakCeny ? '<span class="warn">brak</span>' : money(p.cena, p.waluta) },
-    { h: 'Wartość ' + WL(), n: 1, f: p => zl(p.wartoscPLN) }, { h: 'Zysk', n: 1, f: p => `<span class="${sgn(p.zysk)}">${plus(p.zysk)}${money(p.zysk, p.waluta)}</span>` },
-    { h: '%', n: 1, f: p => pp(p.zyskPct) }, { h: 'Zysk ' + WL(), n: 1, f: p => pl(p.zyskPLN) }, { h: '', f: pozAkcje },
+    { h: 'Wartość ' + WL(), n: 1, f: p => zl(p.wartoscPLN) },
+    { h: 'Zysk ' + WL(), n: 1, f: p => pl(p.zyskPLN) }, { h: '%', n: 1, f: p => pp(p.kosztPLN ? p.zyskPLN / p.kosztPLN : 0) }, { h: '', f: pozAkcje },
   ], poz, { empty: 'Brak otwartych pozycji – dodaj transakcję kupna', expand: { key: lotKey, sub: lotSub, cols: [
     { f: lotOpis }, { f: l => esc(l.data) }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => l._p.os ? money(l.koszt, l._p.waluta) : money(l.cenaZakupu, l._p.waluta) },
     { n: 1, f: l => l._p.os ? osInput(l._p.ticker, l) : l._p.brakCeny ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => zl(l.wartoscPLN) },
-    { n: 1, f: l => `<span class="${sgn(l.zysk)}">${plus(l.zysk)}${money(l.zysk, l._p.waluta)}</span>` }, { n: 1, f: l => pp(l.zyskPct) },
-    { n: 1, f: l => pl(l.zyskPLN) }, { f: lotAkcje }] } });
+    { n: 1, f: l => pl(l.zyskPLN) }, { n: 1, f: l => pp(l.kosztPLN ? l.zyskPLN / l.kosztPLN : 0) }, { f: lotAkcje }] } });
   const zamTbl = table([
     { h: 'Sprzedaż', f: r => esc(r.data) }, { h: 'Instrument', f: r => `<b>${esc(r.ticker)}</b>` }, { h: 'Ilość', n: 1, f: r => nfq.format(r.ilosc) },
-    { h: 'Koszt', n: 1, f: r => money(r.koszt, r.waluta) }, { h: 'Przychód', n: 1, f: r => money(r.przychod, r.waluta) },
-    { h: 'Zysk', n: 1, f: r => `<span class="${sgn(r.zysk)}">${plus(r.zysk)}${money(r.zysk, r.waluta)}</span>` },
-    { h: 'Zysk ' + WL(), n: 1, f: r => pl(r.zyskPLN) }, { h: '', f: r => `<span class="akcje"><button class="btn sm ghost" onclick="cofnijSprzedaz('${r.id}')">↶ Cofnij</button> <a onclick="editTransakcja('${r.id}')">edytuj</a></span>` },
-  ], s.zamkniete.slice().reverse(), { empty: 'Brak zamkniętych pozycji', expand: { key: zamKey, sub: zamSub, cols: zamSubCols(8) } });
+    { h: 'Koszt ' + WL(), n: 1, f: r => zl(r.kosztPLN) }, { h: 'Przychód ' + WL(), n: 1, f: r => zl(r.przychodPLN) },
+    { h: 'Zysk ' + WL(), n: 1, f: r => `${pl(r.zyskPLN)}<br>${pp(r.kosztPLN ? r.zyskPLN / r.kosztPLN : 0)}` }, { h: '', f: r => `<span class="akcje"><button class="btn sm ghost" onclick="cofnijSprzedaz('${r.id}')">↶ Cofnij</button> <a onclick="editTransakcja('${r.id}')">edytuj</a></span>` },
+  ], s.zamkniete.slice().reverse(), { empty: 'Brak zamkniętych pozycji', expand: { key: zamKey, sub: zamSub, cols: zamSubCols(7) } });
   const dywTbl = table([
     { h: 'Data', f: d => esc(d.data) }, { h: 'Ticker', f: d => esc(d.ticker) }, { h: 'Brutto', n: 1, f: d => money(num(d.brutto), d.waluta) },
     { h: 'Netto ' + WL(), n: 1, f: d => zl(d.nettoPLN) }, { h: '', f: d => `<a onclick="editDywidenda('${d.id}')">edytuj</a>` },
