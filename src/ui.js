@@ -357,7 +357,8 @@ function vKonto() {
       { h: 'Data', f: w => esc(w.data) }, { h: 'Kwota PLN', n: 1, f: w => plPLN(num(w.kwotaPLN)) },
       { h: 'W walucie konta', n: 1, f: w => has(w.kwotaWal) ? nf2.format(num(w.kwotaWal)) : '–' }, { h: 'Notatka', f: w => esc(w.notatka) },
     ], wpl, { empty: 'Brak wpłat na to konto', click: w => `editWplata('${w.id}')` })}</div></div>`,
-    `<button class="btn ghost" onclick="editKonto('${k.id}')">Edytuj / usuń konto</button><button class="btn" onclick="editWplata(null,'${esc(k.nazwa)}')">＋ Wpłata</button>`];
+    `${(() => { const sk = S.konta.find(x => x.id === k.id) || {}, on = num(sk.przew) > 0, walutowe = poz.some(p => p.waluta !== (sk.waluta || 'PLN'));
+      return walutowe || on ? `<button class="btn ${on ? '' : 'ghost'}" title="Instrumenty w innej walucie niż konto wyceniane jak w XTB: po odjęciu prowizji za przewalutowanie" onclick="togglePrzew('${k.id}')">${on ? '✓ ' : ''}Przewalutowanie ${on ? nf2.format(num(sk.przew)).replace(/,00$/, '') + '%' : 'wył.'}</button>` : ''; })()}<button class="btn ghost" onclick="editKonto('${k.id}')">Edytuj / usuń konto</button><button class="btn" onclick="editWplata(null,'${esc(k.nazwa)}')">＋ Wpłata</button>`];
 }
 function setGotowka(id, v) { const k = S.konta.find(x => x.id === id); k.gotowka = v === '' ? '' : num(v); changed('konta'); render(); }
 function korektaGotowki(id) {
@@ -672,12 +673,18 @@ function editStrategia(id, konto) {
     S.strategie = S.strategie.filter(x => x.id !== id); changed('strategie'); go('kokpit');
   } : null);
 }
+function togglePrzew(id) {
+  const k = S.konta.find(x => x.id === id); if (!k) return;
+  k.przew = num(k.przew) > 0 ? '' : 0.5; changed('konta'); render();
+  toast(k.przew ? 'Wycena po przewalutowaniu 0,5% (jak XTB) – stawkę zmienisz w „Edytuj konto”' : 'Wycena bez przewalutowania');
+}
 function editKonto(id) {
   const k = S.konta.find(x => x.id === id) || { typ: 'Opodatkowane', waluta: 'PLN', model: 'TAK' }; const old = k.nazwa;
   modal(id ? 'Edytuj konto' : 'Nowe konto', [
     { k: 'nazwa', l: 'Nazwa', full: 1 }, { k: 'typ', l: 'Typ podatkowy', t: 'select', o: ['Opodatkowane', 'IKE', 'IKZE', 'Poza PIT-38'] },
     { k: 'waluta', l: 'Waluta', t: 'select', o: ['PLN', 'USD', 'EUR', 'GBP', 'CHF'] }, { k: 'gotowka', l: 'Gotówka – tylko gdy chcesz wpisać ręcznie (puste = liczona automatycznie)', t: 'number', full: 1 },
     { k: 'model', l: 'Wliczaj do portfela docelowego „Cały portfel”', t: 'select', o: ['TAK', 'NIE'] },
+    { k: 'przew', l: 'Przewalutowanie % (np. 0,5 dla XTB; puste = brak)', t: 'number', help: 'Instrumenty w innej walucie niż konto są wyceniane po odjęciu tej prowizji – tak jak pokazuje XTB' },
   ], k, o => {
     if (!o.nazwa) return 'Podaj nazwę';
     if (id) { Object.assign(k, o); if (old !== o.nazwa) { S.strategie.forEach(s => { if (s.konto === old) s.konto = o.nazwa; }); S.wplaty.forEach(w => { if (w.konto === old) w.konto = o.nazwa; }); S.cele.forEach(c => { if (c.konto === old) c.konto = o.nazwa; }); changed('strategie', 'wplaty', 'cele'); } }

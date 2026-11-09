@@ -137,7 +137,9 @@ function calc(S, opts = {}) {
     const os = isOS(i), anyWa = os && lots.some(l => has(l.wa)), wspolna = os && !anyWa && has(i.cena);
     const lotZakup = l => os && !has(l.wa) && !wspolna;
     let cena = priceOf(ticker);
-    const lv = l => !os ? l.q * cena : has(l.wa) ? num(l.wa) * l.q / l.q0 : wspolna ? l.q * num(i.cena) : l.q * l.uc;
+    // przewalutowanie (np. XTB 0,5%): instrument w innej walucie niż konto wyceniany tak, jak przy sprzedaży
+    const kt = konto[(strat[s] || {}).konto] || {}, przew = cur !== (kt.waluta || 'PLN') && num(kt.przew) > 0 ? 1 - num(kt.przew) / 100 : 1;
+    const lv = l => !os ? l.q * cena * przew : has(l.wa) ? num(l.wa) * l.q / l.q0 : wspolna ? l.q * num(i.cena) : l.q * l.uc;
     const wartosc = lots.reduce((a, l) => a + lv(l), 0), wartoscPLN = wartosc * rateNow(cur);
     if (os) cena = wartosc / qty;
     const wgZakupu = os && lots.every(lotZakup);
