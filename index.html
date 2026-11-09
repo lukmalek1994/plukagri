@@ -98,7 +98,7 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 </head>
 <body>
 <div class="app">
-  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 22:38</div></aside>
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 22:54</div></aside>
   <main>
     <div class="top">
       <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
@@ -2444,6 +2444,24 @@ function xtbBrakiPozycji(ops, mapa) {
   });
   return [...brak];
 }
+/* IKE/IKZE: podatku nie ma, więc zamiast kursu NBP bierzemy faktyczny kurs XTB z kwoty operacji (kwota PLN / (ilość × cena)) */
+const xtbBezPodatku = acc => !!acc && ['IKE', 'IKZE'].includes(acc.typ);
+function xtbKursRzeczywisty(o, cur, accCur) {
+  if (accCur !== 'PLN' || cur === 'PLN' || !o.ilosc || !o.cena || !o.amount) return null;
+  return Math.round(Math.abs(o.amount) / (o.ilosc * o.cena) * 1e6) / 1e6;
+}
+// już zaimportowane zakupy/sprzedaże na IKE, które mają jeszcze kurs NBP zamiast kursu XTB
+function xtbKursyDoPoprawy(ops, mapa, kontoNazwa) {
+  const acc = S.konta.find(k => k.nazwa === kontoNazwa); if (!xtbBezPodatku(acc)) return [];
+  const out = [];
+  (ops || []).filter(o => (o.kind === 'buy' || o.kind === 'sell') && xtbIstnieje(o.id)).forEach(o => {
+    const t = S.transakcje.find(r => String(r.notatka || '').includes('XTB#' + o.id)); if (!t) return;
+    const cur = (S.instrumenty.find(i => i.ticker === t.ticker) || {}).waluta || (mapa[o.symbol] || {}).waluta || acc.waluta;
+    const k = xtbKursRzeczywisty(o, cur, acc.waluta || 'PLN');
+    if (k && Math.abs(num(t.kurs) - k) > 1e-6) out.push({ t, k });
+  });
+  return out;
+}
 function xtbIstnieje(id) {
   const tag = 'XTB#' + id;
   return ['transakcje', 'dywidendy', 'wplaty'].some(t => S[t].some(r => String(r.notatka || '').includes(tag)));
@@ -2479,7 +2497,7 @@ function vImport() {
     { h: 'Symbol Yahoo (cena auto)', f: ([s, m]) => m.nowy ? `<input style="width:110px" value="${esc(m.yahoo)}" onchange="IMP.mapa['${esc(s)}'].yahoo=this.value.trim()">` : '<span class="mut">–</span>' },
     { h: 'Strategia', f: ([s, m]) => `<select onchange="IMP.mapa['${esc(s)}'].strategia=this.value">${strat.map(x => `<option ${x.nazwa === m.strategia ? 'selected' : ''}>${esc(x.nazwa)}</option>`).join('')}</select>` },
   ], syms)}${strat.length ? '' : `<div class="alert">Konto „${esc(IMP.konto)}” nie ma jeszcze strategii – <a onclick="editStrategia()">dodaj strategię</a>, aby przypisać do niej transakcje.</div>`}</div>` : '';
-  const ileW = uzyte.filter(o => o.wybrane).length, dupl = uzyte.filter(o => xtbIstnieje(o.id)).length, napr = xtbDoNaprawy(mapa), braki = [...new Set([...(IMP.braki || []), ...xtbBrakiPozycji(ops, mapa)])];
+  const kfix = xtbKursyDoPoprawy(ops, mapa, IMP.konto), ileW = uzyte.filter(o => o.wybrane).length, dupl = uzyte.filter(o => xtbIstnieje(o.id)).length, napr = xtbDoNaprawy(mapa), braki = [...new Set([...(IMP.braki || []), ...xtbBrakiPozycji(ops, mapa)])];
   const opTbl = table([
     { h: `<input type="checkbox" ${uzyte.every(o => o.wybrane) ? 'checked' : ''} onchange="IMP.ops.forEach(o=>{if('wybrane' in o)o.wybrane=this.checked});render()">`, f: o => `<input type="checkbox" ${o.wybrane ? 'checked' : ''} onchange="IMP.ops[${ops.indexOf(o)}].wybrane=this.checked;render()">` },
     { h: 'Data', f: o => esc(o.data) }, { h: 'Operacja', f: o => `${LBL[o.kind]} <span class="mut" style="font-size:11.5px">${esc(o.type)}</span>` },
@@ -2490,10 +2508,11 @@ function vImport() {
   ], uzyte.slice().sort((a, b) => b.data.localeCompare(a.data)), { empty: 'W pliku nie znaleziono operacji do zaimportowania' });
   const podatki = ops.filter(o => ['divtax', 'inttax'].includes(o.kind)).length;
   const step3 = `<div class="card" style="margin-top:16px"><h3>${syms.length ? '3' : '2'}. Operacje <small>${ileW} wybranych z ${uzyte.length}${dupl ? ` · ${dupl} już było` : ''}</small><span class="sp"></span>
-      <button class="btn ghost sm" onclick="IMP=null;render()">Anuluj</button><button class="btn" ${(ileW || napr.length) && (strat.length || !syms.length) ? '' : 'disabled'} onclick="xtbImportuj()">${ileW ? `Importuj ${ileW} operacji` : 'Popraw tickery'}</button></h3>
+      <button class="btn ghost sm" onclick="IMP=null;render()">Anuluj</button><button class="btn" ${(ileW || napr.length || kfix.length) && (strat.length || !syms.length) ? '' : 'disabled'} onclick="xtbImportuj()">${ileW ? `Importuj ${ileW} operacji` : napr.length ? 'Popraw tickery' : `Popraw kursy (${kfix.length})`}</button></h3>
+    ${kfix.length ? `<div class="alert" style="background:#e8f5e9;border-color:#a5d6a7;color:#1b5e20">✓ Konto IKE/IKZE: ${kfix.length} wcześniej zaimportowanych zakupów ma kurs NBP – zostanie zamieniony na faktyczny kurs przewalutowania XTB (wyliczony z kwoty w PLN), więc koszt i gotówka zgodzą się z XTB.</div>` : ''}
     ${napr.length ? `<div class="alert" style="background:#e8f5e9;border-color:#a5d6a7;color:#1b5e20">✓ Wcześniejszy import zapisał nazwy zamiast tickerów – zostaną poprawione: ${napr.map(m => `<b>${esc(m.nazwa)}</b> → ${esc(m.ticker)}`).join(', ')}. Ceny zaczną się wtedy pobierać.</div>` : ''}
     ${braki.length ? `<div class="alert">⚠ Plik nie obejmuje całej historii (sprzedaże tych spółek odznaczyłem): brakuje zakupów dla <b>${braki.map(esc).join(', ')}</b>. Wyeksportuj z XTB operacje <b>od dnia otwarcia konta</b>, inaczej ilości wyjdą ujemne.</div>` : ''}
-    <div class="mut" style="font-size:12.5px;margin-bottom:10px">${podatki ? `Podatek u źródła (${podatki} poz.) zostanie dopisany do odpowiednich dywidend i odsetek. ` : ''}Kursy NBP (D-1) do podatku pobiorą się automatycznie. ${pom.length ? `Pominięte: ${pom.length} poz. (${[...new Set(pom.map(o => o.type))].slice(0, 6).map(esc).join(', ')}) – „close trade” to tylko zapis zysku ze sprzedaży, prowizje dopisujemy do transakcji.` : ''}</div>${opTbl}</div>`;
+    <div class="mut" style="font-size:12.5px;margin-bottom:10px">${podatki ? `Podatek u źródła (${podatki} poz.) zostanie dopisany do odpowiednich dywidend i odsetek. ` : ''}${xtbBezPodatku(konta.find(k => k.nazwa === IMP.konto)) ? 'Konto bez podatku (IKE/IKZE): zakupy w walucie dostaną faktyczny kurs XTB wyliczony z kwoty w PLN.' : 'Kursy NBP (D-1) do podatku pobiorą się automatycznie.'} ${pom.length ? `Pominięte: ${pom.length} poz. (${[...new Set(pom.map(o => o.type))].slice(0, 6).map(esc).join(', ')}) – „close trade” to tylko zapis zysku ze sprzedaży, prowizje dopisujemy do transakcji.` : ''}</div>${opTbl}</div>`;
   return ['Import z XTB', 'Transakcje, dywidendy, odsetki i wpłaty z wyciągu XTB', step1 + mapTbl + step3, ' '];
 }
 async function xtbWczytaj(file) {
@@ -2515,7 +2534,8 @@ async function xtbImportuj() {
   const accCur = acc.waluta || 'PLN', ops = IMP.ops, mapa = IMP.mapa, defStrat = (S.strategie.find(s => s.konto === acc.nazwa) || {}).nazwa || '';
   const wyb = ops.filter(o => o.wybrane && !xtbIstnieje(o.id));
   const rate = async (cur, d) => { if (cur === 'PLN') return 1; try { return await nbpRate(cur, d); } catch (e) { return C.rateNow(cur) || 1; } };
-  const naprawione = xtbNapraw(mapa);
+  const naprawione = xtbNapraw(mapa), bezPod = xtbBezPodatku(acc);
+  const kfix = xtbKursyDoPoprawy(ops, mapa, acc.nazwa); kfix.forEach(({ t, k }) => { t.kurs = k; });
   toast('Importuję… pobieram kursy NBP');
   // nowe instrumenty
   Object.values(mapa).forEach(m => { if (m.ticker && !S.instrumenty.some(i => i.ticker === m.ticker) && wyb.some(o => (mapa[o.symbol] || {}).ticker === m.ticker)) {
@@ -2525,7 +2545,7 @@ async function xtbImportuj() {
   for (const o of wyb) {
     const m = mapa[o.symbol] || {}, tag = `XTB#${o.id}`;
     if (o.kind === 'buy' || o.kind === 'sell') {
-      const cur = m.waluta || accCur, kurs = cur === 'PLN' ? '' : await rate(cur, o.data);
+      const cur = m.waluta || accCur, kurs = cur === 'PLN' ? '' : ((bezPod && xtbKursRzeczywisty(o, cur, accCur)) || await rate(cur, o.data));
       const fee = fees.find(f => !used.has(f) && f.symbol === o.symbol && f.czas.slice(0, 16) === o.czas.slice(0, 16));
       let prow = 0; if (fee) { used.add(fee); prow = Math.abs(fee.amount); if (accCur !== cur) prow = prow * (accCur === 'PLN' ? 1 : await rate(accCur, o.data)) / (kurs || 1); }
       S.transakcje.push({ id: uid(), data: o.data, strategia: m.strategia || defStrat, typ: o.kind === 'buy' ? 'KUPNO' : 'SPRZEDAŻ', ticker: m.ticker, ilosc: o.ilosc, cena: o.cena,
@@ -2550,7 +2570,7 @@ async function xtbImportuj() {
   }
   ['instrumenty', 'transakcje', 'dywidendy', 'wplaty', 'cele', 'alerty'].filter(t => S[t]).forEach(t => changed(t));
   IMP = null; render();
-  toast(`Zaimportowano: ${n.tx} transakcji, ${n.dyw} dywidend/odsetek, ${n.wpl} wpłat/wypłat${naprawione ? ` · poprawiono tickery: ${naprawione}` : ''}`);
+  toast(`Zaimportowano: ${n.tx} transakcji, ${n.dyw} dywidend/odsetek, ${n.wpl} wpłat/wypłat${naprawione ? ` · poprawiono tickery: ${naprawione}` : ''}${kfix.length ? ` · poprawiono kursy XTB: ${kfix.length}` : ''}`);
 }
 
 /* ===================== ALERTY CENOWE I PORTFELA DOCELOWEGO ===================== */
