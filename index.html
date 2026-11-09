@@ -98,7 +98,7 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 </head>
 <body>
 <div class="app">
-  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 23:07</div></aside>
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 23:14</div></aside>
   <main>
     <div class="top">
       <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
@@ -1636,7 +1636,7 @@ function vTransakcje() {
   const sel = (key, label, opts) => `<select onchange="FILT.tx.${key}=this.value;render()"><option value="">${label}</option>${opts.map(o => `<option ${f[key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   return ['Transakcje', `${rows.length} z ${S.transakcje.length}`, `
     <div class="filters">${sel('s', 'Wszystkie strategie', S.strategie.map(s => s.nazwa))}${sel('t', 'Kupno i sprzedaż', ['KUPNO', 'SPRZEDAŻ'])}${sel('r', 'Wszystkie lata', lata)}</div>
-    <div class="card">${table(txCols(), rows, { empty: 'Brak transakcji – kliknij „＋ Transakcja”', click: t => `editTransakcja('${t.id}')` })}</div>`, `<button class="btn ghost" onclick="go('import')">⤓ Import z XTB</button><button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`];
+    <div class="card">${table(txCols(), rows, { empty: 'Brak transakcji – kliknij „＋ Transakcja”', click: t => `editTransakcja('${t.id}')` })}</div>`, `<label class="btn ghost" style="cursor:pointer" title="Plik CSV: Data; Konto; Strategia; Typ; Ticker; Nazwa; Klasa; Waluta; Symbol; Ilość; Cena; Prowizja; Kurs; Notatka">⤓ Import CSV<input type="file" accept=".csv,.txt" style="display:none" onchange="importTxCSV(this.files[0]);this.value=''"></label><button class="btn ghost" onclick="go('import')">⤓ Import z XTB</button><button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`];
 }
 
 function vDywidendy() {
@@ -1801,6 +1801,7 @@ function vUstawienia() {
     </div>
     <div class="card" style="margin-top:16px"><h3>Kopia zapasowa</h3>
       <div class="row"><button class="btn ghost" onclick="exportJSON()">⬇ Eksport (plik JSON)</button><button class="btn ghost" onclick="exportCSV()">⬇ Transakcje do Excela (CSV)</button>
+      <label class="btn ghost" style="cursor:pointer">⬆ Import transakcji (CSV)<input type="file" accept=".csv,.txt" style="display:none" onchange="importTxCSV(this.files[0]);this.value=''"></label>
       <label class="btn ghost" style="cursor:pointer">⬆ Import z pliku<input type="file" accept=".json" style="display:none" onchange="importJSON(this.files[0])"></label>
       <span class="sp" style="flex:1"></span><button class="btn danger" onclick="resetAll()">Wyczyść dane w przeglądarce</button></div></div>
     <div class="card" style="margin-top:16px"><h3>Tryb demonstracyjny</h3>
@@ -2060,6 +2061,42 @@ function importJSON(file) {
     S = Object.assign(defaultState(), d); Object.keys(TABLES).forEach(t => DIRTY.add(t)); saveLocal(); scheduleSync(); render(); toast('Zaimportowano dane'); }
     catch (e) { toast('To nie jest plik eksportu Portfela'); } };
   r.readAsText(file);
+}
+/* import transakcji z CSV (własny plik albo eksport z aplikacji); brakujące instrumenty i strategie są zakładane */
+const TXCSV = { data: /^data$/i, konto: /^konto$/i, strategia: /^strategia$/i, typ: /^typ$/i, ticker: /^ticker$/i, nazwa: /^nazwa$/i, klasa: /^klasa$/i,
+  waluta: /^waluta$/i, symbol: /^symbol/i, ilosc: /^ilo[śs][ćc]/i, cena: /^cena/i, prowizja: /^prowizja/i, kurs: /^kurs/i, notatka: /^notatka/i };
+async function importTxCSV(file) {
+  if (!file) return;
+  try {
+    const rows = readCsv(await file.text()).CSV.filter(r => r.some(c => String(c).trim()));
+    const head = (rows[0] || []).map(c => String(c).trim()), ci = {}; Object.entries(TXCSV).forEach(([k, re]) => ci[k] = head.findIndex(h => re.test(h)));
+    if (ci.data < 0 || ci.ticker < 0 || ci.ilosc < 0 || ci.cena < 0) throw new Error('brak kolumn Data / Ticker / Ilość / Cena');
+    const g = (r, k) => ci[k] >= 0 ? String(r[ci[k]] ?? '').trim() : '';
+    const tx = rows.slice(1).map(r => ({ data: xtbDate(g(r, 'data')), konto: g(r, 'konto'), strategia: g(r, 'strategia'), typ: /sprz/i.test(g(r, 'typ')) ? 'SPRZEDAŻ' : 'KUPNO',
+      ticker: g(r, 'ticker'), nazwa: g(r, 'nazwa'), klasa: g(r, 'klasa'), waluta: g(r, 'waluta').toUpperCase(), symbol: g(r, 'symbol'),
+      ilosc: num(g(r, 'ilosc')), cena: num(g(r, 'cena')), prowizja: g(r, 'prowizja') ? num(g(r, 'prowizja')) : '', kurs: g(r, 'kurs') ? num(g(r, 'kurs')) : '', notatka: g(r, 'notatka') }))
+      .filter(t => t.data && t.ticker && t.ilosc > 0);
+    if (!tx.length) throw new Error('nie znaleziono transakcji');
+    const jest = t => S.transakcje.some(x => x.data === t.data && x.ticker === t.ticker && x.typ === t.typ && Math.abs(num(x.ilosc) - t.ilosc) < 1e-9 && Math.abs(num(x.cena) - t.cena) < 1e-6);
+    const nowe = tx.filter(t => !jest(t)), dupl = tx.length - nowe.length;
+    const nInstr = [...new Set(nowe.map(t => t.ticker))].filter(t => !S.instrumenty.some(i => i.ticker === t));
+    const nStrat = [...new Set(nowe.map(t => t.strategia).filter(Boolean))].filter(s => !S.strategie.some(x => x.nazwa === s));
+    if (!nowe.length) return toast(`Wszystkie ${tx.length} transakcje już są w aplikacji`);
+    if (!confirm(`Zaimportować ${nowe.length} transakcji${dupl ? ` (${dupl} już jest – pominę)` : ''}?` + (nInstr.length ? `\n\nNowe instrumenty: ${nInstr.join(', ')}` : '') + (nStrat.length ? `\nNowe strategie: ${nStrat.join(', ')}` : ''))) return;
+    toast('Importuję…');
+    nInstr.forEach(tk => { const t = nowe.find(x => x.ticker === tk);
+      S.instrumenty.push({ id: uid(), ticker: tk, nazwa: t.nazwa || tk, klasa: KLASY.includes(t.klasa) ? t.klasa : 'Inne', waluta: t.waluta || 'PLN', cena: '', dataCeny: '', symbol: t.symbol, cenaAuto: '' }); });
+    nStrat.forEach(sn => { const t = nowe.find(x => x.strategia === sn), k = S.konta.find(x => x.nazwa === t.konto) || S.konta[0];
+      S.strategie.push({ id: uid(), nazwa: sn, konto: k ? k.nazwa : '', kapital: '', opis: '', kolor: PAL[S.strategie.length % PAL.length] }); });
+    for (const t of nowe) {
+      let st = t.strategia || ((S.strategie.find(s => s.konto === t.konto) || S.strategie[0] || {}).nazwa || '');
+      const cur = (S.instrumenty.find(i => i.ticker === t.ticker) || {}).waluta || 'PLN';
+      let kurs = t.kurs; if (cur !== 'PLN' && kurs === '') { try { kurs = await nbpRate(cur, t.data); } catch (e) { kurs = ''; } }
+      S.transakcje.push({ id: uid(), data: t.data, strategia: st, typ: t.typ, ticker: t.ticker, ilosc: t.ilosc, cena: t.cena, prowizja: t.prowizja, kurs: cur === 'PLN' ? '' : kurs, notatka: t.notatka, zakup: '' });
+    }
+    changed('instrumenty', 'strategie', 'transakcje'); render();
+    toast(`Zaimportowano ${nowe.length} transakcji${nInstr.length ? ` · nowe instrumenty: ${nInstr.length}` : ''}${nStrat.length ? ` · nowe strategie: ${nStrat.length}` : ''}`);
+  } catch (e) { toast('Import CSV: ' + e.message); }
 }
 function resetAll() { if (!confirm('Usunąć wszystkie dane z tej przeglądarki? (arkusz Google zostaje bez zmian)')) return; S = defaultState(); DIRTY = new Set(); saveLocal(); render(); }
 
