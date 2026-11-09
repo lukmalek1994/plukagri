@@ -423,16 +423,33 @@ function vDywidendy() {
 }
 
 function vWplaty() {
-  const rows = S.wplaty.slice().sort((a, b) => String(b.data).localeCompare(String(a.data)));
-  let acc = 0; const cum = S.wplaty.slice().filter(w => w.data).sort((a, b) => String(a.data).localeCompare(String(b.data))).map(w => [String(w.data), acc += num(w.kwotaPLN)]);
+  const fk = FILT.wplKonto || '', rok = String(new Date().getFullYear());
+  const lista = S.wplaty.filter(w => !fk || w.konto === fk);
+  const rows = lista.slice().sort((a, b) => String(b.data).localeCompare(String(a.data)));
+  let acc = 0; const cum = lista.filter(w => w.data).sort((a, b) => String(a.data).localeCompare(String(b.data))).map(w => [String(w.data), acc += num(w.kwotaPLN)]);
+  // podsumowanie na konta
+  const per = S.konta.map(k => { const ws = S.wplaty.filter(w => w.konto === k.nazwa), v = w => num(w.kwotaPLN);
+    return { konto: k.nazwa, typ: k.typ, wpl: ws.filter(w => v(w) > 0).reduce((a, w) => a + v(w), 0), wyp: ws.filter(w => v(w) < 0).reduce((a, w) => a + v(w), 0),
+      rok: ws.filter(w => String(w.data).startsWith(rok)).reduce((a, w) => a + v(w), 0), n: ws.length, ost: ws.map(w => String(w.data)).sort().pop() || '' }; })
+    .map(r => ({ ...r, netto: r.wpl + r.wyp })).filter(r => r.n);
+  const T = per.reduce((a, r) => ({ wpl: a.wpl + r.wpl, wyp: a.wyp + r.wyp, netto: a.netto + r.netto, rok: a.rok + r.rok, n: a.n + r.n }), { wpl: 0, wyp: 0, netto: 0, rok: 0, n: 0 });
+  const sumaF = lista.reduce((a, w) => a + num(w.kwotaPLN), 0);
+  const perTbl = table([
+    { h: 'Konto', f: r => `<b>${esc(r.konto)}</b> <span class="mut" style="font-size:12px">${esc(r.typ || '')}</span>${fk === r.konto ? ' <span class="tag">wybrane</span>' : ''}` },
+    { h: 'Wpłacono', n: 1, f: r => zlPLN(r.wpl) }, { h: 'Wypłacono', n: 1, f: r => r.wyp ? plPLN(r.wyp) : '<span class="mut">–</span>' },
+    { h: 'Netto', n: 1, f: r => `<b>${zlPLN(r.netto)}</b>` }, { h: 'W ' + rok, n: 1, f: r => r.rok ? zlPLN(r.rok) : '<span class="mut">–</span>' },
+    { h: 'Udział', n: 1, f: r => pct(T.netto ? r.netto / T.netto : 0) }, { h: 'Wpłat', n: 1, f: r => r.n }, { h: 'Ostatnia', f: r => esc(r.ost) },
+  ], per.sort((a, b) => b.netto - a.netto), { empty: 'Brak wpłat', click: r => `FILT.wplKonto=FILT.wplKonto===${esc(JSON.stringify(r.konto))}?'':${esc(JSON.stringify(r.konto))};render()`,
+    foot: ['Razem', zlPLN(T.wpl), T.wyp ? zlPLN(T.wyp) : '–', zlPLN(T.netto), T.rok ? zlPLN(T.rok) : '–', '100%', T.n, ''] });
   return ['Wpłaty i wypłaty', 'Wypłatę wpisz jako kwotę ujemną', `
-    <div class="grid g2"><div class="card"><h3>Wpłacony kapitał narastająco</h3>${lineChart([{ name: 'Kapitał', points: cum }], { area: true, pln: true, empty: 'Dodaj co najmniej dwie wpłaty' })}</div>
-    <div class="kpis" style="align-content:start;grid-template-columns:1fr">${kpi('Wpłacony kapitał', zlPLN(C.kapital))}${kpi('W dzisiejszych złotych (po inflacji)', zlPLN(C.kapitalRealny))}</div></div>
-    <div class="card" style="margin-top:16px">${table([
+    <div class="kpis">${kpi('Wpłacony kapitał', zlPLN(C.kapital), `${T.n} operacji na ${per.length} kontach`, 'main')}${kpi('Wpłacono', zlPLN(T.wpl))}${kpi('Wypłacono', T.wyp ? plPLN(T.wyp) : zlPLN(0))}${kpi('Wpłaty w ' + rok, zlPLN(T.rok))}${kpi('W dzisiejszych złotych', zlPLN(C.kapitalRealny), 'po inflacji')}</div>
+    <div class="card"><h3>Podział na konta <small>kliknij konto, aby pokazać tylko jego wpłaty</small></h3>${perTbl}</div>
+    <div class="card" style="margin-top:16px"><h3>Wpłacony kapitał narastająco <small>${fk ? esc(fk) + ' · <a onclick="FILT.wplKonto=\'\';render()">pokaż wszystkie konta</a>' : 'wszystkie konta'}</small></h3>${lineChart([{ name: fk || 'Kapitał', points: cum }], { area: true, pln: true, empty: 'Dodaj co najmniej dwie wpłaty' })}</div>
+    <div class="card" style="margin-top:16px"><h3>Operacje <small>${fk ? esc(fk) + ' · ' : ''}${rows.length} poz. · razem ${zlPLN(sumaF)}</small></h3>${table([
       { h: 'Data', f: w => esc(w.data) }, { h: 'Konto', f: w => esc(w.konto) }, { h: 'Kwota PLN', n: 1, f: w => plPLN(num(w.kwotaPLN)) },
       { h: 'Kwota w walucie konta', n: 1, f: w => has(w.kwotaWal) ? nf2.format(num(w.kwotaWal)) : '–' }, { h: 'Notatka', f: w => esc(w.notatka) },
     ], rows, { empty: 'Brak wpłat', click: w => `editWplata('${w.id}')` })}</div>`,
-    `<button class="btn" onclick="editWplata()">＋ Wpłata</button>`];
+    `<button class="btn" onclick="editWplata(null${fk ? `,'${esc(fk)}'` : ''})">＋ Wpłata</button>`];
 }
 
 function vPodatki() {
