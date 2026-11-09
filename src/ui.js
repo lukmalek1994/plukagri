@@ -117,19 +117,25 @@ const lotSub = p => p.loty.length > 1 || (p.loty[0] && p.loty[0].ilosc < p.loty[
 const lotOpis = l => `<span class="mut">↳ zakup${l._p && ROUTE === 'portfel' ? ' ' + esc(l.data) : ''}</span>${l.ilosc < l.ilosc0 - 1e-9 ? ` <span class="mut" style="font-size:11px" title="część tego zakupu została już sprzedana">(z ${nfq.format(l.ilosc0)})</span>` : ''}`;
 const lotAkcje = l => `<span class="akcje"><a onclick="zamknijPozycje('${esc(l._p.strategia)}','${esc(l._p.ticker)}',${l.ilosc},'${l.id}')">zamknij</a> · <a onclick="editTransakcja('${l.id}')">edytuj</a></span>`;
 const osKupno = p => `${money(p.koszt, p.waluta)}<br><span class="mut" style="font-size:11px">wartość kupna</span>`;
-const osWartosc = p => `<input class="cell" type="number" step="0.01" style="width:110px" value="${p.wgZakupu ? '' : r2(p.wartosc)}" placeholder="wpisz z banku" title="Aktualna wartość tych obligacji (z banku / obligacjeskarbowe.pl)" onclick="event.stopPropagation()" onchange="setWartoscOS('${esc(p.ticker)}',this.value,${p.ilosc})"><br><span class="mut" style="font-size:11px">${p.wgZakupu ? 'aktualna wartość – na razie = kupno' : 'aktualna wartość'}</span>`;
+const osInput = (ticker, l) => `<input class="cell" type="number" step="0.01" style="width:110px" value="${l.lz ? '' : r2(l.wartosc)}" placeholder="wpisz z banku" title="Aktualna wartość obligacji z tego zakupu (z banku / obligacjeskarbowe.pl)" onclick="event.stopPropagation()" onchange="setLotOS('${esc(ticker)}','${l.id}',this.value)">${l.lz ? '<br><span class="mut" style="font-size:11px">na razie = kupno</span>' : ''}`;
+// pozycja z jednym zakupem: pole od razu w wierszu; kilka zakupów: suma na górze, pola w wierszach zakupów
+const osWartosc = p => lotSub(p).length ? `<b>${money(p.wartosc, p.waluta)}</b><br><span class="mut" style="font-size:11px">suma zakupów ↓</span>` : osInput(p.ticker, p.loty[0]);
 const qtyOf = t => C.pozycje.filter(p => p.ticker === t).reduce((a, p) => a + p.ilosc, 0);
-// wartość łączna obligacji -> cena za sztukę (w arkuszu nadal „Cena ręczna” za 1 szt.)
-function setWartoscOS(ticker, v, qty) {
-  const i = S.instrumenty.find(x => x.ticker === ticker); if (!i) return;
-  if (v === '' || v === null) { i.cena = ''; i.dataCeny = ''; }
-  else { const q = qty || qtyOf(ticker); if (!(q > 0)) { toast('Brak tych obligacji w portfelu'); return; } i.cena = num(v) / q; i.dataCeny = todayStr(); }
-  changed('instrumenty'); render(); toast('Zapisano aktualną wartość');
+function setLotOS(ticker, lotId, v) {
+  const tx = S.transakcje.find(x => x.id === lotId), ins = S.instrumenty.find(x => x.ticker === ticker); if (!tx) return;
+  const loty = C.pozycje.filter(p => p.ticker === ticker).flatMap(p => p.loty), lot = loty.find(l => l.id === lotId); if (!lot) return;
+  // zakupy wyceniane dotąd wspólną wartością: utrwal ich wartość, żeby nie zmieniła się po wpisaniu tej
+  loty.forEach(l => { const t = S.transakcje.find(x => x.id === l.id); if (t && l.id !== lotId && !has(t.wartoscAkt) && !l.lz && l.ilosc) t.wartoscAkt = r2(l.wartosc * l.ilosc0 / l.ilosc); });
+  tx.wartoscAkt = v === '' || v === null ? '' : num(v) * lot.ilosc0 / lot.ilosc;
+  // „Cena ręczna” instrumentu = średnia z wpisanych wartości (dla zakładki Podsumowanie w arkuszu)
+  const ps = calc(S, calcOpts()).pozycje.filter(p => p.ticker === ticker), q = ps.reduce((a, p) => a + p.ilosc, 0), w = ps.reduce((a, p) => a + p.wartosc, 0);
+  if (ins && q) { ins.cena = w / q; ins.dataCeny = todayStr(); }
+  changed('transakcje', 'instrumenty'); render(); toast('Zapisano aktualną wartość');
 }
 const pozAkcje = p => `<button class="btn sm ghost akcje" onclick="zamknijPozycje('${esc(p.strategia)}','${esc(p.ticker)}',${p.ilosc},'')">Zamknij</button>`;
 function zamknijPozycje(strategia, ticker, ilosc, zakup) {
   const p = C.pozycje.find(x => x.strategia === strategia && x.ticker === ticker) || {};
-  editTransakcja(null, strategia, { typ: 'SPRZEDAŻ', ticker, ilosc: +ilosc.toFixed(8), cena: p.cena ? +p.cena.toFixed(4) : '', zakup: zakup || '', wartosc: p.os && p.ilosc ? r2(p.wartosc * ilosc / p.ilosc) : '' });
+  editTransakcja(null, strategia, { typ: 'SPRZEDAŻ', ticker, ilosc: +ilosc.toFixed(8), cena: p.cena ? +p.cena.toFixed(4) : '', zakup: zakup || '', wartosc: !p.os ? '' : (l => l ? r2(l.wartosc * ilosc / l.ilosc) : r2(p.wartosc * ilosc / p.ilosc))(zakup && p.loty.find(x => x.id === zakup)) });
 }
 function cofnijSprzedaz(id) {
   const t = S.transakcje.find(x => x.id === id); if (!t) return;
@@ -273,7 +279,7 @@ function vPortfel() {
   ];
   const subCols = [
     { f: lotOpis }, { f: () => '' }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => l._p.os ? money(l.koszt, l._p.waluta) : money(l.cenaZakupu, l._p.waluta) },
-    { n: 1, f: l => l._p.brakCeny || l._p.os ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => `${zl(l.wartoscPLN)}<br><span class="mut" style="font-size:11.5px">${money(l.wartosc, l._p.waluta)}</span>` },
+    { n: 1, f: l => l._p.os ? osInput(l._p.ticker, l) : l._p.brakCeny ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => `${zl(l.wartoscPLN)}<br><span class="mut" style="font-size:11.5px">${money(l.wartosc, l._p.waluta)}</span>` },
     { n: 1, f: l => `<span class="${sgn(l.zysk)}">${plus(l.zysk)}${money(l.zysk, l._p.waluta)}</span><br>${pp(l.zyskPct)}` },
     { n: 1, f: l => pl(l.zyskPLN) }, { f: () => '' }, { f: lotAkcje }];
   return ['Portfel – pozycje', `${rows.length} otwartych pozycji`, `
@@ -296,7 +302,7 @@ function vStrategia() {
     { h: '%', n: 1, f: p => pp(p.zyskPct) }, { h: 'Zysk ' + WL(), n: 1, f: p => pl(p.zyskPLN) }, { h: '', f: pozAkcje },
   ], poz, { empty: 'Brak otwartych pozycji – dodaj transakcję kupna', expand: { key: lotKey, sub: lotSub, cols: [
     { f: lotOpis }, { f: l => esc(l.data) }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => l._p.os ? money(l.koszt, l._p.waluta) : money(l.cenaZakupu, l._p.waluta) },
-    { n: 1, f: l => l._p.brakCeny || l._p.os ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => zl(l.wartoscPLN) },
+    { n: 1, f: l => l._p.os ? osInput(l._p.ticker, l) : l._p.brakCeny ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => zl(l.wartoscPLN) },
     { n: 1, f: l => `<span class="${sgn(l.zysk)}">${plus(l.zysk)}${money(l.zysk, l._p.waluta)}</span>` }, { n: 1, f: l => pp(l.zyskPct) },
     { n: 1, f: l => pl(l.zyskPLN) }, { f: lotAkcje }] } });
   const zamTbl = table([
@@ -497,7 +503,7 @@ function vInstrumenty() {
       { h: 'Ticker', f: i => `<b>${esc(i.ticker)}</b>` }, { h: 'Nazwa', f: i => esc(i.nazwa) }, { h: 'Klasa', f: i => esc(i.klasa) },
       { h: 'Waluta', f: i => esc(i.waluta) }, { h: 'Symbol', f: i => `<span class="mut">${esc(i.symbol)}</span>` },
       { h: 'Cena auto', n: 1, f: i => has(i.cenaAuto) ? nf2.format(num(i.cenaAuto)) : '<span class="mut">–</span>' },
-      { h: 'Cena ręczna', n: 1, f: i => isOS(i) ? (() => { const q = qtyOf(i.ticker); return `<input class="cell" type="number" step="0.01" value="${has(i.cena) && q ? r2(num(i.cena) * q) : ''}" placeholder="${q ? 'wpisz z banku' : 'brak w portfelu'}" onclick="event.stopPropagation()" onchange="setWartoscOS('${esc(i.ticker)}',this.value,0)"><br><span class="mut" style="font-size:11px">aktualna wartość łącznie</span>`; })()
+      { h: 'Cena ręczna', n: 1, f: i => isOS(i) ? (() => { const ps = C.pozycje.filter(p => p.ticker === i.ticker), w = ps.reduce((x, p) => x + p.wartosc, 0); return `${ps.length ? money(w, i.waluta) : '–'}<br><span class="mut" style="font-size:11px">wartość łączna – wpisujesz przy zakupach na stronie strategii</span>`; })()
         : `<input class="cell" type="number" step="any" value="${esc(i.cena)}" onclick="event.stopPropagation()" onchange="setCena('${i.id}',this.value)">` },
       { h: 'Data ceny', f: i => esc(i.dataCeny) },
       { h: 'Ilość w portfelu', n: 1, f: i => { const q = C.pozycje.filter(p => p.ticker === i.ticker).reduce((a, p) => a + p.ilosc, 0); return q ? nfq.format(q) : '–'; } },

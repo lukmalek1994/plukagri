@@ -101,7 +101,7 @@ function calc(S, opts = {}) {
       if (!lots[key]) lots[key] = [];
       if (t.typ === 'KUPNO') {
         const cost = q * p + fee;
-        lots[key].push({ q, q0: q, cena: p, uc: cost / q, ucPLN: cv(cost * kurs, t.data, cur, cost) / q, ucPLNr: cost * kurs / q, data: t.data, id: t.id, kursOk });
+        lots[key].push({ q, q0: q, cena: p, uc: cost / q, ucPLN: cv(cost * kurs, t.data, cur, cost) / q, ucPLNr: cost * kurs / q, data: t.data, id: t.id, kursOk, wa: t.wartoscAkt });
       } else if (t.typ === 'SPRZEDAŻ') {
         let left = q, cost = 0, costPLN = 0, allOk = kursOk, firstBuy = null; const uzyte = [];
         const bierz = lot => { const take = Math.min(left, lot.q);
@@ -132,15 +132,21 @@ function calc(S, opts = {}) {
     const [s, ticker] = key.split('|');
     const i = instr[ticker] || {}; const cur = curOf(ticker);
     const koszt = lots.reduce((a, l) => a + l.q * l.uc, 0), kosztPLN = lots.reduce((a, l) => a + l.q * l.ucPLN, 0), kosztPLNr = lots.reduce((a, l) => a + l.q * l.ucPLNr, 0);
-    const os = isOS(i); let cena = priceOf(ticker); const wgZakupu = os && !cena;   // obligacje bez wpisanej wartości: wyceniane po koszcie
-    if (wgZakupu) cena = koszt / qty;
-    const wartosc = qty * cena, wartoscPLN = wartosc * rateNow(cur);
+    // obligacje skarbowe: aktualna wartość wpisywana osobno dla każdego zakupu (wartoscAkt = wartość całego zakupu);
+    // zakup bez wpisanej wartości liczony po koszcie (albo po starej wspólnej cenie, jeśli żaden zakup nie ma jeszcze wartości)
+    const os = isOS(i), anyWa = os && lots.some(l => has(l.wa)), wspolna = os && !anyWa && has(i.cena);
+    const lotZakup = l => os && !has(l.wa) && !wspolna;
+    let cena = priceOf(ticker);
+    const lv = l => !os ? l.q * cena : has(l.wa) ? num(l.wa) * l.q / l.q0 : wspolna ? l.q * num(i.cena) : l.q * l.uc;
+    const wartosc = lots.reduce((a, l) => a + lv(l), 0), wartoscPLN = wartosc * rateNow(cur);
+    if (os) cena = wartosc / qty;
+    const wgZakupu = os && lots.every(lotZakup);
     pozycje.push({ strategia: s, konto: (strat[s] || {}).konto || '', ticker, nazwa: i.nazwa || '', klasa: i.klasa || 'Inne', koszyk: i.koszyk || '',
       waluta: cur, ilosc: qty, koszt, kosztPLN, kosztPLNr, sredniaCena: koszt / qty, cena, brakCeny: !cena, os, wgZakupu, wartosc, wartoscPLN,
       zysk: wartosc - koszt, zyskPct: koszt ? (wartosc - koszt) / koszt : 0, zyskPLN: wartoscPLN - kosztPLN,
       od: lots.reduce((a, l) => l.data < a ? l.data : a, lots[0].data), kursBrak: lots.some(l => !l.kursOk),
-      loty: lots.map(l => { const w = l.q * (wgZakupu ? l.uc : cena), k = l.q * l.uc, kP = l.q * l.ucPLN;
-        return { id: l.id, data: l.data, ilosc: l.q, ilosc0: l.q0, cenaZakupu: l.cena, koszt: k, kosztPLN: kP, wartosc: w, wartoscPLN: w * rateNow(cur),
+      loty: lots.map(l => { const w = lv(l), k = l.q * l.uc, kP = l.q * l.ucPLN;
+        return { id: l.id, data: l.data, ilosc: l.q, ilosc0: l.q0, cenaZakupu: l.cena, lz: lotZakup(l), koszt: k, kosztPLN: kP, wartosc: w, wartoscPLN: w * rateNow(cur),
           zysk: w - k, zyskPct: k ? (w - k) / k : 0, zyskPLN: w * rateNow(cur) - kP }; }) });
   }
 
