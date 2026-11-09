@@ -13,6 +13,8 @@ const TABLES = {
   inflacja: { sheet: 'Inflacja', cols: [['miesiac', 'Miesiąc'], ['mm', 'Inflacja PL m/m %'], ['mmUS', 'Inflacja USA m/m %']] },
   historia: { sheet: 'Historia', cols: [['data', 'Data'], ['wartosc', 'Wartość PLN'], ['kapital', 'Wpłacony kapitał PLN'], ['konta', 'Wartości kont (JSON)'], ['strat', 'Wartości strategii (JSON)']] },
   cele: { sheet: 'Cele 2.1', cols: [['id', 'ID'], ['konto', 'Konto (puste = cały portfel)'], ['koszyk', 'Koszyk'], ['tickery', 'Instrumenty'], ['grupa', 'Grupa'], ['cel', 'Cel %']] },
+  alerty: { sheet: 'Alerty', cols: [['id', 'ID'], ['aktywny', 'Aktywny'], ['typ', 'Typ'], ['ticker', 'Instrument'], ['konto', 'Konto'], ['koszyk', 'Koszyk'], ['poziom', 'Poziom'], ['prog', 'Próg blisko'], ['notatka', 'Notatka'],
+    ['opis', 'Opis'], ['yahoo', 'Symbol Yahoo'], ['yahooR', 'Symbol Yahoo (ręczny)'], ['waluta', 'Waluta'], ['cenaApp', 'Cena (aplikacja)'], ['srednia', 'Średnia cena zakupu'], ['dane', 'Dane dla skryptu (JSON)']] },
   ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
 };
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -168,6 +170,7 @@ async function pullAll() {
 }
 async function pushDirty() {
   if (CFG.demo) return;
+  if (typeof prepAlerty === 'function' && C && prepAlerty()) { DIRTY.add('alerty'); saveLocal(); }
   if (!CFG.sheetId || !DIRTY.size) { setSync('ok', 'Zapisano w Google Sheets ✓'); return; }
   if (SYNC.busy) return; SYNC.busy = true;
   const names = [...DIRTY];
@@ -185,6 +188,7 @@ async function pushDirty() {
     }
     names.forEach(n => DIRTY.delete(n)); saveLocal();
     try { await buildSummary(false); } catch (e) { console.warn('Podsumowanie:', e); }
+    try { await buildAnalizy(false); } catch (e) { console.warn('Analizy:', e); }
     setSync('ok', 'Zapisano w Google Sheets ✓ ' + new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }));
   } catch (e) {
     setSync('error', e.message + ' – zmiany czekają w przeglądarce');
@@ -225,7 +229,7 @@ async function detectSep() {
 }
 function summarySig() {
   const pairs = [...new Set(S.transakcje.map(t => t.strategia + '|' + t.ticker))].sort();
-  return JSON.stringify([pairs, S.strategie.map(s => s.nazwa), S.konta.map(k => k.nazwa), S.instrumenty.map(i => i.ticker), S.cele.map(c => [c.konto, c.koszyk, c.tickery, c.cel]), 4]);
+  return JSON.stringify([pairs, S.strategie.map(s => s.nazwa), S.konta.map(k => k.nazwa), S.instrumenty.map(i => i.ticker), S.cele.map(c => [c.konto, c.koszyk, c.tickery, c.cel]), (S.alerty || []).map(a => [a.id, a.aktywny, a.typ, a.ticker, a.konto, a.koszyk, a.poziom, a.notatka, a.srednia]), [...new Set(S.wplaty.map(w => String(w.data).slice(0, 4)))].sort(), new Date().getFullYear(), 5]);
 }
 async function buildSummary(force) {
   if (CFG.demo) throw new Error('W trybie demo arkusz nie jest zmieniany');
@@ -299,7 +303,54 @@ async function buildSummary(force) {
     put(r, 5, f('=' + (lista.map(t => `SUMIF(${HR('U')}§${q(t)}§${HR('Z')})`).join('+') || '0')));
     put(r, 6, f(`=IF(SUM($E$${sM0}:$E$${sML})=0§""§E${r}/SUM($E$${sM0}:$E$${sML}))`));
     put(r, 7, f(`=IF(F${r}=""§""§F${r}-D${r})`)); put(r, 8, `=D${r}*SUM($E$${sM0}:$E$${sML})-E${r}`); });
-  const sEnd = sML;
+  // portfele docelowe kont
+  const modelRows = {};   // konto|koszyk -> wiersz (do alertów)
+  cele0.forEach((c, i) => { modelRows['|' + c.koszyk] = sM0 + i; });
+  let rr = sML + 3; const extraSect = [];
+  konta.filter(k => S.cele.some(c => c.konto === k.nazwa && (c.koszyk || c.tickery))).forEach(k => {
+    const cc = S.cele.filter(c => c.konto === k.nazwa && (c.koszyk || c.tickery)), a0 = rr + 2, aL = a0 + cc.length - 1;
+    put(rr, 2, 'PORTFEL DOCELOWY – ' + k.nazwa.toUpperCase());
+    ['Koszyk', 'Instrumenty', 'Cel', 'Wartość PLN', 'Udział', 'Odchylenie', 'Różnica do celu PLN'].forEach((h, j) => put(rr + 1, 2 + j, h));
+    cc.forEach((c, i) => { const r = a0 + i, lista = String(c.tickery || c.koszyk).split(',').map(x => x.trim()).filter(Boolean); modelRows[k.nazwa + '|' + c.koszyk] = r;
+      put(r, 2, c.koszyk); put(r, 3, lista.join(', ')); put(r, 4, num(c.cel) / 100);
+      put(r, 5, f('=' + (lista.map(t => `SUMIFS(${HR('Z')}§${HR('U')}§${q(t)}§${HR('AB')}§${q(k.nazwa)})`).join('+') || '0')));
+      put(r, 6, f(`=IF(SUM($E$${a0}:$E$${aL})=0§""§E${r}/SUM($E$${a0}:$E$${aL}))`));
+      put(r, 7, f(`=IF(F${r}=""§""§F${r}-D${r})`)); put(r, 8, `=D${r}*SUM($E$${a0}:$E$${aL})-E${r}`); });
+    extraSect.push({ kind: 'model', s: rr, a: a0, b: aL }); rr = aL + 3; });
+  // wyniki wg lat
+  const lataAll = [...new Set([...S.wplaty.map(w => String(w.data).slice(0, 4)), ...S.transakcje.map(t => String(t.data).slice(0, 4)), ...S.dywidendy.map(d => String(d.data).slice(0, 4)), String(new Date().getFullYear())])].filter(y => /^\d{4}$/.test(y)).sort();
+  const y0 = rr + 2, yL = y0 + lataAll.length - 1, D = c => `'Dywidendy'!$${c}$2:$${c}$${N}`, H = c => `'Historia'!$${c}$2:$${c}$5000`;
+  put(rr, 2, 'WYNIKI WG LAT');
+  ['Rok', 'Wpłaty netto', 'Dywidendy i odsetki netto', 'Prowizje', 'Wartość na koniec roku', 'Zysk w roku', 'Zysk w roku %'].forEach((h, j) => put(rr + 1, 2 + j, h));
+  lataAll.forEach((y, i) => { const r = y0 + i;
+    const Y = `(LEFT(§4)=""&B${r})`, yr = rng => Y.replace('§', rng + '§');
+    put(r, 2, y); put(r, 3, f(`=SUMPRODUCT(${yr(`'Wpłaty'!$B$2:$B$${N}`)}*IFERROR(VALUE('Wpłaty'!$D$2:$D$${N})§0))`));
+    put(r, 4, f(`=SUMPRODUCT(${yr(D('B'))}*(IFERROR(VALUE(${D('E')})§0)-IFERROR(VALUE(${D('F')})§0))*IF(${D('G')}=""§1§IFERROR(VALUE(${D('G')})§1)))`));
+    put(r, 5, f(`=SUMPRODUCT(${yr(T('B'))}*IFERROR(VALUE(${T('H')})§0)*IF(${T('I')}=""§1§IFERROR(VALUE(${T('I')})§1)))`));
+    put(r, 6, y === String(new Date().getFullYear()) ? `=B5` : f(`=IFERROR(LOOKUP(2§1/(LEFT(${H('A')}§4)=""&B${r})§${H('B')})§"")`));
+    put(r, 7, i === 0 ? f(`=IF(F${r}=""§""§F${r}-C${r})`) : f(`=IF(OR(F${r}=""§F${r - 1}="")§""§F${r}-F${r - 1}-C${r})`));
+    put(r, 8, i === 0 ? f(`=IF(OR(G${r}=""§C${r}=0)§""§G${r}/C${r})`) : f(`=IF(OR(G${r}=""§F${r - 1}+C${r}/2=0)§""§G${r}/(F${r - 1}+C${r}/2))`)); });
+  extraSect.push({ kind: 'lata', s: rr, a: y0, b: yL }); rr = yL + 2;
+  put(rr, 2, 'Roczna stopa zwrotu (XIRR, od wszystkich wpłat):'); put(rr, 6, f(`=IFERROR(XIRR({ARRAYFORMULA(-IFERROR(VALUE(FILTER('Wpłaty'!$D$2:$D$${N}§'Wpłaty'!$B$2:$B$${N}<>""))§0));B5}§{ARRAYFORMULA(IFERROR(DATEVALUE(FILTER('Wpłaty'!$B$2:$B$${N}§'Wpłaty'!$B$2:$B$${N}<>""))§FILTER('Wpłaty'!$B$2:$B$${N}§'Wpłaty'!$B$2:$B$${N}<>"")));TODAY()})§"")`));
+  extraSect.push({ kind: 'xirr', s: rr }); rr += 3;
+  // alerty
+  const al = (S.alerty || []).filter(a => a.aktywny !== 'NIE');
+  if (al.length) {
+    const a0 = rr + 2, aL = a0 + al.length - 1;
+    put(rr, 2, 'ALERTY'); ['Alert', 'Rodzaj', 'Poziom', 'Teraz', 'Odległość', 'Stan (skrypt e-mail)', 'Notatka'].forEach((h, j) => put(rr + 1, 2 + j, h));
+    al.forEach((a, i) => { const r = a0 + i, m = `MATCH(${q(a.ticker)}§Instrumenty!$B:$B§0)`, cena = `IF(INDEX(Instrumenty!$F:$F§${m})<>""§INDEX(Instrumenty!$F:$F§${m})§INDEX(Instrumenty!$I:$I§${m}))`;
+      put(r, 2, a.typ === 'CEL' ? `${a.koszyk} – ${a.konto || 'cały portfel'}` : a.ticker + (a.typ === 'ŚREDNIA' && a.konto ? ` (${a.konto})` : ''));
+      put(r, 3, ({ 'KUPNO': 'cena spadnie do', 'SPRZEDAŻ': 'cena wzrośnie do', 'ŚREDNIA': 'zmiana od średniej %', 'CEL': 'odchylenie od celu (pp)' })[a.typ] || a.typ);
+      put(r, 4, num(a.poziom));
+      if (a.typ === 'KUPNO' || a.typ === 'SPRZEDAŻ') { put(r, 5, f(`=IFERROR(${cena}§"")`)); put(r, 6, f(`=IF(E${r}=""§""§ABS(E${r}/D${r}-1))`)); }
+      else if (a.typ === 'ŚREDNIA') { put(r, 5, num(a.srednia) ? f(`=IFERROR((${cena}/${num(a.srednia)}-1)*100§"")`) : ''); put(r, 6, f(`=IF(E${r}=""§""§ABS(E${r}-D${r})/100)`)); }
+      else { const mr = modelRows[(a.konto || '') + '|' + a.koszyk]; put(r, 5, mr ? f(`=IF(G${mr}=""§""§G${mr}*100)`) : ''); put(r, 6, f(`=IF(E${r}=""§""§MAX(0§D${r}-ABS(E${r}))/100)`)); }
+      put(r, 7, f(`=IFERROR(VLOOKUP(${q(a.id)}§'Alerty – stan'!$A:$D§4§FALSE)§"włącz w menu Portfel")`)); put(r, 8, a.notatka || ''); });
+    extraSect.push({ kind: 'alerty', s: rr, a: a0, b: aL }); rr = aL + 2;
+  }
+  put(rr, 2, 'Więcej analiz (benchmarki, mapa miesięcy, strategie, waluty, dochód pasywny) – zakładka „Analizy” (zapisywana przez aplikację raz dziennie).');
+  extraSect.push({ kind: 'note', s: rr });
+  const sEnd = rr;
   put(sEnd + 2, 2, f(`="Ostatnia przebudowa przez aplikację: ${new Date().toLocaleString('pl-PL')}"`));
 
   // --- arkusz: usuń stary, utwórz nowy ---
@@ -323,7 +374,7 @@ async function buildSummary(force) {
   const head = (r, c0, c1) => fmt(C(r, r, c0, c1), { backgroundColor: rgb('0B3D91'), textFormat: { bold: true, foregroundColor: rgb('FFFFFF'), fontSize: 9 }, horizontalAlignment: 'CENTER', verticalAlignment: 'MIDDLE', wrapStrategy: 'WRAP' }, 'backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy');
   const sect = r => fmt(C(r, r, 2, 9), { textFormat: { bold: true, fontSize: 11, foregroundColor: rgb('0B3D91') }, borders: { bottom: { style: 'SOLID_MEDIUM', color: rgb('0B3D91') } } }, 'textFormat,borders');
   const R = [
-    fmt(C(1, 200, 1, 30), { textFormat: { fontFamily: 'Arial', fontSize: 10, foregroundColor: rgb('1F2937') }, verticalAlignment: 'MIDDLE' }, 'textFormat,verticalAlignment'),
+    fmt(C(1, Math.max(200, sEnd + 5), 1, 30), { textFormat: { fontFamily: 'Arial', fontSize: 10, foregroundColor: rgb('1F2937') }, verticalAlignment: 'MIDDLE' }, 'textFormat,verticalAlignment'),
     fmt(C(1, 1, 2, 2), { textFormat: { fontFamily: 'Arial', bold: true, fontSize: 18, foregroundColor: rgb('0B3D91') } }, 'textFormat'),
     fmt(C(2, 2, 2, 2), { textFormat: { fontFamily: 'Arial', italic: true, fontSize: 9, foregroundColor: rgb('6B7280') } }, 'textFormat'),
     fmt(C(4, 5, 2, 9), { backgroundColor: rgb('EEF4FC') }, 'backgroundColor'),
@@ -351,6 +402,16 @@ async function buildSummary(force) {
     ...[2, 4, 6, 8].map(c => ({ mergeCells: { range: C(5, 5, c, c + 1), mergeType: 'MERGE_ALL' } })),
   ];
   // pasy w tabelach
+  extraSect.forEach(x => {
+    if (x.kind === 'model') R.push(sect(x.s), head(x.s + 1, 2, 8), fmt(C(x.a, x.b, 4, 4), pctF, 'numberFormat'), fmt(C(x.a, x.b, 5, 5), money, 'numberFormat'), fmt(C(x.a, x.b, 6, 7), pctF, 'numberFormat'), fmt(C(x.a, x.b, 8, 8), money, 'numberFormat'));
+    if (x.kind === 'lata') R.push(sect(x.s), head(x.s + 1, 2, 8), fmt(C(x.a, x.b, 3, 7), money, 'numberFormat'), fmt(C(x.a, x.b, 8, 8), pctF, 'numberFormat'));
+    if (x.kind === 'xirr') R.push(fmt(C(x.s, x.s, 2, 6), { textFormat: { bold: true, foregroundColor: rgb('0B3D91') } }, 'textFormat'), fmt(C(x.s, x.s, 6, 6), { numberFormat: { type: 'PERCENT', pattern: '0.00%;[Red]-0.00%' }, textFormat: { bold: true, fontSize: 13, foregroundColor: rgb('0B3D91') } }, 'numberFormat,textFormat'));
+    if (x.kind === 'alerty') R.push(sect(x.s), head(x.s + 1, 2, 8), fmt(C(x.a, x.b, 4, 5), { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' } }, 'numberFormat'), fmt(C(x.a, x.b, 6, 6), pctF, 'numberFormat'),
+      { addConditionalFormatRule: { rule: { ranges: [C(x.a, x.b, 7, 7)], booleanRule: { condition: { type: 'TEXT_CONTAINS', values: [{ userEnteredValue: 'osiągnięty' }] }, format: { backgroundColor: rgb('FDE2E2'), textFormat: { bold: true, foregroundColor: rgb('B91C1C') } } } }, index: 0 } },
+      { addConditionalFormatRule: { rule: { ranges: [C(x.a, x.b, 7, 7)], booleanRule: { condition: { type: 'TEXT_CONTAINS', values: [{ userEnteredValue: 'blisko' }] }, format: { backgroundColor: rgb('FEF3C7'), textFormat: { foregroundColor: rgb('92400E') } } } }, index: 0 } });
+    if (x.kind === 'note') R.push(fmt(C(x.s, x.s, 2, 2), { textFormat: { italic: true, fontSize: 9, foregroundColor: rgb('1565C0') } }, 'textFormat'));
+    if (x.a && x.b >= x.a) R.push({ addBanding: { bandedRange: { range: C(x.a, x.b, 2, 8), rowProperties: { firstBandColor: rgb('FFFFFF'), secondBandColor: rgb('F5F8FC') } } } });
+  });
   [[10, 9 + strat.length, 8], [sK0, sKL, 9], [sI0, sIL, 7], [sM0, sML, 8]].forEach(([a, b, c]) => { if (b >= a) R.push({ addBanding: { bandedRange: { range: C(a, b, 2, c), rowProperties: { firstBandColor: rgb('FFFFFF'), secondBandColor: rgb('F5F8FC') } } } }); });
   // wykresy
   const src = (r0, r1, c) => ({ sourceRange: { sources: [C(r0, r1, c, c)] } });

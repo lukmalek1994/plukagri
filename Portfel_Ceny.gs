@@ -133,3 +133,109 @@ function YAHOO_HIST(symbol) {
   if (!out.length) throw new Error('Yahoo: brak notowań dla ' + symbol);
   return out;
 }
+
+/* =====================================================================
+ * ALERTY E-MAIL (działają, gdy aplikacja jest zamknięta)
+ * Menu „Portfel” → „Włącz alerty e-mail” – sprawdzanie co 30 minut.
+ * Alerty ustawiasz w aplikacji (zakładka Alerty); zapisują się w arkuszu „Alerty”.
+ * ===================================================================== */
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('Portfel')
+    .addItem('Włącz alerty e-mail (co 30 min)', 'WLACZ_ALERTY')
+    .addItem('Sprawdź alerty teraz', 'SPRAWDZ_ALERTY')
+    .addItem('Wyłącz alerty e-mail', 'WYLACZ_ALERTY')
+    .addToUi();
+}
+function WLACZ_ALERTY() {
+  WYLACZ_ALERTY(true);
+  ScriptApp.newTrigger('SPRAWDZ_ALERTY').timeBased().everyMinutes(30).create();
+  SPRAWDZ_ALERTY();
+  try { SpreadsheetApp.getUi().alert('Alerty e-mail włączone. Skrypt sprawdza ceny co 30 minut i wyśle maila na ' + Session.getEffectiveUser().getEmail() + '.'); } catch (e) {}
+}
+function WYLACZ_ALERTY(cicho) {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'SPRAWDZ_ALERTY') ScriptApp.deleteTrigger(t); });
+  if (cicho !== true) try { SpreadsheetApp.getUi().alert('Alerty e-mail wyłączone.'); } catch (e) {}
+}
+
+/* bieżąca cena z Yahoo (cache 10 min) */
+function cenaTeraz_(sym) {
+  if (!sym) return null;
+  var cache = CacheService.getScriptCache(), key = 'now_' + sym, hit = cache.get(key);
+  if (hit) return Number(hit);
+  try {
+    var url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(sym) + '?range=1d&interval=5m';
+    var opt = { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } };
+    var res = UrlFetchApp.fetch(url, opt);
+    if (res.getResponseCode() !== 200) res = UrlFetchApp.fetch(url.replace('query1', 'query2'), opt);
+    if (res.getResponseCode() !== 200) return null;
+    var r = JSON.parse(res.getContentText()).chart.result[0], m = r.meta, p = Number(m.regularMarketPrice);
+    if (!isFinite(p) || p <= 0) return null;
+    if (m.currency === 'GBp' || m.currency === 'GBX') p = p / 100;
+    cache.put(key, String(p), 600);
+    return p;
+  } catch (e) { return null; }
+}
+function kursPLN_(cur) { if (!cur || cur === 'PLN') return 1; return cenaTeraz_(cur === 'USD' ? 'PLN=X' : cur + 'PLN=X'); }
+/* cena z Yahoo, ale gdy wygląda na inną jednostkę niż w aplikacji – cena z aplikacji */
+function cenaSpójna_(sym, cenaApp) {
+  var p = cenaTeraz_(sym), a = Number(cenaApp);
+  if (p && a > 0 && (p / a > 2 || p / a < 0.5)) return a;
+  return p || (a > 0 ? a : null);
+}
+
+function SPRAWDZ_ALERTY() {
+  var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName('Alerty');
+  if (!sh || sh.getLastRow() < 2) return;
+  var v = sh.getDataRange().getValues(), h = v[0], c = {};
+  h.forEach(function (x, i) { c[String(x)] = i; });
+  var col = function (r, name) { return c[name] === undefined ? '' : r[c[name]]; };
+  var props = PropertiesService.getScriptProperties(), wyniki = [], mail = [];
+  for (var i = 1; i < v.length; i++) {
+    var r = v[i], id = String(col(r, 'ID')); if (!id) continue;
+    var akt = String(col(r, 'Aktywny')) !== 'NIE', typ = String(col(r, 'Typ')), poziom = Number(col(r, 'Poziom')), prog = col(r, 'Próg blisko') === '' ? 3 : Number(col(r, 'Próg blisko'));
+    var nazwa = typ === 'CEL' ? col(r, 'Koszyk') + ' – ' + (col(r, 'Konto') || 'cały portfel') : String(col(r, 'Instrument'));
+    var sym = String(col(r, 'Symbol Yahoo (ręczny)') || col(r, 'Symbol Yahoo')), cur = String(col(r, 'Waluta'));
+    var stan = 'brak danych', opis = '', rada = '';
+    if (akt) {
+      if (typ === 'KUPNO' || typ === 'SPRZEDAŻ') {
+        var p = cenaSpójna_(sym, col(r, 'Cena (aplikacja)'));
+        if (p && poziom) { var d = (p / poziom - 1) * 100;
+          var hit = typ === 'KUPNO' ? p <= poziom : p >= poziom, near = typ === 'KUPNO' ? d <= prog : -d <= prog;
+          stan = hit ? 'osiągnięty' : near ? 'blisko' : 'czeka';
+          opis = 'cena ' + p.toFixed(2) + ' ' + cur + ', poziom ' + poziom + ' ' + cur + (hit ? '' : ' (' + Math.abs(d).toFixed(1) + '% od poziomu)'); }
+      } else if (typ === 'ŚREDNIA') {
+        var p2 = cenaSpójna_(sym, col(r, 'Cena (aplikacja)')), avg = Number(col(r, 'Średnia cena zakupu'));
+        if (p2 && avg) { var z = (p2 / avg - 1) * 100;
+          var hit2 = poziom < 0 ? z <= poziom : z >= poziom, near2 = poziom < 0 ? z <= poziom + prog : z >= poziom - prog;
+          stan = hit2 ? 'osiągnięty' : near2 ? 'blisko' : 'czeka';
+          opis = (z >= 0 ? '+' : '') + z.toFixed(1) + '% od średniej ceny zakupu ' + avg + ' ' + cur + ' (alert przy ' + poziom + '%)'; }
+      } else if (typ === 'CEL') {
+        try {
+          var D = JSON.parse(String(col(r, 'Dane dla skryptu (JSON)') || '{}')), tot = 0, kv = 0;
+          (D.it || []).forEach(function (x) {   // [symbol, ilość, waluta, cena PLN z aplikacji, w koszyku]
+            var fx = kursPLN_(x[2]), py = cenaTeraz_(x[0]), pln = py && fx ? py * fx : 0;
+            if (!pln || (x[3] > 0 && (pln / x[3] > 2 || pln / x[3] < 0.5))) pln = x[3];
+            var w = x[1] * pln; tot += w; if (x[4]) kv += w; });
+          if (tot > 0) { var u = kv / tot * 100, dev = u - Number(D.cel), a = Math.abs(dev);
+            stan = a >= poziom ? 'osiągnięty' : a >= poziom - prog ? 'blisko' : 'czeka';
+            opis = 'udział ' + u.toFixed(1) + '% vs cel ' + D.cel + '% (' + (dev >= 0 ? '+' : '') + dev.toFixed(1) + ' pp, alert przy ±' + poziom + ' pp)';
+            rada = dev > 0 ? 'nadwyżka – rozważ sprzedaż lub wstrzymanie zakupów' : 'niedobór – rozważ dokupienie'; }
+        } catch (e) { opis = 'błąd danych: ' + e.message; }
+      }
+    } else stan = 'wyłączony';
+    var prev = props.getProperty('alert_' + id) || '';
+    if ((stan === 'blisko' || stan === 'osiągnięty') && prev !== stan) mail.push({ stan: stan, nazwa: nazwa, typ: typ, opis: opis, rada: rada, notatka: col(r, 'Notatka') });
+    if (stan !== 'brak danych') props.setProperty('alert_' + id, stan === 'czeka' || stan === 'wyłączony' ? '' : stan);
+    wyniki.push([id, nazwa, typ, stan, opis + (rada ? ' – ' + rada : ''), new Date()]);
+  }
+  var out = ss.getSheetByName('Alerty – stan') || ss.insertSheet('Alerty – stan');
+  out.clear(); out.getRange(1, 1, 1, 6).setValues([['ID', 'Alert', 'Typ', 'Stan', 'Szczegóły', 'Sprawdzono']]).setFontWeight('bold');
+  if (wyniki.length) out.getRange(2, 1, wyniki.length, 6).setValues(wyniki);
+  if (mail.length) {
+    mail.sort(function (x, y) { return (x.stan === 'osiągnięty' ? 0 : 1) - (y.stan === 'osiągnięty' ? 0 : 1); });
+    var temat = mail.some(function (m) { return m.stan === 'osiągnięty'; }) ? '🔔 Portfel: alert osiągnięty – ' + mail[0].nazwa : '⏳ Portfel: zbliża się alert – ' + mail[0].nazwa;
+    if (mail.length > 1) temat += ' (+' + (mail.length - 1) + ')';
+    var body = mail.map(function (m) { return (m.stan === 'osiągnięty' ? 'OSIĄGNIĘTY: ' : 'BLISKO: ') + m.nazwa + '\n  ' + m.opis + (m.rada ? '\n  ' + m.rada : '') + (m.notatka ? '\n  Notatka: ' + m.notatka : ''); }).join('\n\n');
+    MailApp.sendEmail(Session.getEffectiveUser().getEmail(), temat, body + '\n\nArkusz: ' + ss.getUrl() + '\n(Wysłane przez skrypt w Twoim arkuszu „Portfel”. Wyłączysz w menu Portfel → Wyłącz alerty e-mail.)');
+  }
+}

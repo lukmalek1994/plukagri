@@ -32,6 +32,7 @@ function defaultState() {
       { id: 'i6', ticker: 'BTC', nazwa: 'Bitcoin', klasa: 'Krypto', koszyk: 'BTC', waluta: 'USD', cena: '', dataCeny: '', symbol: 'YAHOO:BTC-USD', cenaAuto: '' },
     ],
     transakcje: [], dywidendy: [], wplaty: [], inflacja: [], historia: [],
+    alerty: [],
     cele: [
       { id: 'c1', konto: '', koszyk: 'CSPX', tickery: 'CSPX', grupa: 'CORE', cel: 39 }, { id: 'c2', konto: '', koszyk: 'IWDA', tickery: 'IWDA', grupa: 'CORE', cel: 26 },
       { id: 'c3', konto: '', koszyk: 'IB01', tickery: 'IB01', grupa: 'STABILIZATORY', cel: 17 }, { id: 'c4', konto: '', koszyk: 'ZŁOTO', tickery: 'ZŁOTO', grupa: 'STABILIZATORY', cel: 6 },

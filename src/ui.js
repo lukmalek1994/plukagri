@@ -58,7 +58,7 @@ function renderNav() {
     ${sieroty.length ? `<div class="nav-h">Strategie bez konta</div>${sieroty.map(stLink).join('')}` : ''}
     <a class="add" onclick="editKonto()"><span class="ic">＋</span>Dodaj konto</a><a class="add" onclick="editStrategia()"><span class="ic">＋</span>Dodaj strategię</a>
     <div class="nav-h">Analizy</div>${it('waluta', '¤', 'Wpływ waluty')}${it('porownanie', '⚖', 'Porównanie strategii')}${it('koszty', '−', 'Koszty i podatki')}${it('dochod', '◎', 'Dochód pasywny')}${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}
-    <div class="nav-h">Planowanie</div>${it('symulator', '➚', 'Symulator przyszłości')}${it('mapa', '▦', 'Mapa portfela')}
+    <div class="nav-h">Planowanie</div>${it('symulator', '➚', 'Symulator przyszłości')}${it('mapa', '▦', 'Mapa portfela')}${it('alerty', '🔔', 'Alerty' + (() => { const n = C ? alertyAktywne().filter(x => x.e.stan === 'osiągnięty' || x.e.stan === 'blisko').length : 0; return n ? ` (${n})` : ''; })())}
     <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◈', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}
     <div class="nav-h">Konfiguracja</div>${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('import', '⤓', 'Import z XTB')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`;
 }
@@ -73,11 +73,12 @@ function render() {
   C = calc(S);
   renderNav(); renderSyncBadge();
   const V = { kokpit: vKokpit, portfel: vPortfel, strategia: vStrategia, konto: vKonto, transakcje: vTransakcje, dywidendy: vDywidendy, wplaty: vWplaty,
-    podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, mapa: vMapa, import: vImport, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
+    podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, mapa: vMapa, import: vImport, alerty: vAlerty, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
   const [title, sub, body, actions] = V();
   $('#title').innerHTML = `${esc(title)}<small>${sub || ''}</small>`;
   $('#topActions').innerHTML = actions || `<button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`;
   $('#view').innerHTML = demoBanner() + body;
+  alertyPowiadom();
 }
 
 /* ---------- elementy ---------- */
@@ -187,7 +188,7 @@ function vKokpitInner(SV, KK) {
   const intro = !S.transakcje.length && !CFG.demo && !KK ? `<div class="alert info">👋 Chcesz najpierw zobaczyć, jak to wygląda? <a onclick="wejdzDemo()"><b>Wczytaj przykładowy portfel</b></a> (Twoje dane wrócą jednym kliknięciem).<br>Albo zacznij od <a onclick="go('ustawienia')">Ustawień</a> (konta, połączenie z Google), potem dodaj <a onclick="editTransakcja()">pierwszą transakcję</a>. Ceny aktualizujesz w <a onclick="go('instrumenty')">Instrumentach</a>.</div>` : '';
   const widok = `<select class="viewsel" onchange="FILT.kokpitKonto=this.value;render()"><option value="">📊 Cały portfel</option>${S.konta.map(k => `<option value="${esc(k.nazwa)}" ${k.nazwa === KK ? 'selected' : ''}>${esc(k.nazwa)}</option>`).join('')}</select>`;
   const noHist = KK && !SV.historia.length ? `<div class="alert info">Historia wartości tego konta zbiera się od dziś (zapis raz dziennie). Wykresy w czasie zapełnią się w kolejnych dniach.</div>` : '';
-  return [KK ? 'Kokpit – ' + KK : 'Kokpit', sub, intro + noHist + warningsBox() + kp + `
+  return [KK ? 'Kokpit – ' + KK : 'Kokpit', sub, intro + noHist + (KK ? '' : alertyBox()) + warningsBox() + kp + `
     <div class="grid g2"><div class="card"><h3>${KK ? 'Wartość konta' : 'Wartość portfela'} w czasie<span class="sp"></span>${rangeSeg()}</h3>${line}</div>
       <div class="card"><h3>Struktura – klasy aktywów</h3>${klasy}</div></div>
     <div class="grid g2" style="margin-top:16px"><div class="card"><h3>Stopa zwrotu: nominalna i realna<span class="sp"></span>${rangeSeg()}</h3>${ret}</div>
@@ -463,7 +464,7 @@ function vUstawienia() {
         <label class="full">ID arkusza (puste = aplikacja utworzy nowy)<input id="sid" value="${esc(CFG.sheetId)}" placeholder="z adresu docs.google.com/spreadsheets/d/<ID>/edit"><span class="help">Możesz wkleić ID własnego arkusza (z adresu między /d/ a /edit) – aplikacja sama doda w nim zakładki. Na drugim urządzeniu wklej to samo ID.</span></label></div>
         ${g}<div class="actions" style="justify-content:flex-start">
           <button class="btn" onclick="const nid=$('#sid').value.trim();if(nid!==CFG.sheetId){CFG.createdByApp=false;tokenClient=null;SYNC.token=null;}CFG.clientId=$('#cid').value.trim();CFG.sheetId=nid;saveCfg();googleConnect(true).then(ok=>{if(ok)toast('Połączono z Google Sheets');render()})">${SYNC.token ? 'Połącz ponownie' : 'Zaloguj przez Google'}</button>
-          ${SYNC.token ? '<button class="btn ghost" onclick="buildSummary(true).then(()=>toast(\'Zakładka Podsumowanie w arkuszu odświeżona\')).catch(e=>toast(e.message))">▦ Odśwież Podsumowanie w arkuszu</button><button class="btn ghost" onclick="syncNow()">↻ Synchronizuj teraz</button><button class="btn danger" onclick="googleDisconnect();render()">Rozłącz</button>' : ''}</div></div>
+          ${SYNC.token ? '<button class="btn ghost" onclick="buildSummary(true).then(()=>buildAnalizy(true)).then(()=>toast(\'Zakładki Podsumowanie i Analizy w arkuszu odświeżone\')).catch(e=>toast(e.message))">▦ Odśwież Podsumowanie w arkuszu</button><button class="btn ghost" onclick="syncNow()">↻ Synchronizuj teraz</button><button class="btn danger" onclick="googleDisconnect();render()">Rozłącz</button>' : ''}</div></div>
       <div class="card"><h3>Kursy walut (bieżące, do wyceny)</h3>
         <div class="form">${Object.keys(u.kursy).map(c => `<label>${c}/PLN<input type="number" step="any" value="${esc(u.kursy[c])}" onchange="S.ustawienia.kursy['${c}']=this.value;changed('ustawienia');render()"></label>`).join('')}</div>
         <div class="actions" style="justify-content:flex-start"><button class="btn ghost" onclick="pobierzKursy()">↻ Pobierz z NBP</button><span class="mut">${u.kursyData ? 'Tabela NBP z ' + esc(u.kursyData) : ''}</span></div>
@@ -800,6 +801,13 @@ function demoState() {
     const m = {}; Object.keys(wsp).forEach(k => m[k] = Math.round(h.wartosc * wsp[k] / sw)); h.konta = JSON.stringify(m);
     const sm = {}; CD.strategie.forEach((s, j) => { const kv = m[s.konto]; const ka = CD.konta.find(x => x.nazwa === s.konto); if (!kv || !ka || !ka.razem || !s.wartosc) return;
       sm[s.nazwa] = Math.round(kv * s.wartosc / ka.razem * (1 + 0.03 * Math.sin(dnum(h.data) / (4e9 + j * 7e8) + j))); }); h.strat = JSON.stringify(sm); });
+  const pr = t => { const x = S2.instrumenty.find(i => i.ticker === t); return x ? num(x.cena) || num(x.cenaAuto) : 0; }, r2_ = v => Math.round(v * 100) / 100;
+  S2.alerty = [
+    { id: 'a1', aktywny: 'TAK', typ: 'KUPNO', ticker: 'CSPX', poziom: r2_(pr('CSPX') * 0.98), prog: 3, notatka: 'dokupić 1 szt.' },
+    { id: 'a2', aktywny: 'TAK', typ: 'SPRZEDAŻ', ticker: 'BTC', poziom: r2_(pr('BTC') * 1.2), prog: 5, notatka: 'sprzedać połowę' },
+    { id: 'a3', aktywny: 'TAK', typ: 'ŚREDNIA', ticker: 'ZŁOTO', konto: '', poziom: 40, prog: 5, notatka: 'realizacja zysku' },
+    { id: 'a4', aktywny: 'TAK', typ: 'CEL', konto: '', koszyk: 'IB01', poziom: 5, prog: 1, notatka: '' },
+    { id: 'a5', aktywny: 'TAK', typ: 'KUPNO', ticker: 'GOOGL', poziom: r2_(pr('GOOGL') * 0.85), prog: 3, notatka: '' }];
   return S2;
 }
 function wejdzDemo() {
@@ -826,7 +834,7 @@ setInterval(() => { if (document.visibilityState === 'visible') { C = calc(S); s
 function boot() {
   const MIG = { 'CURRENCY:XAUUSD': 'YAHOO:GC=F', 'CURRENCY:XAGUSD': 'YAHOO:SI=F', 'CURRENCY:BTCUSD': 'YAHOO:BTC-USD' };
   let mig = false; S.instrumenty.forEach(i => { if (MIG[i.symbol]) { i.symbol = MIG[i.symbol]; mig = true; } }); if (mig) changed('instrumenty');
-  migrateCele();
+  migrateCele(); if (!S.alerty) S.alerty = [];
   readHash(); render(); snapshot();
   if (CFG.demo) setSync('local', 'Tryb demo – nic nie zapisuje się w arkuszu');
   else if (CFG.clientId && CFG.connected) setSync('pending', 'Kliknij tutaj, aby połączyć z Google Sheets');
