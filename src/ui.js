@@ -59,7 +59,7 @@ function renderNav() {
     <a class="add" onclick="editKonto()"><span class="ic">＋</span>Dodaj konto</a><a class="add" onclick="editStrategia()"><span class="ic">＋</span>Dodaj strategię</a>
     <div class="nav-h">Analizy</div>${it('waluta', '¤', 'Wpływ waluty')}${it('porownanie', '⚖', 'Porównanie strategii')}${it('koszty', '−', 'Koszty i podatki')}${it('dochod', '◎', 'Dochód pasywny')}${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}
     <div class="nav-h">Planowanie</div>${it('symulator', '➚', 'Symulator przyszłości')}${it('mapa', '▦', 'Mapa portfela')}
-    <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◈', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}
+    <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◈', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}${it('import', '⤓', 'Import z XTB')}
     <div class="nav-h">Konfiguracja</div>${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`;
 }
 function toggleNav(id) { CFG.navClosed = CFG.navClosed || {}; CFG.navClosed[id] = !CFG.navClosed[id]; saveCfg(); renderNav(); }
@@ -73,7 +73,7 @@ function render() {
   C = calc(S);
   renderNav(); renderSyncBadge();
   const V = { kokpit: vKokpit, portfel: vPortfel, strategia: vStrategia, konto: vKonto, transakcje: vTransakcje, dywidendy: vDywidendy, wplaty: vWplaty,
-    podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, mapa: vMapa, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
+    podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, mapa: vMapa, import: vImport, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
   const [title, sub, body, actions] = V();
   $('#title').innerHTML = `${esc(title)}<small>${sub || ''}</small>`;
   $('#topActions').innerHTML = actions || `<button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`;
@@ -333,7 +333,7 @@ function vTransakcje() {
   const sel = (key, label, opts) => `<select onchange="FILT.tx.${key}=this.value;render()"><option value="">${label}</option>${opts.map(o => `<option ${f[key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   return ['Transakcje', `${rows.length} z ${S.transakcje.length}`, `
     <div class="filters">${sel('s', 'Wszystkie strategie', S.strategie.map(s => s.nazwa))}${sel('t', 'Kupno i sprzedaż', ['KUPNO', 'SPRZEDAŻ'])}${sel('r', 'Wszystkie lata', lata)}</div>
-    <div class="card">${table(txCols(), rows, { empty: 'Brak transakcji – kliknij „＋ Transakcja”', click: t => `editTransakcja('${t.id}')` })}</div>`];
+    <div class="card">${table(txCols(), rows, { empty: 'Brak transakcji – kliknij „＋ Transakcja”', click: t => `editTransakcja('${t.id}')` })}</div>`, `<button class="btn ghost" onclick="go('import')">⤓ Import z XTB</button><button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`];
 }
 
 function vDywidendy() {
