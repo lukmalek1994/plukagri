@@ -44,6 +44,7 @@ td{padding:8px;border-bottom:1px solid #f0f2f6;white-space:nowrap}tr:hover td{ba
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .tbl{overflow:auto}
 tr.click{cursor:pointer}
+tr.sub td{background:#f6f8fc;font-size:12.5px;padding-top:6px;padding-bottom:6px}tr.open td{background:#eef3fb}.akcje{white-space:nowrap}.chev{display:inline-block;width:14px;color:#7a8aa6;font-size:11px}
 .tag{display:inline-block;font-size:11.5px;padding:2px 8px;border-radius:999px;background:#eef2f7;color:#475569}
 .tag.buy{background:#e7f6ee;color:#15803d}.tag.sell{background:#fdecec;color:#b91c1c}
 .bar{height:6px;border-radius:4px;background:#eef2f7;overflow:hidden;min-width:60px}.bar>i{display:block;height:100%;border-radius:4px}
@@ -97,7 +98,7 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 </head>
 <body>
 <div class="app">
-  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 21:12</div></aside>
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 21:19</div></aside>
   <main>
     <div class="top">
       <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
@@ -182,7 +183,9 @@ function calc(S) {
   const txs = S.transakcje.filter(t => t.data && t.ticker && t.typ && num(t.ilosc) > 0)
     .map((t, n) => ({ ...t, _n: n })).sort((a, b) => (a.data === b.data ? a._n - b._n : a.data.localeCompare(b.data)));
 
-  function fifo(keyFn) {
+  // wybrany=true: sprzedaż z polem „zakup” zamyka najpierw ten konkretny zakup (widok pozycji);
+  // podatek zawsze liczony FIFO – tak wymaga ustawa o PIT
+  function fifo(keyFn, wybrany) {
     const lots = {}, realized = [];
     for (const t of txs) {
       const cur = curOf(t.ticker), q = num(t.ilosc), p = num(t.cena), fee = num(t.prowizja);
@@ -192,26 +195,27 @@ function calc(S) {
       if (!lots[key]) lots[key] = [];
       if (t.typ === 'KUPNO') {
         const cost = q * p + fee;
-        lots[key].push({ q, uc: cost / q, ucPLN: cost * kurs / q, data: t.data, id: t.id, kursOk });
+        lots[key].push({ q, q0: q, cena: p, uc: cost / q, ucPLN: cost * kurs / q, data: t.data, id: t.id, kursOk });
       } else if (t.typ === 'SPRZEDAŻ') {
-        let left = q, cost = 0, costPLN = 0, allOk = kursOk, firstBuy = null;
-        while (left > EPS && lots[key].length) {
-          const lot = lots[key][0], take = Math.min(left, lot.q);
-          cost += take * lot.uc; costPLN += take * lot.ucPLN; if (!lot.kursOk) allOk = false; if (!firstBuy) firstBuy = lot.data;
-          lot.q -= take; left -= take; if (lot.q <= EPS) lots[key].shift();
-        }
+        let left = q, cost = 0, costPLN = 0, allOk = kursOk, firstBuy = null; const uzyte = [];
+        const bierz = lot => { const take = Math.min(left, lot.q);
+          cost += take * lot.uc; costPLN += take * lot.ucPLN; if (!lot.kursOk) allOk = false; if (!firstBuy || lot.data < firstBuy) firstBuy = lot.data;
+          uzyte.push({ id: lot.id, data: lot.data, q: take, cena: lot.cena, uc: lot.uc }); lot.q -= take; left -= take; };
+        if (wybrany && t.zakup) { const lot = lots[key].find(l => l.id === t.zakup); if (lot) bierz(lot); }
+        while (left > EPS && lots[key].some(l => l.q > EPS)) bierz(lots[key].find(l => l.q > EPS));
+        lots[key] = lots[key].filter(l => l.q > EPS);
         if (left > EPS) warnings.push(`Sprzedaż ${t.ticker} z ${t.data} (${t.strategia}): sprzedano więcej niż kupiono (${r2(left)} szt.).`);
         const proceeds = q * p - fee;
         realized.push({ id: t.id, data: t.data, rok: +t.data.slice(0, 4), ticker: t.ticker, strategia: t.strategia, waluta: cur,
           ilosc: q, przychod: proceeds, koszt: cost, zysk: proceeds - cost, przychodPLN: proceeds * kurs, kosztPLN: costPLN,
-          zyskPLN: proceeds * kurs - costPLN, kursOk: allOk, kupiono: firstBuy });
+          zyskPLN: proceeds * kurs - costPLN, kursOk: allOk, kupiono: firstBuy, loty: uzyte, cena: p, zakup: t.zakup || '' });
       }
     }
     return { lots, realized };
   }
 
   // pozycje i wynik strategii: FIFO w ramach strategii
-  const P = fifo(t => t.strategia + '|' + t.ticker);
+  const P = fifo(t => t.strategia + '|' + t.ticker, true);
   // podatek: FIFO w ramach konta (rachunku)
   const T = fifo(t => ((strat[t.strategia] || {}).konto || '?') + '|' + t.ticker);
 
@@ -226,7 +230,10 @@ function calc(S) {
     pozycje.push({ strategia: s, konto: (strat[s] || {}).konto || '', ticker, nazwa: i.nazwa || '', klasa: i.klasa || 'Inne', koszyk: i.koszyk || '',
       waluta: cur, ilosc: qty, koszt, kosztPLN, sredniaCena: koszt / qty, cena, brakCeny: !cena, wartosc, wartoscPLN,
       zysk: wartosc - koszt, zyskPct: koszt ? (wartosc - koszt) / koszt : 0, zyskPLN: wartoscPLN - kosztPLN,
-      od: lots[0].data, kursBrak: lots.some(l => !l.kursOk) });
+      od: lots.reduce((a, l) => l.data < a ? l.data : a, lots[0].data), kursBrak: lots.some(l => !l.kursOk),
+      loty: lots.map(l => { const w = l.q * cena, k = l.q * l.uc, kP = l.q * l.ucPLN;
+        return { id: l.id, data: l.data, ilosc: l.q, ilosc0: l.q0, cenaZakupu: l.cena, koszt: k, kosztPLN: kP, wartosc: w, wartoscPLN: w * rateNow(cur),
+          zysk: w - k, zyskPct: k ? (w - k) / k : 0, zyskPLN: w * rateNow(cur) - kP }; }) });
   }
 
   const dyw = S.dywidendy.filter(d => d.data && has(d.brutto)).map(d => {
@@ -430,7 +437,7 @@ const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JS
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
 
 const TABLES = {
-  transakcje: { sheet: 'Transakcje', cols: [['id', 'ID'], ['data', 'Data'], ['strategia', 'Strategia'], ['typ', 'Typ'], ['ticker', 'Ticker'], ['ilosc', 'Ilość'], ['cena', 'Cena'], ['prowizja', 'Prowizja'], ['kurs', 'Kurs NBP (D-1)'], ['notatka', 'Notatka']] },
+  transakcje: { sheet: 'Transakcje', cols: [['id', 'ID'], ['data', 'Data'], ['strategia', 'Strategia'], ['typ', 'Typ'], ['ticker', 'Ticker'], ['ilosc', 'Ilość'], ['cena', 'Cena'], ['prowizja', 'Prowizja'], ['kurs', 'Kurs NBP (D-1)'], ['notatka', 'Notatka'], ['zakup', 'Zamyka zakup (ID)']] },
   dywidendy: { sheet: 'Dywidendy', cols: [['id', 'ID'], ['data', 'Data'], ['strategia', 'Strategia'], ['ticker', 'Ticker'], ['brutto', 'Kwota brutto'], ['podatek', 'Podatek u źródła'], ['kurs', 'Kurs NBP (D-1)'], ['notatka', 'Notatka']] },
   wplaty: { sheet: 'Wpłaty', cols: [['id', 'ID'], ['data', 'Data'], ['konto', 'Konto'], ['kwotaPLN', 'Kwota PLN'], ['kwotaWal', 'Kwota w walucie konta'], ['notatka', 'Notatka']] },
   strategie: { sheet: 'Strategie', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['konto', 'Konto'], ['kapital', 'Kapitał przeznaczony'], ['opis', 'Opis'], ['kolor', 'Kolor']] },
@@ -1243,11 +1250,39 @@ const kpi = (l, v, s = '', cls = '') => `<div class="kpi ${cls}"><div class="l">
 function table(cols, rows, opts = {}) {
   if (!rows.length) return `<div class="empty">${opts.empty || 'Brak danych'}</div>`;
   const th = cols.map(c => `<th class="${c.n ? 'n' : ''}">${c.h}</th>`).join('');
-  const tr = rows.map(r => `<tr class="${opts.click ? 'click' : ''}" ${opts.click ? `onclick="${opts.click(r)}"` : ''} ${opts.drag ? `draggable="true" data-drag="${opts.drag}" data-id="${r.id}"` : ''}>${cols.map(c => `<td class="${c.n ? 'n' : ''} ${c.cls ? c.cls(r) : ''}">${c.f(r)}</td>`).join('')}</tr>`).join('');
+  const X = opts.expand;   // { key: r => klucz, sub: r => [wiersze], cols: [kolumny wierszy podrzędnych] }
+  const tr = rows.map(r => {
+    const k = X && X.key(r), open = X && ROZW.has(k), subs = X ? X.sub(r) : [];
+    const klik = X && subs.length ? `data-k="${esc(k)}" onclick="if(!event.target.closest('a,button,input,select'))toggleRozw(this.dataset.k)"` : (opts.click ? `onclick="${opts.click(r)}"` : '');
+    const main = `<tr class="${opts.click || (X && subs.length) ? 'click' : ''} ${open ? 'open' : ''}" ${klik} ${opts.drag ? `draggable="true" data-drag="${opts.drag}" data-id="${r.id}"` : ''}>${cols.map((c, i) => `<td class="${c.n ? 'n' : ''} ${c.cls ? c.cls(r) : ''}">${i === 0 && X ? `<span class="chev">${subs.length ? (open ? '▾' : '▸') : ''}</span>` : ''}${c.f(r)}</td>`).join('')}</tr>`;
+    return main + (open ? subs.map(s => `<tr class="sub">${X.cols.map(c => `<td class="${c.n ? 'n' : ''}">${c.f(s)}</td>`).join('')}</tr>`).join('') : '');
+  }).join('');
   const foot = opts.foot ? `<tr>${opts.foot.map((f, i) => `<td class="${cols[i] && cols[i].n ? 'n' : ''}"><b>${f ?? ''}</b></td>`).join('')}</tr>` : '';
   return `<div class="tbl"><table><thead><tr>${th}</tr></thead><tbody>${tr}${foot}</tbody></table></div>`;
 }
 const pl = v => `<span class="${sgn(v)}">${plus(v)}${zl(v)}</span>`;
+const ROZW = new Set();
+function toggleRozw(k) { ROZW.has(k) ? ROZW.delete(k) : ROZW.add(k); render(); }
+const lotKey = p => 'poz|' + p.strategia + '|' + p.ticker;
+const lotSub = p => p.loty.length > 1 || (p.loty[0] && p.loty[0].ilosc < p.loty[0].ilosc0 - 1e-9) ? p.loty.map(l => ({ ...l, _p: p })) : [];
+const lotOpis = l => `<span class="mut">↳ zakup${l._p && ROUTE === 'portfel' ? ' ' + esc(l.data) : ''}</span>${l.ilosc < l.ilosc0 - 1e-9 ? ` <span class="mut" style="font-size:11px" title="część tego zakupu została już sprzedana">(z ${nfq.format(l.ilosc0)})</span>` : ''}`;
+const lotAkcje = l => `<span class="akcje"><a onclick="zamknijPozycje('${esc(l._p.strategia)}','${esc(l._p.ticker)}',${l.ilosc},'${l.id}')">zamknij</a> · <a onclick="editTransakcja('${l.id}')">edytuj</a></span>`;
+const pozAkcje = p => `<button class="btn sm ghost akcje" onclick="zamknijPozycje('${esc(p.strategia)}','${esc(p.ticker)}',${p.ilosc},'')">Zamknij</button>`;
+function zamknijPozycje(strategia, ticker, ilosc, zakup) {
+  const p = C.pozycje.find(x => x.strategia === strategia && x.ticker === ticker) || {};
+  editTransakcja(null, strategia, { typ: 'SPRZEDAŻ', ticker, ilosc: +ilosc.toFixed(8), cena: p.cena ? +p.cena.toFixed(4) : '', zakup: zakup || '' });
+}
+function cofnijSprzedaz(id) {
+  const t = S.transakcje.find(x => x.id === id); if (!t) return;
+  if (!confirm(`Cofnąć sprzedaż ${t.ticker} z ${t.data} (${nfq.format(num(t.ilosc))} szt.)?\n\nTransakcja sprzedaży zostanie usunięta, a pozycja wróci do otwartych.`)) return;
+  S.transakcje = S.transakcje.filter(x => x.id !== id); changed('transakcje'); toast('Cofnięto sprzedaż'); render();
+}
+const zamSub = r => r.loty && r.loty.length ? r.loty.map(l => ({ ...l, _r: r })) : [];
+const zamKey = r => 'zam|' + r.id;
+const zamSubCols = (n) => { const c = [
+  { f: l => `<span class="mut">↳ z zakupu ${esc(l.data)}</span>` }, { f: () => '' }, { n: 1, f: l => nfq.format(l.q) },
+  { n: 1, f: l => money(l.q * l.uc, l._r.waluta) }, { n: 1, f: l => money(l.q * l._r.cena, l._r.waluta) },
+  { n: 1, f: l => { const z = l.q * l._r.cena - l.q * l.uc; return `<span class="${sgn(z)}">${plus(z)}${money(z, l._r.waluta)}</span>`; } }]; while (c.length < n) c.push({ f: () => '' }); return c; };
 const pp = v => `<span class="${sgn(v)}">${plus(v)}${pct(v)}</span>`;
 function warningsBox() {
   const w = [...C.warnings];
@@ -1370,17 +1405,22 @@ function vPortfel() {
   const tot = rows.reduce((a, p) => ({ w: a.w + p.wartoscPLN, k: a.k + p.kosztPLN }), { w: 0, k: 0 });
   const cols = [
     { h: 'Instrument', f: p => `<b>${esc(p.ticker)}</b><br><span class="mut" style="font-size:12px">${esc(p.nazwa)}</span>` },
-    { h: 'Strategia', f: p => esc(p.strategia) }, { h: 'Konto', f: p => esc(p.konto) },
+    { h: 'Strategia', f: p => `${esc(p.strategia)}<br><span class="mut" style="font-size:12px">${esc(p.konto)}</span>` },
     { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) }, { h: 'Śr. cena', n: 1, f: p => money(p.sredniaCena, p.waluta) },
     { h: 'Cena', n: 1, f: p => p.brakCeny ? '<span class="warn">brak</span>' : money(p.cena, p.waluta) },
-    { h: 'Wartość', n: 1, f: p => money(p.wartosc, p.waluta) }, { h: 'Wartość PLN', n: 1, f: p => zl(p.wartoscPLN) },
+    { h: 'Wartość', n: 1, f: p => `${zl(p.wartoscPLN)}<br><span class="mut" style="font-size:12px">${money(p.wartosc, p.waluta)}</span>` },
     { h: 'Zysk (waluta)', n: 1, f: p => `<span class="${sgn(p.zysk)}">${plus(p.zysk)}${money(p.zysk, p.waluta)}</span><br>${pp(p.zyskPct)}` },
-    { h: 'Zysk PLN', n: 1, f: p => pl(p.zyskPLN) }, { h: 'Udział', n: 1, f: p => pct(C.wartosc ? p.wartoscPLN / C.wartosc : 0) },
+    { h: 'Zysk PLN', n: 1, f: p => pl(p.zyskPLN) }, { h: 'Udział', n: 1, f: p => pct(C.wartosc ? p.wartoscPLN / C.wartosc : 0) }, { h: '', f: pozAkcje },
   ];
+  const subCols = [
+    { f: lotOpis }, { f: () => '' }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => money(l.cenaZakupu, l._p.waluta) },
+    { n: 1, f: l => l._p.brakCeny ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => `${zl(l.wartoscPLN)}<br><span class="mut" style="font-size:11.5px">${money(l.wartosc, l._p.waluta)}</span>` },
+    { n: 1, f: l => `<span class="${sgn(l.zysk)}">${plus(l.zysk)}${money(l.zysk, l._p.waluta)}</span><br>${pp(l.zyskPct)}` },
+    { n: 1, f: l => pl(l.zyskPLN) }, { f: () => '' }, { f: lotAkcje }];
   return ['Portfel – pozycje', `${rows.length} otwartych pozycji`, `
     <div class="filters">${sel('s', 'Wszystkie strategie', S.strategie.map(s => s.nazwa))}${sel('k', 'Wszystkie konta', S.konta.map(k => k.nazwa))}${sel('c', 'Wszystkie klasy', [...new Set(C.pozycje.map(p => p.klasa))])}</div>
     <div class="kpis">${kpi('Wartość', zl(tot.w, 0))}${kpi('Koszt zakupu', zl(tot.k, 0))}${kpi('Zysk niezrealizowany', pl(tot.w - tot.k), pp(tot.k ? (tot.w - tot.k) / tot.k : 0))}</div>
-    <div class="card">${table(cols, rows, { empty: 'Brak otwartych pozycji' })}</div>`];
+    <div class="card">${table(cols, rows, { empty: 'Brak otwartych pozycji', expand: { key: lotKey, sub: lotSub, cols: subCols } })}</div>`];
 }
 
 function vStrategia() {
@@ -1394,14 +1434,18 @@ function vStrategia() {
     { h: 'Od', f: p => esc(p.od) }, { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) },
     { h: 'Śr. cena', n: 1, f: p => money(p.sredniaCena, p.waluta) }, { h: 'Cena', n: 1, f: p => p.brakCeny ? '<span class="warn">brak</span>' : money(p.cena, p.waluta) },
     { h: 'Wartość PLN', n: 1, f: p => zl(p.wartoscPLN) }, { h: 'Zysk', n: 1, f: p => `<span class="${sgn(p.zysk)}">${plus(p.zysk)}${money(p.zysk, p.waluta)}</span>` },
-    { h: '%', n: 1, f: p => pp(p.zyskPct) }, { h: 'Zysk PLN', n: 1, f: p => pl(p.zyskPLN) },
-  ], poz, { empty: 'Brak otwartych pozycji – dodaj transakcję kupna' });
+    { h: '%', n: 1, f: p => pp(p.zyskPct) }, { h: 'Zysk PLN', n: 1, f: p => pl(p.zyskPLN) }, { h: '', f: pozAkcje },
+  ], poz, { empty: 'Brak otwartych pozycji – dodaj transakcję kupna', expand: { key: lotKey, sub: lotSub, cols: [
+    { f: lotOpis }, { f: l => esc(l.data) }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => money(l.cenaZakupu, l._p.waluta) },
+    { n: 1, f: l => l._p.brakCeny ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => zl(l.wartoscPLN) },
+    { n: 1, f: l => `<span class="${sgn(l.zysk)}">${plus(l.zysk)}${money(l.zysk, l._p.waluta)}</span>` }, { n: 1, f: l => pp(l.zyskPct) },
+    { n: 1, f: l => pl(l.zyskPLN) }, { f: lotAkcje }] } });
   const zamTbl = table([
     { h: 'Sprzedaż', f: r => esc(r.data) }, { h: 'Instrument', f: r => `<b>${esc(r.ticker)}</b>` }, { h: 'Ilość', n: 1, f: r => nfq.format(r.ilosc) },
     { h: 'Koszt', n: 1, f: r => money(r.koszt, r.waluta) }, { h: 'Przychód', n: 1, f: r => money(r.przychod, r.waluta) },
     { h: 'Zysk', n: 1, f: r => `<span class="${sgn(r.zysk)}">${plus(r.zysk)}${money(r.zysk, r.waluta)}</span>` },
-    { h: 'Zysk PLN', n: 1, f: r => pl(r.zyskPLN) },
-  ], s.zamkniete.slice().reverse(), { empty: 'Brak zamkniętych pozycji' });
+    { h: 'Zysk PLN', n: 1, f: r => pl(r.zyskPLN) }, { h: '', f: r => `<span class="akcje"><button class="btn sm ghost" onclick="cofnijSprzedaz('${r.id}')">↶ Cofnij</button> <a onclick="editTransakcja('${r.id}')">edytuj</a></span>` },
+  ], s.zamkniete.slice().reverse(), { empty: 'Brak zamkniętych pozycji', expand: { key: zamKey, sub: zamSub, cols: zamSubCols(8) } });
   const dywTbl = table([
     { h: 'Data', f: d => esc(d.data) }, { h: 'Ticker', f: d => esc(d.ticker) }, { h: 'Brutto', n: 1, f: d => money(num(d.brutto), d.waluta) },
     { h: 'Netto PLN', n: 1, f: d => zl(d.nettoPLN) }, { h: '', f: d => `<a onclick="editDywidenda('${d.id}')">edytuj</a>` },
@@ -1411,9 +1455,9 @@ function vStrategia() {
     <div class="kpis">${kpi('Wartość', zl(s.wartosc, 0), pct(s.udzial) + ' portfela', 'main')}${kpi('Zysk niezrealizowany', pl(s.niezreal), pp(s.niezrealPct))}
       ${kpi('Zysk zrealizowany', pl(s.zrealizowany), s.zamkniete.length + ' sprzedaży')}${kpi('Dywidendy netto', zl(s.dywidendyNetto), s.dywidendy.length + ' wypłat')}
       ${kpi('Wynik łączny', pl(s.wynik), pp(wynikPct) + ' od kosztu')}${s.wolne !== null ? kpi('Wolne środki', money(s.wolne, s.walutaKonta), 'z kapitału ' + money(num(s.kapital), s.walutaKonta)) : ''}</div>
-    <div class="grid g2"><div class="card"><h3>Otwarte pozycje</h3>${pozTbl}</div><div class="card"><h3>Struktura strategii</h3>${struktura}</div></div>
-    <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Zamknięte pozycje</h3>${zamTbl}</div>
-      <div class="card"><h3>Dywidendy<span class="sp"></span><button class="btn sm ghost" onclick="editDywidenda(null,'${esc(s.nazwa)}')">＋ Dywidenda</button></h3>${dywTbl}</div></div>
+    <div class="card"><h3>Otwarte pozycje <small>kliknij pozycję, aby zobaczyć poszczególne zakupy</small></h3>${pozTbl}</div>
+    <div class="card" style="margin-top:16px"><h3>Zamknięte pozycje <small>rozwiń, aby zobaczyć, z których zakupów pochodzi sprzedaż · „cofnij” usuwa sprzedaż</small></h3>${zamTbl}</div>
+    <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Dywidendy<span class="sp"></span><button class="btn sm ghost" onclick="editDywidenda(null,'${esc(s.nazwa)}')">＋ Dywidenda</button></h3>${dywTbl}</div><div class="card"><h3>Struktura strategii</h3>${struktura}</div></div>
     <div class="card" style="margin-top:16px"><h3>Transakcje strategii</h3>${txTbl}</div>`,
     `<button class="btn ghost" onclick="editStrategia('${s.id}')">Edytuj strategię</button><button class="btn" onclick="editTransakcja(null,'${esc(s.nazwa)}')">＋ Transakcja</button>`];
 }
@@ -1679,8 +1723,11 @@ function wireNbp(form, dateKey, tickerKey) {
   form.elements[dateKey].addEventListener('change', upd); form.elements[tickerKey].addEventListener('change', upd);
   if (!form.elements.kurs.value) upd();
 }
-function editTransakcja(id, strategia) {
-  const t = S.transakcje.find(x => x.id === id) || { data: todayStr(), typ: 'KUPNO', strategia: strategia || (S.strategie[0] || {}).nazwa, ticker: (S.instrumenty[0] || {}).ticker };
+function editTransakcja(id, strategia, preset) {
+  const t = S.transakcje.find(x => x.id === id) || { data: todayStr(), typ: 'KUPNO', strategia: strategia || (S.strategie[0] || {}).nazwa, ticker: (S.instrumenty[0] || {}).ticker, ...(preset || {}) };
+  const lotyOpc = [['', 'najstarszy zakup (FIFO)']];
+  (C ? C.pozycje : []).forEach(p => p.loty.forEach(l => lotyOpc.push([l.id, `${p.ticker} · ${p.strategia} · zakup ${l.data} · ${nfq.format(l.ilosc)} szt. po ${nf2.format(l.cenaZakupu)}`])));
+  if (t.zakup && !lotyOpc.some(o => o[0] === t.zakup)) { const b = S.transakcje.find(x => x.id === t.zakup); lotyOpc.push([t.zakup, b ? `${b.ticker} · zakup ${b.data} · ${nfq.format(num(b.ilosc))} szt.` : 'zakup ' + t.zakup]); }
   if (!S.instrumenty.length) { toast('Najpierw dodaj instrument'); return editInstrument(); }
   const form = modal(id ? 'Edytuj transakcję' : 'Nowa transakcja', [
     { k: 'data', l: 'Data', t: 'date' }, { k: 'typ', l: 'Typ', t: 'select', o: ['KUPNO', 'SPRZEDAŻ'] },
@@ -1688,9 +1735,11 @@ function editTransakcja(id, strategia) {
     { k: 'ticker', l: 'Instrument', t: 'select', o: S.instrumenty.map(i => [i.ticker, `${i.ticker} – ${i.nazwa} (${i.waluta})`]) },
     { k: 'ilosc', l: 'Ilość', t: 'number' }, { k: 'cena', l: 'Cena za sztukę (waluta instrumentu)', t: 'number' },
     { k: 'prowizja', l: 'Prowizja (waluta instrumentu)', t: 'number', ph: '0' }, { k: 'kurs', l: 'Kurs NBP (D-1)', t: 'number', help: 'Pobiera się automatycznie z NBP' },
+    { k: 'zakup', l: 'Zamyka zakup (tylko sprzedaż)', t: 'select', o: lotyOpc, full: 1, help: 'Pokazuje w aplikacji, który zakup zamykasz. Podatek PIT-38 i tak liczy się metodą FIFO (wymóg ustawy).' },
     { k: 'notatka', l: 'Notatka', full: 1 },
   ], t, o => {
     if (!o.data || !o.ticker || !(o.ilosc > 0)) return 'Uzupełnij datę, instrument i ilość';
+    if (o.typ === 'KUPNO') o.zakup = '';
     if (id) Object.assign(t, o); else S.transakcje.push({ id: uid(), ...o });
     changed('transakcje'); toast('Zapisano transakcję');
   }, id ? () => { S.transakcje = S.transakcje.filter(x => x.id !== id); changed('transakcje'); } : null);

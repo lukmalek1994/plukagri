@@ -4,7 +4,7 @@ const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JS
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
 
 const TABLES = {
-  transakcje: { sheet: 'Transakcje', cols: [['id', 'ID'], ['data', 'Data'], ['strategia', 'Strategia'], ['typ', 'Typ'], ['ticker', 'Ticker'], ['ilosc', 'Ilość'], ['cena', 'Cena'], ['prowizja', 'Prowizja'], ['kurs', 'Kurs NBP (D-1)'], ['notatka', 'Notatka']] },
+  transakcje: { sheet: 'Transakcje', cols: [['id', 'ID'], ['data', 'Data'], ['strategia', 'Strategia'], ['typ', 'Typ'], ['ticker', 'Ticker'], ['ilosc', 'Ilość'], ['cena', 'Cena'], ['prowizja', 'Prowizja'], ['kurs', 'Kurs NBP (D-1)'], ['notatka', 'Notatka'], ['zakup', 'Zamyka zakup (ID)']] },
   dywidendy: { sheet: 'Dywidendy', cols: [['id', 'ID'], ['data', 'Data'], ['strategia', 'Strategia'], ['ticker', 'Ticker'], ['brutto', 'Kwota brutto'], ['podatek', 'Podatek u źródła'], ['kurs', 'Kurs NBP (D-1)'], ['notatka', 'Notatka']] },
   wplaty: { sheet: 'Wpłaty', cols: [['id', 'ID'], ['data', 'Data'], ['konto', 'Konto'], ['kwotaPLN', 'Kwota PLN'], ['kwotaWal', 'Kwota w walucie konta'], ['notatka', 'Notatka']] },
   strategie: { sheet: 'Strategie', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['konto', 'Konto'], ['kapital', 'Kapitał przeznaczony'], ['opis', 'Opis'], ['kolor', 'Kolor']] },

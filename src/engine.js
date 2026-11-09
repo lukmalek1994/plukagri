@@ -70,7 +70,9 @@ function calc(S) {
   const txs = S.transakcje.filter(t => t.data && t.ticker && t.typ && num(t.ilosc) > 0)
     .map((t, n) => ({ ...t, _n: n })).sort((a, b) => (a.data === b.data ? a._n - b._n : a.data.localeCompare(b.data)));
 
-  function fifo(keyFn) {
+  // wybrany=true: sprzedaż z polem „zakup” zamyka najpierw ten konkretny zakup (widok pozycji);
+  // podatek zawsze liczony FIFO – tak wymaga ustawa o PIT
+  function fifo(keyFn, wybrany) {
     const lots = {}, realized = [];
     for (const t of txs) {
       const cur = curOf(t.ticker), q = num(t.ilosc), p = num(t.cena), fee = num(t.prowizja);
@@ -80,26 +82,27 @@ function calc(S) {
       if (!lots[key]) lots[key] = [];
       if (t.typ === 'KUPNO') {
         const cost = q * p + fee;
-        lots[key].push({ q, uc: cost / q, ucPLN: cost * kurs / q, data: t.data, id: t.id, kursOk });
+        lots[key].push({ q, q0: q, cena: p, uc: cost / q, ucPLN: cost * kurs / q, data: t.data, id: t.id, kursOk });
       } else if (t.typ === 'SPRZEDAŻ') {
-        let left = q, cost = 0, costPLN = 0, allOk = kursOk, firstBuy = null;
-        while (left > EPS && lots[key].length) {
-          const lot = lots[key][0], take = Math.min(left, lot.q);
-          cost += take * lot.uc; costPLN += take * lot.ucPLN; if (!lot.kursOk) allOk = false; if (!firstBuy) firstBuy = lot.data;
-          lot.q -= take; left -= take; if (lot.q <= EPS) lots[key].shift();
-        }
+        let left = q, cost = 0, costPLN = 0, allOk = kursOk, firstBuy = null; const uzyte = [];
+        const bierz = lot => { const take = Math.min(left, lot.q);
+          cost += take * lot.uc; costPLN += take * lot.ucPLN; if (!lot.kursOk) allOk = false; if (!firstBuy || lot.data < firstBuy) firstBuy = lot.data;
+          uzyte.push({ id: lot.id, data: lot.data, q: take, cena: lot.cena, uc: lot.uc }); lot.q -= take; left -= take; };
+        if (wybrany && t.zakup) { const lot = lots[key].find(l => l.id === t.zakup); if (lot) bierz(lot); }
+        while (left > EPS && lots[key].some(l => l.q > EPS)) bierz(lots[key].find(l => l.q > EPS));
+        lots[key] = lots[key].filter(l => l.q > EPS);
         if (left > EPS) warnings.push(`Sprzedaż ${t.ticker} z ${t.data} (${t.strategia}): sprzedano więcej niż kupiono (${r2(left)} szt.).`);
         const proceeds = q * p - fee;
         realized.push({ id: t.id, data: t.data, rok: +t.data.slice(0, 4), ticker: t.ticker, strategia: t.strategia, waluta: cur,
           ilosc: q, przychod: proceeds, koszt: cost, zysk: proceeds - cost, przychodPLN: proceeds * kurs, kosztPLN: costPLN,
-          zyskPLN: proceeds * kurs - costPLN, kursOk: allOk, kupiono: firstBuy });
+          zyskPLN: proceeds * kurs - costPLN, kursOk: allOk, kupiono: firstBuy, loty: uzyte, cena: p, zakup: t.zakup || '' });
       }
     }
     return { lots, realized };
   }
 
   // pozycje i wynik strategii: FIFO w ramach strategii
-  const P = fifo(t => t.strategia + '|' + t.ticker);
+  const P = fifo(t => t.strategia + '|' + t.ticker, true);
   // podatek: FIFO w ramach konta (rachunku)
   const T = fifo(t => ((strat[t.strategia] || {}).konto || '?') + '|' + t.ticker);
 
@@ -114,7 +117,10 @@ function calc(S) {
     pozycje.push({ strategia: s, konto: (strat[s] || {}).konto || '', ticker, nazwa: i.nazwa || '', klasa: i.klasa || 'Inne', koszyk: i.koszyk || '',
       waluta: cur, ilosc: qty, koszt, kosztPLN, sredniaCena: koszt / qty, cena, brakCeny: !cena, wartosc, wartoscPLN,
       zysk: wartosc - koszt, zyskPct: koszt ? (wartosc - koszt) / koszt : 0, zyskPLN: wartoscPLN - kosztPLN,
-      od: lots[0].data, kursBrak: lots.some(l => !l.kursOk) });
+      od: lots.reduce((a, l) => l.data < a ? l.data : a, lots[0].data), kursBrak: lots.some(l => !l.kursOk),
+      loty: lots.map(l => { const w = l.q * cena, k = l.q * l.uc, kP = l.q * l.ucPLN;
+        return { id: l.id, data: l.data, ilosc: l.q, ilosc0: l.q0, cenaZakupu: l.cena, koszt: k, kosztPLN: kP, wartosc: w, wartoscPLN: w * rateNow(cur),
+          zysk: w - k, zyskPct: k ? (w - k) / k : 0, zyskPLN: w * rateNow(cur) - kP }; }) });
   }
 
   const dyw = S.dywidendy.filter(d => d.data && has(d.brutto)).map(d => {
