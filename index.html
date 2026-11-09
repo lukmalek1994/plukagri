@@ -90,11 +90,12 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 .nav .cnt{font-size:11px;background:rgba(255,255,255,.08);color:#9fb3d1;border-radius:999px;padding:1px 7px}
 .nav a.sub{padding-left:34px;font-size:13.5px}.nav a.sub.add{font-size:12.5px;opacity:.85}
 .nav a.drop-into{background:#1e4a85;outline:1px dashed #7fb0ff}
+.viewsel{font-weight:600;padding:8px 12px;border-radius:9px;border:1px solid var(--line);background:#fff;min-width:170px}
 </style>
 </head>
 <body>
 <div class="app">
-  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 19:49</div></aside>
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 20:05</div></aside>
   <main>
     <div class="top">
       <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
@@ -433,7 +434,7 @@ const TABLES = {
   konta: { sheet: 'Konta', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['typ', 'Typ podatkowy'], ['waluta', 'Waluta'], ['gotowka', 'Gotówka'], ['model', 'W modelu 2.1']] },
   instrumenty: { sheet: 'Instrumenty', cols: [['id', 'ID'], ['ticker', 'Ticker'], ['nazwa', 'Nazwa'], ['klasa', 'Klasa'], ['waluta', 'Waluta'], ['cena', 'Cena ręczna'], ['dataCeny', 'Data ceny'], ['symbol', 'Symbol Google Finance'], ['cenaAuto', 'Cena auto (Google)']] },
   inflacja: { sheet: 'Inflacja', cols: [['miesiac', 'Miesiąc'], ['mm', 'Inflacja PL m/m %'], ['mmUS', 'Inflacja USA m/m %']] },
-  historia: { sheet: 'Historia', cols: [['data', 'Data'], ['wartosc', 'Wartość PLN'], ['kapital', 'Wpłacony kapitał PLN']] },
+  historia: { sheet: 'Historia', cols: [['data', 'Data'], ['wartosc', 'Wartość PLN'], ['kapital', 'Wpłacony kapitał PLN'], ['konta', 'Wartości kont (JSON)']] },
   cele: { sheet: 'Cele 2.1', cols: [['id', 'ID'], ['konto', 'Konto (puste = cały portfel)'], ['koszyk', 'Koszyk'], ['tickery', 'Instrumenty'], ['grupa', 'Grupa'], ['cel', 'Cel %']] },
   ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
 };
@@ -896,17 +897,18 @@ let LS_INTRA = CFG.demo ? 'portfel_intraday_demo' : LS_INTRA_REAL;
 function snapshotIntraday() {
   if (!C || C.wartosc <= 0) return;
   const arr = lsGet(LS_INTRA, []), now = new Date(), last = arr[arr.length - 1];
-  const w = Math.round(C.wartosc * 100) / 100, k = Math.round(C.kapital * 100) / 100;
-  if (last && now - new Date(last.t) < 10 * 60000) { if (last.w === w && last.k === k) return; last.w = w; last.k = k; last.t = now.toISOString(); }
-  else arr.push({ t: now.toISOString(), w, k });
+  const w = Math.round(C.wartosc * 100) / 100, k = Math.round(C.kapital * 100) / 100, kk = kontaMap();
+  if (last && now - new Date(last.t) < 10 * 60000) { if (last.w === w && last.k === k) return; last.w = w; last.k = k; last.kk = kk; last.t = now.toISOString(); }
+  else arr.push({ t: now.toISOString(), w, k, kk });
   const cut = Date.now() - 3 * 864e5; lsSet(LS_INTRA, arr.filter(p => new Date(p.t).getTime() > cut));
 }
+function kontaMap() { const m = {}; C.konta.forEach(k => { if (k.razem) m[k.nazwa] = Math.round(k.razem * 100) / 100; }); return m; }
 function snapshot() {
   snapshotIntraday();
   if (!C || C.wartosc <= 0) return;
   const d = todayStr(), last = S.historia[S.historia.length - 1];
-  const rec = { data: d, wartosc: Math.round(C.wartosc * 100) / 100, kapital: Math.round(C.kapital * 100) / 100 };
-  if (last && last.data === d) { if (Math.abs(num(last.wartosc) - rec.wartosc) < 0.01 && Math.abs(num(last.kapital) - rec.kapital) < 0.01) return; Object.assign(last, rec); }
+  const rec = { data: d, wartosc: Math.round(C.wartosc * 100) / 100, kapital: Math.round(C.kapital * 100) / 100, konta: JSON.stringify(kontaMap()) };
+  if (last && last.data === d) { if (Math.abs(num(last.wartosc) - rec.wartosc) < 0.01 && Math.abs(num(last.kapital) - rec.kapital) < 0.01 && last.konta === rec.konta) return; Object.assign(last, rec); }
   else S.historia.push(rec);
   S.historia.sort((a, b) => String(a.data).localeCompare(String(b.data)));
   changed('historia');
@@ -974,14 +976,15 @@ function warningsBox() {
   if (needFx) w.push(`Brak bieżących kursów walut – <a onclick="pobierzKursy()">pobierz z NBP</a> lub wpisz w Ustawieniach.`);
   return w.length ? `<div class="alert">⚠ ${w.join('<br>⚠ ')}</div>` : '';
 }
-function histSeries() {
+function histSeries(SV = S, konto = '') {
   if (RANGE === '1d') {
     const from = Date.now() - 864e5;
-    let h = lsGet(LS_INTRA, []).filter(p => new Date(p.t).getTime() >= from).map(p => ({ d: localIso(p.t), w: p.w, k: p.k }));
-    if (h.length < 2) { const d = S.historia.filter(x => x.data && has(x.wartosc)).slice(-2).map(x => ({ d: String(x.data).slice(0, 10), w: num(x.wartosc), k: num(x.kapital) })); if (d.length === 2) h = d; }
+    let h = lsGet(LS_INTRA, []).filter(p => new Date(p.t).getTime() >= from && (!konto || (p.kk && p.kk[konto] !== undefined)))
+      .map(p => ({ d: localIso(p.t), w: konto ? p.kk[konto] : p.w, k: konto ? (SV.historia.slice(-1)[0] || {}).kapital || 0 : p.k }));
+    if (h.length < 2) { const d = SV.historia.filter(x => x.data && has(x.wartosc)).slice(-2).map(x => ({ d: String(x.data).slice(0, 10), w: num(x.wartosc), k: num(x.kapital) })); if (d.length === 2) h = d; }
     return h;
   }
-  let h = S.historia.filter(x => x.data && has(x.wartosc)).map(x => ({ d: String(x.data).slice(0, 10), w: num(x.wartosc), k: num(x.kapital) }));
+  let h = SV.historia.filter(x => x.data && has(x.wartosc)).map(x => ({ d: String(x.data).slice(0, 10), w: num(x.wartosc), k: num(x.kapital) }));
   if (RANGE !== 'all' && h.length) { const days = { '1w': 7, '1m': 31, '3m': 92, '1r': 366, 'ytd': 0 }[RANGE];
     const from = RANGE === 'ytd' ? new Date().getFullYear() + '-01-01' : new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
     h = h.filter(x => x.d >= from); }
@@ -991,17 +994,36 @@ const localIso = t => { const d = new Date(t); return new Date(d.getTime() - d.g
 function emptyMsg() { return { '1d': 'Wykres dzienny pojawi się po kilku aktualizacjach w ciągu dnia (otwórz aplikację ponownie za jakiś czas)', '1w': 'Wykres tygodniowy pojawi się po co najmniej dwóch dniach zapisów' }[RANGE] || 'Wykres pojawi się po kilku dniach zapisów historii'; }
 function rangeSeg() { return `<div class="seg">${[['1d', '1D'], ['1w', '1T'], ['1m', '1M'], ['3m', '3M'], ['ytd', 'YTD'], ['1r', '1R'], ['all', 'Całość']].map(([k, l]) => `<button class="${RANGE === k ? 'on' : ''}" onclick="RANGE='${k}';render()">${l}</button>`).join('')}</div>`; }
 
+/* ---------- wycinek danych dla jednego konta (kokpit konta) ---------- */
+let CFULL_W = 0; const Cfull_wartosc = () => CFULL_W;
+function subsetState(kn) {
+  const strat = S.strategie.filter(s => s.konto === kn), names = new Set(strat.map(s => s.nazwa));
+  const wpl = S.wplaty.filter(w => w.konto === kn);
+  const kapAt = d => wpl.filter(w => String(w.data) <= d).reduce((a, w) => a + num(w.kwotaPLN), 0);
+  const hist = S.historia.map(h => { let m = h.konta; try { if (typeof m === 'string') m = m ? JSON.parse(m) : null; } catch (e) { m = null; }
+    if (!m || m[kn] === undefined) return null; return { data: h.data, wartosc: m[kn], kapital: kapAt(String(h.data).slice(0, 10)) }; }).filter(Boolean);
+  return { ...S, strategie: strat, konta: S.konta.filter(k => k.nazwa === kn).map(k => ({ ...k, model: 'TAK' })),
+    transakcje: S.transakcje.filter(t => names.has(t.strategia)), dywidendy: S.dywidendy.filter(d => names.has(d.strategia)),
+    wplaty: wpl, historia: hist, cele: S.cele.filter(c => c.konto === kn).map(c => ({ ...c, konto: '' })) };
+}
+
 /* ===================== WIDOKI ===================== */
 function vKokpit() {
+  let KK = FILT.kokpitKonto || ''; if (KK && !S.konta.some(k => k.nazwa === KK)) KK = FILT.kokpitKonto = '';
+  const Cfull = C, SV = KK ? subsetState(KK) : S; CFULL_W = Cfull.wartosc;
+  if (KK) C = calc(SV);
+  try { return vKokpitInner(SV, KK); } finally { C = Cfull; }
+}
+function vKokpitInner(SV, KK) {
   const rok = new Date().getFullYear();
   const dywRok = C.dyw.filter(d => d.rok === rok);
   const dywRokNetto = dywRok.reduce((a, d) => a + d.nettoPLN, 0);
-  const prev = S.historia.filter(h => String(h.data) < todayStr()).slice(-1)[0];
+  const prev = SV.historia.filter(h => String(h.data) < todayStr()).slice(-1)[0];
   const zmiana = prev ? C.wartosc - num(prev.wartosc) - (C.kapital - num(prev.kapital)) : null;
-  const h = histSeries();
+  const h = histSeries(SV, KK);
   const kursUsd = C.rateNow('USD');
   const kp = `<div class="kpis">
-    ${kpi('Wartość portfela', zl(C.wartosc, 0), C.usd ? `≈ ${nf0.format(C.usd)} USD` : '', 'main')}
+    ${kpi(KK ? 'Wartość konta' : 'Wartość portfela', zl(C.wartosc, 0), (C.usd ? `≈ ${nf0.format(C.usd)} USD` : '') + (KK && Cfull_wartosc() ? ` · ${pct(C.wartosc / Cfull_wartosc())} całości` : ''), 'main')}
     ${kpi('Zysk / strata', pl(C.zysk), pp(C.zyskPct) + ' od wpłat')}
     ${kpi('Zysk realny (po inflacji)', pl(C.zyskRealny), pp(C.zyskRealnyPct) + (C.inflLast ? ` · inflacja PL do ${C.inflLast}` : ' · pobieram inflację…'))}
     ${kpi('Wpłacony kapitał', zl(C.kapital, 0), `po inflacji: ${zl(C.kapitalRealny, 0)}`)}
@@ -1027,7 +1049,7 @@ function vKokpit() {
     { h: 'Udział', f: s => `<div class="bar"><i style="width:${(s.udzial * 100).toFixed(1)}%;background:${esc(s.kolor)}"></i></div>` },
     { h: 'Wynik', n: 1, f: s => pl(s.wynik) }, { h: '%', n: 1, f: s => pp(s.koszt ? s.wynik / s.koszt : 0) },
   ], strat, { empty: 'Brak pozycji w strategiach', click: s => `go('strategia','${s.id}')` });
-  const modele = [['', 'Cały portfel'], ...S.konta.filter(k => S.cele.some(c => c.konto === k.nazwa)).map(k => [k.nazwa, k.nazwa])];
+  const modele = KK ? [['', KK]] : [['', 'Cały portfel'], ...S.konta.filter(k => S.cele.some(c => c.konto === k.nazwa)).map(k => [k.nazwa, k.nazwa])];
   if (!modele.some(m => m[0] === (FILT.model || ''))) FILT.model = '';
   const modelSel = modele.length > 1 ? `<select style="padding:4px 8px;font-size:12.5px" onchange="FILT.model=this.value;render()">${modele.map(([v, l]) => `<option value="${esc(v)}" ${v === (FILT.model || '') ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : '';
   const months = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
@@ -1039,9 +1061,11 @@ function vKokpit() {
     { h: 'Zysk', n: 1, f: p => pl(p.zyskPLN) }, { h: '%', n: 1, f: p => pp(p.kosztPLN ? p.zyskPLN / p.kosztPLN : 0) },
   ], top, { empty: 'Brak otwartych pozycji', click: p => `go('portfel')` });
   const sub = `Stan na ${new Date().toLocaleDateString('pl-PL')}${kursUsd ? ' · USD/PLN ' + kursUsd.toFixed(4).replace('.', ',') : ''}${S.ustawienia.kursyData ? ' (NBP ' + S.ustawienia.kursyData + ')' : ''}`;
-  const intro = !S.transakcje.length && !CFG.demo ? `<div class="alert info">👋 Chcesz najpierw zobaczyć, jak to wygląda? <a onclick="wejdzDemo()"><b>Wczytaj przykładowy portfel</b></a> (Twoje dane wrócą jednym kliknięciem).<br>Albo zacznij od <a onclick="go('ustawienia')">Ustawień</a> (konta, połączenie z Google), potem dodaj <a onclick="editTransakcja()">pierwszą transakcję</a>. Ceny aktualizujesz w <a onclick="go('instrumenty')">Instrumentach</a>.</div>` : '';
-  return ['Kokpit', sub, intro + warningsBox() + kp + `
-    <div class="grid g2"><div class="card"><h3>Wartość portfela w czasie<span class="sp"></span>${rangeSeg()}</h3>${line}</div>
+  const intro = !S.transakcje.length && !CFG.demo && !KK ? `<div class="alert info">👋 Chcesz najpierw zobaczyć, jak to wygląda? <a onclick="wejdzDemo()"><b>Wczytaj przykładowy portfel</b></a> (Twoje dane wrócą jednym kliknięciem).<br>Albo zacznij od <a onclick="go('ustawienia')">Ustawień</a> (konta, połączenie z Google), potem dodaj <a onclick="editTransakcja()">pierwszą transakcję</a>. Ceny aktualizujesz w <a onclick="go('instrumenty')">Instrumentach</a>.</div>` : '';
+  const widok = `<select class="viewsel" onchange="FILT.kokpitKonto=this.value;render()"><option value="">📊 Cały portfel</option>${S.konta.map(k => `<option value="${esc(k.nazwa)}" ${k.nazwa === KK ? 'selected' : ''}>${esc(k.nazwa)}</option>`).join('')}</select>`;
+  const noHist = KK && !SV.historia.length ? `<div class="alert info">Historia wartości tego konta zbiera się od dziś (zapis raz dziennie). Wykresy w czasie zapełnią się w kolejnych dniach.</div>` : '';
+  return [KK ? 'Kokpit – ' + KK : 'Kokpit', sub, intro + noHist + warningsBox() + kp + `
+    <div class="grid g2"><div class="card"><h3>${KK ? 'Wartość konta' : 'Wartość portfela'} w czasie<span class="sp"></span>${rangeSeg()}</h3>${line}</div>
       <div class="card"><h3>Struktura – klasy aktywów</h3>${klasy}</div></div>
     <div class="grid g2" style="margin-top:16px"><div class="card"><h3>Stopa zwrotu: nominalna i realna<span class="sp"></span>${rangeSeg()}</h3>${ret}</div>
       <div class="card"><h3>Ekspozycja walutowa</h3>${waluty}</div></div>
@@ -1052,9 +1076,9 @@ function vKokpit() {
       { h: 'Wpłacono', n: 1, f: k => zl(k.kapital, 0) }, { h: 'Zysk', n: 1, f: k => k.zysk === null ? '–' : pl(k.zysk) }, { h: '%', n: 1, f: k => k.zyskPct === null ? '–' : pp(k.zyskPct) },
     ], C.konta, { click: k => `go('konto','${k.id}')` })}</div>
     <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Strategie<span class="sp"></span><small>kliknij, aby otworzyć</small></h3>${stratTbl}</div>
-      <div class="card"><h3>Portfel docelowy<span class="sp"></span>${modelSel}</h3>${modelCard(FILT.model || '')}</div></div>
+      <div class="card"><h3>Portfel docelowy<span class="sp"></span>${modelSel}</h3>${KK ? modelCard('', KK) : modelCard(FILT.model || '')}</div></div>
     <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Dywidendy i odsetki ${rok} <small>netto PLN</small></h3>${barChart(months, [{ name: 'Netto', values: dm, color: '#26A69A' }], { empty: 'Brak dywidend w tym roku', h: 200 })}</div>
-      <div class="card"><h3>Największe pozycje</h3>${topTbl}</div></div>`];
+      <div class="card"><h3>Największe pozycje</h3>${topTbl}</div></div>`, `${widok}<button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`];
 }
 
 function vPortfel() {
@@ -1151,9 +1175,9 @@ function korektaGotowki(id) {
 }
 function editStrategiaNaKoncie(konto) { editStrategia(null, konto); }
 
-function modelCard(konto) {
-  const M = C.modelFor(konto), key = 'nowa_' + (konto || '_'), nowa = num(CFG[key]), rozd = M.rozdziel(nowa);
-  if (!M.rows.length) return `<div class="empty">Brak portfela docelowego${konto ? ' dla tego konta' : ''}.<br><a onclick="FILT.celeKonto='${esc(konto)}';go('ustawienia')">Ustaw koszyki i cele →</a></div>`;
+function modelCard(konto, link = konto) {
+  const M = C.modelFor(konto), key = 'nowa_' + (link || '_'), nowa = num(CFG[key]), rozd = M.rozdziel(nowa);
+  if (!M.rows.length) return `<div class="empty">Brak portfela docelowego${link ? ' dla tego konta' : ''}.<br><a onclick="FILT.celeKonto='${esc(link)}';go('ustawienia')">Ustaw koszyki i cele →</a></div>`;
   const tbl = table([
     { h: 'Koszyk', f: m => `<b>${esc(m.koszyk)}</b> <span class="mut">${esc(m.grupa || '')}</span>${m.lista.length > 1 || m.lista[0] !== m.koszyk ? `<br><span class="mut" style="font-size:11.5px">${esc(m.lista.join(' + '))}</span>` : ''}` },
     { h: 'Cel', n: 1, f: m => pct(m.celPct) }, { h: 'Teraz', n: 1, f: m => pct(m.udzial) },
@@ -1162,7 +1186,7 @@ function modelCard(konto) {
     { h: 'Z nowej wpłaty', n: 1, f: m => nowa ? zl(rozd[M.rows.indexOf(m)], 0) : '–' },
   ], M.rows);
   return `<div class="row" style="margin-bottom:8px;font-size:12.5px"><span class="mut">Nowa wpłata do rozdzielenia:</span><input class="cell" type="number" value="${nowa || ''}" placeholder="0 zł" onchange="CFG['${key}']=this.value;saveCfg();render()">
-    <span class="sp" style="flex:1"></span><a onclick="FILT.celeKonto='${esc(konto)}';go('ustawienia')">edytuj cele</a></div>${tbl}
+    <span class="sp" style="flex:1"></span><a onclick="FILT.celeKonto='${esc(link)}';go('ustawienia')">edytuj cele</a></div>${tbl}
     <div class="mut" style="font-size:12.5px;margin-top:8px">${M.sumaCel !== 100 ? `<span class="warn">⚠ Suma celów: ${M.sumaCel}% (powinno być 100%)</span> · ` : ''}Poza portfelem docelowym: ${zl(M.poza, 0)} · gotówka: ${zl(M.gotowka, 0)}</div>`;
 }
 
@@ -1644,8 +1668,12 @@ function demoState() {
   S2.historia = [];
   while (d < new Date(todayStr())) { const ds = d.toISOString().slice(0, 10); if (dep[ds] && ds !== '2024-11-05') { v += dep[ds]; k += dep[ds]; }
     v *= 1 + (Math.sin(d.getTime() / 9e8) * 0.004 + 0.0007); S2.historia.push({ data: ds, wartosc: Math.round(v), kapital: k }); d.setDate(d.getDate() + 1); }
-  const teraz = calc(S2).wartosc, n = S2.historia.length, last = n ? S2.historia[n - 1].wartosc : 0;
+  const CD = calc(S2), teraz = CD.wartosc, n = S2.historia.length, last = n ? S2.historia[n - 1].wartosc : 0;
   if (n && last && teraz) S2.historia.forEach((h, i) => { h.wartosc = Math.round(h.wartosc * Math.pow(teraz / last, (i + 1) / n)); });
+  const fin = {}; CD.konta.forEach(k => fin[k.nazwa] = k.razem);
+  S2.historia.forEach(h => { const dep = {}; let tot = 0; S2.wplaty.filter(w => w.data <= h.data).forEach(w => { dep[w.konto] = (dep[w.konto] || 0) + w.kwotaPLN; tot += w.kwotaPLN; });
+    const wsp = {}; let sw = 0; Object.keys(dep).forEach(k => { wsp[k] = dep[k] * ((fin[k] || dep[k]) / Math.max(1, S2.wplaty.filter(w => w.konto === k).reduce((a, w) => a + w.kwotaPLN, 0))); sw += wsp[k]; });
+    const m = {}; Object.keys(wsp).forEach(k => m[k] = Math.round(h.wartosc * wsp[k] / sw)); h.konta = JSON.stringify(m); });
   return S2;
 }
 function wejdzDemo() {
@@ -1654,7 +1682,8 @@ function wejdzDemo() {
   CFG.demo = true; saveCfg(); LS_INTRA = 'portfel_intraday_demo';
   S = demoState(); DIRTY = new Set(); saveLocal();
   const now = Date.now(), base = calc(S).wartosc, pts = [];
-  for (let i = 30; i >= 0; i--) pts.push({ t: new Date(now - i * 45 * 60000).toISOString(), w: Math.round(base * (1 + Math.sin(i / 4) * 0.004 - i * 0.0001)), k: calc(S).kapital });
+  const CK = calc(S);
+  for (let i = 30; i >= 0; i--) { const f = 1 + Math.sin(i / 4) * 0.004 - i * 0.0001, kk = {}; CK.konta.forEach(k => { if (k.razem) kk[k.nazwa] = Math.round(k.razem * f); }); pts.push({ t: new Date(now - i * 45 * 60000).toISOString(), w: Math.round(base * f), k: CK.kapital, kk }); }
   lsSet(LS_INTRA, pts);
   setSync('local', 'Tryb demo – nic nie zapisuje się w arkuszu'); go('kokpit'); render(); toast('Wczytano przykładowy portfel');
 }
