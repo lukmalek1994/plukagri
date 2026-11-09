@@ -51,7 +51,7 @@ function readCsv(text) {
 }
 
 /* --- rozpoznanie operacji gotówkowych XTB --- */
-const XH = { type: /^(type|typ)$/i, time: /^(time|czas|data|date)/i, amount: /^(amount|kwota)/i, symbol: /^(symbol|instrument)$/i, comment: /^(comment|komentarz|opis)$/i, id: /^(id|nr|numer)$/i };
+const XH = { type: /^(type|typ)$/i, time: /^(time|czas|data|date)/i, amount: /^(amount|kwota)/i, symbol: /^(symbol|ticker)$/i, name: /^(instrument|nazwa|name)$/i, comment: /^(comment|komentarz|opis)$/i, id: /^(id|nr|numer)$/i };
 function xtbDate(v) {
   if (typeof v === 'number' && v > 20000) return new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0, 10);
   const s = String(v || '').trim(); let m;
@@ -63,13 +63,14 @@ function xtbKind(t) {
   t = String(t || '').toLowerCase();
   if (/close trade|zamkni[eę]cie pozycji|profit/.test(t)) return 'ignore';
   if (/purchase|zakup|kupno/.test(t)) return 'buy';
-  if (/sale|sprzeda/.test(t)) return 'sell';
+  if (/sale|\bsell\b|sprzeda/.test(t)) return 'sell';
   if (/withholding|podatek od dywid|podatek u [źz]r|dividend tax|divident tax/.test(t)) return 'divtax';
   if (/divid|dywid/.test(t)) return 'div';
   if (/interest tax|podatek od odsetek|tax.*interest/.test(t)) return 'inttax';
   if (/interest|odsetk/.test(t)) return 'int';
   if (/withdraw|wyp[łl]ata/.test(t)) return 'out';
   if (/deposit|wp[łl]ata/.test(t)) return 'in';
+  if (/^transfer|przelew|przewalutow/.test(t)) return 'transfer';
   if (/commission|prowizj|sec fee|\bfee\b|op[łl]ata/.test(t)) return 'fee';
   return 'other';
 }
@@ -79,32 +80,63 @@ function parseXtb(sheets) {
     const hi = rows.findIndex(r => r.some(c => XH.type.test(String(c).trim())) && r.some(c => XH.amount.test(String(c).trim())) && r.some(c => XH.time.test(String(c).trim())));
     if (hi < 0) continue;
     const h = rows[hi].map(c => String(c).trim()), col = k => h.findIndex(c => XH[k].test(c));
-    const ci = { type: col('type'), time: col('time'), amount: col('amount'), symbol: col('symbol'), comment: col('comment'), id: col('id') };
+    const ci = { type: col('type'), time: col('time'), amount: col('amount'), symbol: col('symbol'), name: col('name'), comment: col('comment'), id: col('id') };
+    if (ci.symbol < 0) ci.symbol = ci.name;   // starsze eksporty: jedna kolumna z symbolem
     for (const r of rows.slice(hi + 1)) {
       const type = r[ci.type], d = xtbDate(r[ci.time]); if (!type || !d) continue;
       const amount = typeof r[ci.amount] === 'number' ? r[ci.amount] : num(String(r[ci.amount]).replace(/ /g, ''));
-      const comment = ci.comment >= 0 ? String(r[ci.comment] || '') : '', symbol = ci.symbol >= 0 ? String(r[ci.symbol] || '').trim() : '';
+      const comment = ci.comment >= 0 ? String(r[ci.comment] || '') : '', symbol = ci.symbol >= 0 ? String(r[ci.symbol] || '').trim() : '', nazwa = ci.name >= 0 && ci.name !== ci.symbol ? String(r[ci.name] || '').trim() : '';
       const m = comment.match(/(OPEN|CLOSE)\s+(BUY|SELL)\s+(?:\S*[A-Za-z]\S*\s+)?([\d.,]+)(?:\s*\/\s*([\d.,]+))?\s*@\s*([\d.,]+)/i); // XTB czasem wstawia ticker: \"OPEN BUY GOOGL.US 1/1.047 @ 286.61\"
       const id = ci.id >= 0 && r[ci.id] !== '' ? String(r[ci.id]) : `${d}|${type}|${amount}|${symbol}`;
-      ops.push({ id, kind: xtbKind(type), type: String(type), data: d, czas: String(r[ci.time]), symbol, comment, amount,
+      let kind = xtbKind(type); if (kind === 'transfer') kind = amount >= 0 ? 'in' : 'out';
+      ops.push({ id, kind, type: String(type), data: d, czas: String(r[ci.time]), symbol, nazwa, comment, amount,
         ilosc: m ? num(m[3]) : null, cena: m ? num(m[5]) : null, arkusz: nm });
     }
   }
   return ops;
 }
 const XSUF = { US: ['USD', ''], UK: ['USD', '.L'], PL: ['PLN', '.WA'], DE: ['EUR', '.DE'], NL: ['EUR', '.AS'], FR: ['EUR', '.PA'], IT: ['EUR', '.MI'], ES: ['EUR', '.MC'], BE: ['EUR', '.BR'], PT: ['EUR', '.LS'], DK: ['DKK', '.CO'], SE: ['SEK', '.ST'], NO: ['NOK', '.OL'], CH: ['CHF', '.SW'], CZ: ['CZK', '.PR'] };
+const XKLASY = { BRKB: 'BRK-B', BRKA: 'BRK-A', BFB: 'BF-B', BFA: 'BF-A' };
 function xtbMapa(ops, konto) {
   const acc = S.konta.find(k => k.nazwa === konto) || {}, strat = S.strategie.filter(s => s.konto === konto);
   const m = {};
   ops.filter(o => o.symbol && ['buy', 'sell', 'div', 'divtax'].includes(o.kind)).forEach(o => {
-    if (m[o.symbol]) return;
-    const [base, suf = ''] = o.symbol.split('.'), sx = XSUF[suf.toUpperCase()] || [acc.waluta || 'USD', ''];
+    if (m[o.symbol]) { if (!m[o.symbol].nazwa && o.nazwa) m[o.symbol].nazwa = o.nazwa; return; }
+    const k = o.symbol.lastIndexOf('.'), base = k > 0 ? o.symbol.slice(0, k) : o.symbol, suf = k > 0 ? o.symbol.slice(k + 1) : '';
+    const sx = XSUF[suf.toUpperCase()] || [acc.waluta || 'USD', ''];
+    const yb = (XKLASY[base.toUpperCase()] || base).replace(/\./g, '-');
     const ins = S.instrumenty.find(i => i.ticker === o.symbol) || S.instrumenty.find(i => i.ticker === base);
     const ticker = ins ? ins.ticker : base;
     const used = S.transakcje.find(t => t.ticker === ticker && strat.some(s => s.nazwa === t.strategia));
-    m[o.symbol] = { ticker, nowy: !ins, waluta: ins ? ins.waluta : sx[0], yahoo: base + sx[1], strategia: used ? used.strategia : ((strat[0] || {}).nazwa || ''), klasa: 'Akcje/ETF' };
+    m[o.symbol] = { ticker, nowy: !ins, waluta: ins ? ins.waluta : sx[0], yahoo: yb + sx[1], nazwa: o.nazwa || '', strategia: used ? used.strategia : ((strat[0] || {}).nazwa || ''), klasa: 'Akcje/ETF' };
   });
   return m;
+}
+function xtbDoNaprawy(mapa) {
+  return Object.values(mapa).filter(m => m.nazwa && m.nazwa !== m.ticker && S.instrumenty.some(i => i.ticker === m.nazwa));
+}
+function xtbNapraw(mapa) {
+  let n = 0;
+  xtbDoNaprawy(mapa).forEach(m => {
+    const zly = S.instrumenty.find(i => i.ticker === m.nazwa), dobry = S.instrumenty.find(i => i.ticker === m.ticker);
+    if (dobry) S.instrumenty.splice(S.instrumenty.indexOf(zly), 1);   // taki instrument już jest (np. CSPX) – scal
+    else Object.assign(zly, { ticker: m.ticker, nazwa: m.nazwa, waluta: m.waluta, symbol: m.yahoo ? 'YAHOO:' + m.yahoo : '', cenaAuto: '' });
+    ['transakcje', 'dywidendy'].forEach(t => S[t].forEach(r => { if (r.ticker === m.nazwa) r.ticker = m.ticker; }));
+    (S.cele || []).forEach(c => ['koszyk', 'tickery'].forEach(f => { if (c[f]) c[f] = String(c[f]).split(',').map(x => x.trim() === m.nazwa ? m.ticker : x.trim()).join(', '); }));
+    (S.alerty || []).forEach(a => { if (a.ticker === m.nazwa) a.ticker = m.ticker; });
+    m.nowy = false; n++;
+  });
+  return n;
+}
+/* sprzedaż, przed którą w pliku i w aplikacji nie ma tylu akcji (plik nie obejmuje całej historii) */
+function xtbBrakiPozycji(ops, mapa) {
+  const st = {}; S.transakcje.forEach(t => { st[t.ticker] = (st[t.ticker] || 0) + (t.typ === 'KUPNO' ? 1 : -1) * num(t.ilosc); });
+  const brak = new Set();
+  ops.filter(o => o.wybrane && !xtbIstnieje(o.id) && ['buy', 'sell'].includes(o.kind)).sort((a, b) => a.czas.localeCompare(b.czas)).forEach(o => {
+    const t = (mapa[o.symbol] || {}).ticker || o.symbol; st[t] = (st[t] || 0) + (o.kind === 'buy' ? 1 : -1) * (o.ilosc || 0);
+    if (st[t] < -1e-6) brak.add(t);
+  });
+  return [...brak];
 }
 function xtbIstnieje(id) {
   const tag = 'XTB#' + id;
@@ -141,7 +173,7 @@ function vImport() {
     { h: 'Symbol Yahoo (cena auto)', f: ([s, m]) => m.nowy ? `<input style="width:110px" value="${esc(m.yahoo)}" onchange="IMP.mapa['${esc(s)}'].yahoo=this.value.trim()">` : '<span class="mut">–</span>' },
     { h: 'Strategia', f: ([s, m]) => `<select onchange="IMP.mapa['${esc(s)}'].strategia=this.value">${strat.map(x => `<option ${x.nazwa === m.strategia ? 'selected' : ''}>${esc(x.nazwa)}</option>`).join('')}</select>` },
   ], syms)}${strat.length ? '' : `<div class="alert">Konto „${esc(IMP.konto)}” nie ma jeszcze strategii – <a onclick="editStrategia()">dodaj strategię</a>, aby przypisać do niej transakcje.</div>`}</div>` : '';
-  const ileW = uzyte.filter(o => o.wybrane).length, dupl = uzyte.filter(o => xtbIstnieje(o.id)).length;
+  const ileW = uzyte.filter(o => o.wybrane).length, dupl = uzyte.filter(o => xtbIstnieje(o.id)).length, napr = xtbDoNaprawy(mapa), braki = [...new Set([...(IMP.braki || []), ...xtbBrakiPozycji(ops, mapa)])];
   const opTbl = table([
     { h: `<input type="checkbox" ${uzyte.every(o => o.wybrane) ? 'checked' : ''} onchange="IMP.ops.forEach(o=>{if('wybrane' in o)o.wybrane=this.checked});render()">`, f: o => `<input type="checkbox" ${o.wybrane ? 'checked' : ''} onchange="IMP.ops[${ops.indexOf(o)}].wybrane=this.checked;render()">` },
     { h: 'Data', f: o => esc(o.data) }, { h: 'Operacja', f: o => `${LBL[o.kind]} <span class="mut" style="font-size:11.5px">${esc(o.type)}</span>` },
@@ -152,7 +184,9 @@ function vImport() {
   ], uzyte.slice().sort((a, b) => b.data.localeCompare(a.data)), { empty: 'W pliku nie znaleziono operacji do zaimportowania' });
   const podatki = ops.filter(o => ['divtax', 'inttax'].includes(o.kind)).length;
   const step3 = `<div class="card" style="margin-top:16px"><h3>${syms.length ? '3' : '2'}. Operacje <small>${ileW} wybranych z ${uzyte.length}${dupl ? ` · ${dupl} już było` : ''}</small><span class="sp"></span>
-      <button class="btn ghost sm" onclick="IMP=null;render()">Anuluj</button><button class="btn" ${ileW && (strat.length || !syms.length) ? '' : 'disabled'} onclick="xtbImportuj()">Importuj ${ileW} operacji</button></h3>
+      <button class="btn ghost sm" onclick="IMP=null;render()">Anuluj</button><button class="btn" ${(ileW || napr.length) && (strat.length || !syms.length) ? '' : 'disabled'} onclick="xtbImportuj()">${ileW ? `Importuj ${ileW} operacji` : 'Popraw tickery'}</button></h3>
+    ${napr.length ? `<div class="alert" style="background:#e8f5e9;border-color:#a5d6a7;color:#1b5e20">✓ Wcześniejszy import zapisał nazwy zamiast tickerów – zostaną poprawione: ${napr.map(m => `<b>${esc(m.nazwa)}</b> → ${esc(m.ticker)}`).join(', ')}. Ceny zaczną się wtedy pobierać.</div>` : ''}
+    ${braki.length ? `<div class="alert">⚠ Plik nie obejmuje całej historii (sprzedaże tych spółek odznaczyłem): brakuje zakupów dla <b>${braki.map(esc).join(', ')}</b>. Wyeksportuj z XTB operacje <b>od dnia otwarcia konta</b>, inaczej ilości wyjdą ujemne.</div>` : ''}
     <div class="mut" style="font-size:12.5px;margin-bottom:10px">${podatki ? `Podatek u źródła (${podatki} poz.) zostanie dopisany do odpowiednich dywidend i odsetek. ` : ''}Kursy NBP (D-1) do podatku pobiorą się automatycznie. ${pom.length ? `Pominięte: ${pom.length} poz. (${[...new Set(pom.map(o => o.type))].slice(0, 6).map(esc).join(', ')}) – „close trade” to tylko zapis zysku ze sprzedaży, prowizje dopisujemy do transakcji.` : ''}</div>${opTbl}</div>`;
   return ['Import z XTB', 'Transakcje, dywidendy, odsetki i wpłaty z wyciągu XTB', step1 + mapTbl + step3, ' '];
 }
@@ -164,6 +198,9 @@ async function xtbWczytaj(file) {
     const ops = parseXtb(sheets);
     if (!ops.length) throw new Error('nie znaleziono tabeli operacji gotówkowych (kolumny Typ / Czas / Kwota). Upewnij się, że eksportujesz raport „Operacje gotówkowe”.');
     IMP.ops = ops; IMP.mapa = xtbMapa(ops, IMP.konto);
+    ops.forEach(o => { if (['buy', 'sell', 'div', 'int', 'in', 'out'].includes(o.kind)) o.wybrane = !xtbIstnieje(o.id) && !(['buy', 'sell'].includes(o.kind) && !o.ilosc); });
+    const braki = IMP.braki = xtbBrakiPozycji(ops, IMP.mapa);   // niepełna historia -> nie zaznaczaj sprzedaży, które dałyby ujemne ilości
+    ops.forEach(o => { if (o.kind === 'sell' && braki.includes((IMP.mapa[o.symbol] || {}).ticker)) o.wybrane = false; });
   } catch (e) { IMP.blad = 'Nie udało się odczytać pliku: ' + e.message; }
   render();
 }
@@ -172,10 +209,11 @@ async function xtbImportuj() {
   const accCur = acc.waluta || 'PLN', ops = IMP.ops, mapa = IMP.mapa, defStrat = (S.strategie.find(s => s.konto === acc.nazwa) || {}).nazwa || '';
   const wyb = ops.filter(o => o.wybrane && !xtbIstnieje(o.id));
   const rate = async (cur, d) => { if (cur === 'PLN') return 1; try { return await nbpRate(cur, d); } catch (e) { return C.rateNow(cur) || 1; } };
+  const naprawione = xtbNapraw(mapa);
   toast('Importuję… pobieram kursy NBP');
   // nowe instrumenty
   Object.values(mapa).forEach(m => { if (m.ticker && !S.instrumenty.some(i => i.ticker === m.ticker) && wyb.some(o => (mapa[o.symbol] || {}).ticker === m.ticker)) {
-    S.instrumenty.push({ id: uid(), ticker: m.ticker, nazwa: m.ticker, klasa: m.klasa, waluta: m.waluta, cena: '', dataCeny: '', symbol: m.yahoo ? 'YAHOO:' + m.yahoo : '', cenaAuto: '' }); m.nowy = false; } });
+    S.instrumenty.push({ id: uid(), ticker: m.ticker, nazwa: m.nazwa || m.ticker, klasa: m.klasa, waluta: m.waluta, cena: '', dataCeny: '', symbol: m.yahoo ? 'YAHOO:' + m.yahoo : '', cenaAuto: '' }); m.nowy = false; } });
   const fees = ops.filter(o => o.kind === 'fee' && o.symbol), taxes = ops.filter(o => ['divtax', 'inttax'].includes(o.kind));
   const used = new Set(); let n = { tx: 0, dyw: 0, wpl: 0 };
   for (const o of wyb) {
@@ -195,11 +233,16 @@ async function xtbImportuj() {
       S.dywidendy.push({ id: uid(), data: o.data, strategia: o.kind === 'div' ? (m.strategia || defStrat) : defStrat, ticker: o.kind === 'div' ? m.ticker : '',
         brutto: Math.round(brutto * 100) / 100, podatek: pod ? Math.round(pod * 100) / 100 : '', kurs, notatka: (o.kind === 'int' ? 'Odsetki XTB ' : '') + tag }); n.dyw++;
     } else if (o.kind === 'in' || o.kind === 'out') {
-      const pln = accCur === 'PLN' ? o.amount : o.amount * await rate(accCur, o.data);
+      const fx = o.comment.match(/(\w{3}) to (\w{3}).*?rate:\s*([\d.]+)/i);
+      let pln = null;
+      if (accCur === 'PLN') pln = o.amount;
+      else if (fx && fx[1].toUpperCase() === 'PLN' && num(fx[3])) pln = o.amount / num(fx[3]);
+      else if (fx && fx[2].toUpperCase() === 'PLN' && num(fx[3])) pln = o.amount * num(fx[3]);
+      if (pln === null) pln = o.amount * await rate(accCur, o.data);
       S.wplaty.push({ id: uid(), data: o.data, konto: acc.nazwa, kwotaPLN: Math.round(pln * 100) / 100, kwotaWal: accCur === 'PLN' ? '' : o.amount, notatka: tag }); n.wpl++;
     }
   }
-  ['instrumenty', 'transakcje', 'dywidendy', 'wplaty'].forEach(t => changed(t));
+  ['instrumenty', 'transakcje', 'dywidendy', 'wplaty', 'cele', 'alerty'].filter(t => S[t]).forEach(t => changed(t));
   IMP = null; render();
-  toast(`Zaimportowano: ${n.tx} transakcji, ${n.dyw} dywidend/odsetek, ${n.wpl} wpłat/wypłat`);
+  toast(`Zaimportowano: ${n.tx} transakcji, ${n.dyw} dywidend/odsetek, ${n.wpl} wpłat/wypłat${naprawione ? ` · poprawiono tickery: ${naprawione}` : ''}`);
 }
