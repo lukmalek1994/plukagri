@@ -84,7 +84,7 @@ function parseXtb(sheets) {
       const type = r[ci.type], d = xtbDate(r[ci.time]); if (!type || !d) continue;
       const amount = typeof r[ci.amount] === 'number' ? r[ci.amount] : num(String(r[ci.amount]).replace(/ /g, ''));
       const comment = ci.comment >= 0 ? String(r[ci.comment] || '') : '', symbol = ci.symbol >= 0 ? String(r[ci.symbol] || '').trim() : '';
-      const m = comment.match(/(OPEN|CLOSE)\s+(BUY|SELL)\s+([\d.,]+)(?:\s*\/\s*([\d.,]+))?\s*@\s*([\d.,]+)/i);
+      const m = comment.match(/(OPEN|CLOSE)\s+(BUY|SELL)\s+(?:\S*[A-Za-z]\S*\s+)?([\d.,]+)(?:\s*\/\s*([\d.,]+))?\s*@\s*([\d.,]+)/i); // XTB czasem wstawia ticker: \"OPEN BUY GOOGL.US 1/1.047 @ 286.61\"
       const id = ci.id >= 0 && r[ci.id] !== '' ? String(r[ci.id]) : `${d}|${type}|${amount}|${symbol}`;
       ops.push({ id, kind: xtbKind(type), type: String(type), data: d, czas: String(r[ci.time]), symbol, comment, amount,
         ilosc: m ? num(m[3]) : null, cena: m ? num(m[5]) : null, arkusz: nm });
