@@ -560,7 +560,7 @@ function editInstrument(id) {
   }, id ? () => { if (S.transakcje.some(t => t.ticker === old)) { toast('Instrument ma transakcje'); return; } S.instrumenty = S.instrumenty.filter(x => x.id !== id); changed('instrumenty'); } : null, pre);
   wireSearch(form, !!id);
 }
-const KLASY = ['Akcje/ETF', 'Obligacje', 'Złoto', 'Srebro', 'Krypto', 'Nieruchomości', 'Inne'];
+const KLASY = ['Akcje/ETF', 'Obligacje', 'Gotówka', 'Złoto', 'Srebro', 'Krypto', 'Nieruchomości', 'Inne'];
 function guessKlasa(r) {
   const s = r.symbol.toUpperCase(), n = (r.nazwa || '').toLowerCase(), t = r.typ.toUpperCase();
   if (s.startsWith('GC=') || s.startsWith('XAU') || /gold|złot/.test(n)) return 'Złoto';

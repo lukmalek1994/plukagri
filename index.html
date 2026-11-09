@@ -259,7 +259,7 @@ function calc(S) {
   });
 
   const groupBy = (arr, f, v) => { const m = {}; arr.forEach(x => { const k = f(x); m[k] = (m[k] || 0) + v(x); }); return m; };
-  const klasy = groupBy(pozycje, p => p.klasa, p => p.wartoscPLN); if (gotowkaPLN) klasy['Gotówka'] = gotowkaPLN;
+  const klasy = groupBy(pozycje, p => p.klasa, p => p.wartoscPLN); if (gotowkaPLN) klasy['Gotówka'] = (klasy['Gotówka'] || 0) + gotowkaPLN;
   const waluty = groupBy(pozycje, p => p.waluta, p => p.wartoscPLN); gotowka.forEach(g => { if (g.pln) waluty[g.waluta] = (waluty[g.waluta] || 0) + g.pln; });
 
   // model 2.1
@@ -1388,7 +1388,7 @@ function editInstrument(id) {
   }, id ? () => { if (S.transakcje.some(t => t.ticker === old)) { toast('Instrument ma transakcje'); return; } S.instrumenty = S.instrumenty.filter(x => x.id !== id); changed('instrumenty'); } : null, pre);
   wireSearch(form, !!id);
 }
-const KLASY = ['Akcje/ETF', 'Obligacje', 'Złoto', 'Srebro', 'Krypto', 'Nieruchomości', 'Inne'];
+const KLASY = ['Akcje/ETF', 'Obligacje', 'Gotówka', 'Złoto', 'Srebro', 'Krypto', 'Nieruchomości', 'Inne'];
 function guessKlasa(r) {
   const s = r.symbol.toUpperCase(), n = (r.nazwa || '').toLowerCase(), t = r.typ.toUpperCase();
   if (s.startsWith('GC=') || s.startsWith('XAU') || /gold|złot/.test(n)) return 'Złoto';
