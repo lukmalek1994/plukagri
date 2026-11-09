@@ -24,12 +24,13 @@ function snapshotIntraday() {
   const cut = Date.now() - 3 * 864e5; lsSet(LS_INTRA, arr.filter(p => new Date(p.t).getTime() > cut));
 }
 function kontaMap() { const m = {}; C.konta.forEach(k => { if (k.razem) m[k.nazwa] = Math.round(k.razem * 100) / 100; }); return m; }
+function stratMap() { const m = {}; C.strategie.forEach(s => { if (s.wartosc) m[s.nazwa] = Math.round(s.wartosc * 100) / 100; }); return m; }
 function snapshot() {
   snapshotIntraday();
   if (!C || C.wartosc <= 0) return;
   const d = todayStr(), last = S.historia[S.historia.length - 1];
-  const rec = { data: d, wartosc: Math.round(C.wartosc * 100) / 100, kapital: Math.round(C.kapital * 100) / 100, konta: JSON.stringify(kontaMap()) };
-  if (last && last.data === d) { if (Math.abs(num(last.wartosc) - rec.wartosc) < 0.01 && Math.abs(num(last.kapital) - rec.kapital) < 0.01 && last.konta === rec.konta) return; Object.assign(last, rec); }
+  const rec = { data: d, wartosc: Math.round(C.wartosc * 100) / 100, kapital: Math.round(C.kapital * 100) / 100, konta: JSON.stringify(kontaMap()), strat: JSON.stringify(stratMap()) };
+  if (last && last.data === d) { if (Math.abs(num(last.wartosc) - rec.wartosc) < 0.01 && Math.abs(num(last.kapital) - rec.kapital) < 0.01 && last.konta === rec.konta && last.strat === rec.strat) return; Object.assign(last, rec); }
   else S.historia.push(rec);
   S.historia.sort((a, b) => String(a.data).localeCompare(String(b.data)));
   changed('historia');
@@ -56,8 +57,9 @@ function renderNav() {
     <div class="nav-h">Konta i strategie</div>${tree}
     ${sieroty.length ? `<div class="nav-h">Strategie bez konta</div>${sieroty.map(stLink).join('')}` : ''}
     <a class="add" onclick="editKonto()"><span class="ic">＋</span>Dodaj konto</a><a class="add" onclick="editStrategia()"><span class="ic">＋</span>Dodaj strategię</a>
-    <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◎', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}
-    <div class="nav-h">Analiza</div>${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}
+    <div class="nav-h">Analizy</div>${it('waluta', '¤', 'Wpływ waluty')}${it('porownanie', '⚖', 'Porównanie strategii')}${it('koszty', '−', 'Koszty i podatki')}${it('dochod', '◎', 'Dochód pasywny')}${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}
+    <div class="nav-h">Planowanie</div>${it('symulator', '➚', 'Symulator przyszłości')}${it('mapa', '▦', 'Mapa portfela')}
+    <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◈', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}
     <div class="nav-h">Konfiguracja</div>${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`;
 }
 function toggleNav(id) { CFG.navClosed = CFG.navClosed || {}; CFG.navClosed[id] = !CFG.navClosed[id]; saveCfg(); renderNav(); }
@@ -71,7 +73,7 @@ function render() {
   C = calc(S);
   renderNav(); renderSyncBadge();
   const V = { kokpit: vKokpit, portfel: vPortfel, strategia: vStrategia, konto: vKonto, transakcje: vTransakcje, dywidendy: vDywidendy, wplaty: vWplaty,
-    podatki: vPodatki, inflacja: vInflacja, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
+    podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, mapa: vMapa, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
   const [title, sub, body, actions] = V();
   $('#title').innerHTML = `${esc(title)}<small>${sub || ''}</small>`;
   $('#topActions').innerHTML = actions || `<button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`;
@@ -190,6 +192,7 @@ function vKokpitInner(SV, KK) {
       <div class="card"><h3>Struktura – klasy aktywów</h3>${klasy}</div></div>
     <div class="grid g2" style="margin-top:16px"><div class="card"><h3>Stopa zwrotu: nominalna i realna<span class="sp"></span>${rangeSeg()}</h3>${ret}</div>
       <div class="card"><h3>Ekspozycja walutowa</h3>${waluty}</div></div>
+    ${kokpitRynek(SV, KK)}
     <div class="card" style="margin-top:16px"><h3>Konta<span class="sp"></span><button class="btn sm ghost" onclick="editKonto()">＋ Konto</button></h3>${table([
       { h: 'Konto', f: k => `<b>${esc(k.nazwa)}</b>` }, { h: 'Typ', f: k => `<span class="tag">${esc(k.typ)}</span>` },
       { h: 'Pozycje', n: 1, f: k => zl(k.wartoscPozycji, 0) }, { h: 'Gotówka', n: 1, f: k => zl(k.gotowkaPLN, 0) }, { h: 'Razem', n: 1, f: k => `<b>${zl(k.razem, 0)}</b>` },
@@ -794,7 +797,9 @@ function demoState() {
   const fin = {}; CD.konta.forEach(k => fin[k.nazwa] = k.razem);
   S2.historia.forEach(h => { const dep = {}; let tot = 0; S2.wplaty.filter(w => w.data <= h.data).forEach(w => { dep[w.konto] = (dep[w.konto] || 0) + w.kwotaPLN; tot += w.kwotaPLN; });
     const wsp = {}; let sw = 0; Object.keys(dep).forEach(k => { wsp[k] = dep[k] * ((fin[k] || dep[k]) / Math.max(1, S2.wplaty.filter(w => w.konto === k).reduce((a, w) => a + w.kwotaPLN, 0))); sw += wsp[k]; });
-    const m = {}; Object.keys(wsp).forEach(k => m[k] = Math.round(h.wartosc * wsp[k] / sw)); h.konta = JSON.stringify(m); });
+    const m = {}; Object.keys(wsp).forEach(k => m[k] = Math.round(h.wartosc * wsp[k] / sw)); h.konta = JSON.stringify(m);
+    const sm = {}; CD.strategie.forEach((s, j) => { const kv = m[s.konto]; const ka = CD.konta.find(x => x.nazwa === s.konto); if (!kv || !ka || !ka.razem || !s.wartosc) return;
+      sm[s.nazwa] = Math.round(kv * s.wartosc / ka.razem * (1 + 0.03 * Math.sin(dnum(h.data) / (4e9 + j * 7e8) + j))); }); h.strat = JSON.stringify(sm); });
   return S2;
 }
 function wejdzDemo() {

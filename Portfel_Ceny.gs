@@ -104,3 +104,32 @@ function DANE_FRED(id) {
   });
   return out.length ? out : [['BRAK', '']];
 }
+
+/**
+ * Notowania historyczne (dzienne, do 10 lat) – dla porównania z benchmarkami w aplikacji.
+ * Użycie: =YAHOO_HIST("CSPX.L")  → dwie kolumny: data (rrrr-mm-dd) i cena zamknięcia.
+ * Tekst po znaku | jest ignorowany (aplikacja dopisuje tam znacznik czasu).
+ */
+function YAHOO_HIST(symbol) {
+  symbol = String(symbol || '').split('|')[0].trim();
+  if (!symbol) return '';
+  var url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(symbol) + '?range=10y&interval=1d';
+  var opt = { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } };
+  var res = UrlFetchApp.fetch(url, opt);
+  if (res.getResponseCode() !== 200) res = UrlFetchApp.fetch(url.replace('query1', 'query2'), opt);
+  if (res.getResponseCode() !== 200) throw new Error('Yahoo: brak odpowiedzi dla ' + symbol + ' (' + res.getResponseCode() + ')');
+  var r = JSON.parse(res.getContentText()).chart.result;
+  if (!r || !r.length || !r[0].timestamp) throw new Error('Yahoo: brak notowań dla ' + symbol);
+  r = r[0];
+  var cur = String(r.meta.currency || ''), div = (cur === 'GBp' || cur === 'GBX') ? 100 : 1;
+  var adj = r.indicators.adjclose && r.indicators.adjclose[0] && r.indicators.adjclose[0].adjclose;
+  var cl = adj || r.indicators.quote[0].close || [];
+  var tz = r.meta.exchangeTimezoneName || 'UTC', out = [];
+  for (var i = 0; i < r.timestamp.length; i++) {
+    var v = Number(cl[i]);
+    if (!isFinite(v) || v <= 0) continue;
+    out.push([Utilities.formatDate(new Date(r.timestamp[i] * 1000), tz, 'yyyy-MM-dd'), v / div]);
+  }
+  if (!out.length) throw new Error('Yahoo: brak notowań dla ' + symbol);
+  return out;
+}

@@ -84,3 +84,5 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 .nav a.sub{padding-left:34px;font-size:13.5px}.nav a.sub.add{font-size:12.5px;opacity:.85}
 .nav a.drop-into{background:#1e4a85;outline:1px dashed #7fb0ff}
 .viewsel{font-weight:600;padding:8px 12px;border-radius:9px;border:1px solid var(--line);background:#fff;min-width:170px}
+.heat td.n{font-size:12px;padding:6px 4px;text-align:center;border-radius:4px}.heat th.n{text-align:center}.heat{border-collapse:separate;border-spacing:2px}
+.kpi.main .pos,.kpi.main .neg{color:#fff}

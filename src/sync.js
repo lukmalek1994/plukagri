@@ -11,7 +11,7 @@ const TABLES = {
   konta: { sheet: 'Konta', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['typ', 'Typ podatkowy'], ['waluta', 'Waluta'], ['gotowka', 'Gotówka'], ['model', 'W modelu 2.1']] },
   instrumenty: { sheet: 'Instrumenty', cols: [['id', 'ID'], ['ticker', 'Ticker'], ['nazwa', 'Nazwa'], ['klasa', 'Klasa'], ['waluta', 'Waluta'], ['cena', 'Cena ręczna'], ['dataCeny', 'Data ceny'], ['symbol', 'Symbol Google Finance'], ['cenaAuto', 'Cena auto (Google)']] },
   inflacja: { sheet: 'Inflacja', cols: [['miesiac', 'Miesiąc'], ['mm', 'Inflacja PL m/m %'], ['mmUS', 'Inflacja USA m/m %']] },
-  historia: { sheet: 'Historia', cols: [['data', 'Data'], ['wartosc', 'Wartość PLN'], ['kapital', 'Wpłacony kapitał PLN'], ['konta', 'Wartości kont (JSON)']] },
+  historia: { sheet: 'Historia', cols: [['data', 'Data'], ['wartosc', 'Wartość PLN'], ['kapital', 'Wpłacony kapitał PLN'], ['konta', 'Wartości kont (JSON)'], ['strat', 'Wartości strategii (JSON)']] },
   cele: { sheet: 'Cele 2.1', cols: [['id', 'ID'], ['konto', 'Konto (puste = cały portfel)'], ['koszyk', 'Koszyk'], ['tickery', 'Instrumenty'], ['grupa', 'Grupa'], ['cel', 'Cel %']] },
   ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
 };
@@ -143,6 +143,7 @@ async function afterLogin() {
   if (CFG.priceDay !== todayStr()) DIRTY.add('instrumenty');
   await pushDirty();
   setTimeout(() => refreshAutoPrices().catch(() => {}), 5000);   // ceny z GOOGLEFINANCE liczą się kilka sekund
+  setTimeout(() => { if (typeof odswiezBenchmarki === 'function') odswiezBenchmarki(false); }, 9000);
 }
 async function pullAll() {
   if (CFG.demo) return;
@@ -366,6 +367,22 @@ async function buildSummary(force) {
     position: { overlayPosition: { anchorCell: { sheetId: sid, rowIndex: 36, columnIndex: 10 }, widthPixels: 520, heightPixels: 300 } } } } });
   await gapi('POST', `${SHEETS}/${CFG.sheetId}:batchUpdate`, { requests: R });
   CFG.sumSig = CFG.sumSig || {}; CFG.sumSig[CFG.sheetId] = sig; saveCfg();
+}
+
+/* ---------- ogólne: policz formułę w arkuszu (zakładka „Szukaj”) i odczytaj wynik ---------- */
+async function sheetCompute(cell, formula, readRange, maxIter = 20) {
+  if (!CFG.sheetId || !SYNC.token || Date.now() > SYNC.exp) throw new Error('połącz z Google Sheets');
+  try { await gapi('POST', `${SHEETS}/${CFG.sheetId}:batchUpdate`, { requests: [{ addSheet: { properties: { title: 'Szukaj' } } }] }); } catch (e) {}
+  await gapi('PUT', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Szukaj'!" + cell)}?valueInputOption=USER_ENTERED`, { values: [[formula]] });
+  for (let i = 0; i < maxIter; i++) {
+    await new Promise(r => setTimeout(r, i < 2 ? 2000 : 1200));
+    const res = await gapi('GET', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Szukaj'!" + readRange)}?valueRenderOption=UNFORMATTED_VALUE`);
+    const rows = res.values || []; const f = rows[0] && rows[0][0];
+    if (f === undefined || f === '' || /Loading|Wczytywanie|Ładowanie/i.test(String(f))) continue;
+    if (String(f).startsWith('#')) throw new Error('brak funkcji w skrypcie – wklej aktualny Portfel_Ceny.gs');
+    return rows;
+  }
+  throw new Error('przekroczono czas');
 }
 
 /* ---------- wyszukiwanie symboli (Yahoo przez arkusz) ---------- */

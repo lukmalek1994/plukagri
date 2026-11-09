@@ -91,11 +91,13 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 .nav a.sub{padding-left:34px;font-size:13.5px}.nav a.sub.add{font-size:12.5px;opacity:.85}
 .nav a.drop-into{background:#1e4a85;outline:1px dashed #7fb0ff}
 .viewsel{font-weight:600;padding:8px 12px;border-radius:9px;border:1px solid var(--line);background:#fff;min-width:170px}
+.heat td.n{font-size:12px;padding:6px 4px;text-align:center;border-radius:4px}.heat th.n{text-align:center}.heat{border-collapse:separate;border-spacing:2px}
+.kpi.main .pos,.kpi.main .neg{color:#fff}
 </style>
 </head>
 <body>
 <div class="app">
-  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 20:05</div></aside>
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 20:14</div></aside>
   <main>
     <div class="top">
       <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
@@ -434,7 +436,7 @@ const TABLES = {
   konta: { sheet: 'Konta', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['typ', 'Typ podatkowy'], ['waluta', 'Waluta'], ['gotowka', 'Gotówka'], ['model', 'W modelu 2.1']] },
   instrumenty: { sheet: 'Instrumenty', cols: [['id', 'ID'], ['ticker', 'Ticker'], ['nazwa', 'Nazwa'], ['klasa', 'Klasa'], ['waluta', 'Waluta'], ['cena', 'Cena ręczna'], ['dataCeny', 'Data ceny'], ['symbol', 'Symbol Google Finance'], ['cenaAuto', 'Cena auto (Google)']] },
   inflacja: { sheet: 'Inflacja', cols: [['miesiac', 'Miesiąc'], ['mm', 'Inflacja PL m/m %'], ['mmUS', 'Inflacja USA m/m %']] },
-  historia: { sheet: 'Historia', cols: [['data', 'Data'], ['wartosc', 'Wartość PLN'], ['kapital', 'Wpłacony kapitał PLN'], ['konta', 'Wartości kont (JSON)']] },
+  historia: { sheet: 'Historia', cols: [['data', 'Data'], ['wartosc', 'Wartość PLN'], ['kapital', 'Wpłacony kapitał PLN'], ['konta', 'Wartości kont (JSON)'], ['strat', 'Wartości strategii (JSON)']] },
   cele: { sheet: 'Cele 2.1', cols: [['id', 'ID'], ['konto', 'Konto (puste = cały portfel)'], ['koszyk', 'Koszyk'], ['tickery', 'Instrumenty'], ['grupa', 'Grupa'], ['cel', 'Cel %']] },
   ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
 };
@@ -566,6 +568,7 @@ async function afterLogin() {
   if (CFG.priceDay !== todayStr()) DIRTY.add('instrumenty');
   await pushDirty();
   setTimeout(() => refreshAutoPrices().catch(() => {}), 5000);   // ceny z GOOGLEFINANCE liczą się kilka sekund
+  setTimeout(() => { if (typeof odswiezBenchmarki === 'function') odswiezBenchmarki(false); }, 9000);
 }
 async function pullAll() {
   if (CFG.demo) return;
@@ -791,6 +794,22 @@ async function buildSummary(force) {
   CFG.sumSig = CFG.sumSig || {}; CFG.sumSig[CFG.sheetId] = sig; saveCfg();
 }
 
+/* ---------- ogólne: policz formułę w arkuszu (zakładka „Szukaj”) i odczytaj wynik ---------- */
+async function sheetCompute(cell, formula, readRange, maxIter = 20) {
+  if (!CFG.sheetId || !SYNC.token || Date.now() > SYNC.exp) throw new Error('połącz z Google Sheets');
+  try { await gapi('POST', `${SHEETS}/${CFG.sheetId}:batchUpdate`, { requests: [{ addSheet: { properties: { title: 'Szukaj' } } }] }); } catch (e) {}
+  await gapi('PUT', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Szukaj'!" + cell)}?valueInputOption=USER_ENTERED`, { values: [[formula]] });
+  for (let i = 0; i < maxIter; i++) {
+    await new Promise(r => setTimeout(r, i < 2 ? 2000 : 1200));
+    const res = await gapi('GET', `${SHEETS}/${CFG.sheetId}/values/${encodeURIComponent("'Szukaj'!" + readRange)}?valueRenderOption=UNFORMATTED_VALUE`);
+    const rows = res.values || []; const f = rows[0] && rows[0][0];
+    if (f === undefined || f === '' || /Loading|Wczytywanie|Ładowanie/i.test(String(f))) continue;
+    if (String(f).startsWith('#')) throw new Error('brak funkcji w skrypcie – wklej aktualny Portfel_Ceny.gs');
+    return rows;
+  }
+  throw new Error('przekroczono czas');
+}
+
 /* ---------- wyszukiwanie symboli (Yahoo przez arkusz) ---------- */
 async function searchSymbols(q) {
   if (!CFG.sheetId || !SYNC.token || Date.now() > SYNC.exp) throw new Error('Połącz z Google Sheets, aby wyszukiwać');
@@ -877,6 +896,203 @@ async function nbpCurrent() {
   return t.effectiveDate;
 }
 
+/* ===================== ANALITYKA ===================== */
+const DAY = 864e5;
+const dnum = d => new Date(String(d).slice(0, 10) + 'T12:00:00').getTime();
+
+/* XIRR: flows = [[dataStr, kwota]] (wpłata ujemna, wartość końcowa dodatnia) -> stopa roczna */
+function xirr(flows) {
+  flows = flows.filter(f => f[1] && isFinite(f[1])).sort((a, b) => dnum(a[0]) - dnum(b[0]));
+  if (flows.length < 2 || !flows.some(f => f[1] > 0) || !flows.some(f => f[1] < 0)) return null;
+  const t0 = dnum(flows[0][0]);
+  if ((dnum(flows[flows.length - 1][0]) - t0) / DAY < 1) return null;
+  const npv = r => flows.reduce((a, [d, v]) => a + v / Math.pow(1 + r, (dnum(d) - t0) / DAY / 365), 0);
+  let lo = -0.99, hi = 10, flo = npv(lo), fhi = npv(hi);
+  if (flo * fhi > 0) return null;
+  for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2, fm = npv(mid); if (Math.abs(fm) < 1e-7) return mid; if (flo * fm < 0) { hi = mid; fhi = fm; } else { lo = mid; flo = fm; } }
+  return (lo + hi) / 2;
+}
+function xirrPortfel(SV, CV) {
+  const fl = SV.wplaty.filter(w => w.data && has(w.kwotaPLN)).map(w => [w.data, -num(w.kwotaPLN)]);
+  fl.push([todayStr(), CV.wartosc]);
+  return xirr(fl);
+}
+function xirrStrategia(SV, CV, s) {
+  const fl = [];
+  CV.zamkniete.filter(r => r.strategia === s.nazwa).forEach(r => fl.push([r.data, r.przychodPLN]));
+  SV.transakcje.filter(t => t.strategia === s.nazwa && t.typ === 'KUPNO' && t.data).forEach(t => {
+    const cur = (SV.instrumenty.find(i => i.ticker === t.ticker) || {}).waluta || 'USD';
+    const kurs = cur === 'PLN' ? 1 : (has(t.kurs) ? num(t.kurs) : CV.rateNow(cur));
+    fl.push([t.data, -(num(t.ilosc) * num(t.cena) + num(t.prowizja)) * kurs]); });
+  CV.dyw.filter(d => d.strategia === s.nazwa).forEach(d => fl.push([d.data, d.nettoPLN]));
+  if (s.wartosc) fl.push([todayStr(), s.wartosc]);
+  return xirr(fl);
+}
+
+/* historia -> stopy okresowe (TWR), indeks bez wpływu wpłat, obsunięcie */
+function histPoints(SV) {
+  return SV.historia.filter(x => x.data && has(x.wartosc)).map(x => ({ d: String(x.data).slice(0, 10), w: num(x.wartosc), k: num(x.kapital) }))
+    .sort((a, b) => a.d.localeCompare(b.d));
+}
+function twrIndex(pts) {
+  const out = []; let I = 1;
+  pts.forEach((p, i) => {
+    if (i === 0) { out.push({ d: p.d, i: 1 }); return; }
+    const prev = pts[i - 1], flow = p.k - prev.k, base = prev.w + flow;
+    if (base > 0 && p.w >= 0) I *= p.w / base;
+    out.push({ d: p.d, i: I });
+  });
+  return out;
+}
+function twrStats(pts) {
+  const idx = twrIndex(pts); if (idx.length < 2) return null;
+  const tot = idx[idx.length - 1].i - 1, days = (dnum(idx[idx.length - 1].d) - dnum(idx[0].d)) / DAY;
+  let peak = 1, maxDD = 0, ddFrom = null, ddTo = null, curPeakD = idx[0].d;
+  const dd = idx.map(x => { if (x.i > peak) { peak = x.i; curPeakD = x.d; } const v = x.i / peak - 1; if (v < maxDD) { maxDD = v; ddFrom = curPeakD; ddTo = x.d; } return [x.d, v]; });
+  return { tot, roczna: days >= 365 ? Math.pow(1 + tot, 365 / days) - 1 : null, days, dd, maxDD, ddFrom, ddTo, idx, aktualne: dd[dd.length - 1][1] };
+}
+function monthlyResults(pts) {
+  const byM = {}; pts.forEach(p => { byM[p.d.slice(0, 7)] = p; });
+  const months = Object.keys(byM).sort(); const out = [];
+  months.forEach((m, i) => {
+    const end = byM[m], start = i ? byM[months[i - 1]] : pts[0];
+    if (!i && start.d === end.d) return;
+    const dep = end.k - start.k, zysk = end.w - start.w - dep, base = start.w + Math.max(0, dep) / 2;
+    out.push({ m, zysk, pct: base > 0 ? zysk / base : 0 });
+  });
+  return out;
+}
+
+/* notowania historyczne benchmarków (Yahoo przez arkusz, cache w przeglądarce) */
+const BENCH = [
+  { id: 'sp', label: 'S&P 500 (CSPX)', sym: 'CSPX.L', cur: 'USD', color: '#EF5350' },
+  { id: 'msci', label: 'MSCI World (IWDA)', sym: 'IWDA.L', cur: 'USD', color: '#26A69A' },
+  { id: 'wig', label: 'WIG20', sym: 'WIG20.WA', cur: 'PLN', color: '#8D6E63' },
+  { id: 'edo', label: 'Obligacje EDO (inflacja + 2%)', sym: null, cur: 'PLN', color: '#F9A825' },
+];
+const FX_SYM = 'PLN=X';
+const histCache = sym => lsGet('portfel_hist_' + sym, null);
+async function fetchHist(sym) {
+  const res = await sheetCompute('K1', `=YAHOO_HIST("${sym}|${Date.now()}")`, 'K1:L4000', 25);
+  const rows = res.filter(r => /^\d{4}-\d{2}-\d{2}$/.test(String(r[0])) && typeof r[1] === 'number').map(r => [r[0], r[1]]);
+  if (!rows.length) throw new Error('brak notowań ' + sym);
+  lsSet('portfel_hist_' + sym, { day: todayStr(), rows }); return rows;
+}
+let BENCH_BUSY = false;
+async function odswiezBenchmarki(force) {
+  if (BENCH_BUSY || CFG.demo) return; if (!SYNC.token || Date.now() > SYNC.exp) { if (force) toast('Połącz z Google Sheets, aby pobrać notowania'); return; }
+  BENCH_BUSY = true; let ok = 0, err = '';
+  try {
+    for (const sym of [FX_SYM, ...BENCH.filter(b => b.sym).map(b => b.sym)]) {
+      const c = histCache(sym); if (!force && c && c.day === todayStr()) { ok++; continue; }
+      try { await fetchHist(sym); ok++; } catch (e) { err = e.message; }
+    }
+  } finally { BENCH_BUSY = false; }
+  if (force) toast(err ? 'Część notowań nie pobrała się: ' + err : 'Notowania benchmarków zaktualizowane');
+  render();
+}
+function priceAt(rows, d) {   // ostatnia cena z dnia <= d (lub pierwsza dostępna)
+  if (!rows || !rows.length) return null;
+  let lo = 0, hi = rows.length - 1; if (d < rows[0][0]) return rows[0][1];
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (rows[mid][0] <= d) lo = mid; else hi = mid - 1; }
+  return rows[lo][1];
+}
+function benchSeries(SV, dates) {
+  const wpl = SV.wplaty.filter(w => w.data && has(w.kwotaPLN)).map(w => ({ d: String(w.data).slice(0, 10), v: num(w.kwotaPLN) }));
+  if (!wpl.length) return [];
+  const fx = (histCache(FX_SYM) || {}).rows;
+  const infl = {}; (SV.inflacja || []).forEach(r => { if (has(r.mm)) infl[r.miesiac] = num(r.mm); });
+  return BENCH.map(b => {
+    let valAt;
+    if (!b.sym) {   // EDO: każda wpłata rośnie o inflację + 2% rocznie (miesięcznie)
+      const growth = (from, to) => { let f = 1, m = from.slice(0, 7); const end = to.slice(0, 7);
+        while (m < end) { const [y, mm] = m.split('-').map(Number); const nx = mm === 12 ? `${y + 1}-01` : `${y}-${String(mm + 1).padStart(2, '0')}`;
+          f *= (1 + (infl[m] || 0) / 100) * Math.pow(1.02, 1 / 12); m = nx; } return f; };
+      valAt = d => wpl.filter(w => w.d <= d).reduce((a, w) => a + w.v * growth(w.d, d), 0);
+    } else {
+      const rows = (histCache(b.sym) || {}).rows; if (!rows || (b.cur === 'USD' && !fx)) return { ...b, brak: true, points: [] };
+      const pPLN = d => priceAt(rows, d) * (b.cur === 'USD' ? priceAt(fx, d) : 1);
+      const units = wpl.map(w => ({ d: w.d, u: w.v / pPLN(w.d) }));
+      valAt = d => units.filter(x => x.d <= d).reduce((a, x) => a + x.u, 0) * pPLN(d);
+    }
+    return { ...b, points: dates.map(d => [d, valAt(d)]), dzis: valAt(todayStr()) };
+  });
+}
+
+/* wpływ waluty: zysk z ceny instrumentu vs z kursu */
+function fxEffect(CV) {
+  return CV.pozycje.filter(p => p.waluta !== 'PLN' && p.koszt > 0).map(p => {
+    const avgRate = p.kosztPLN / p.koszt, now = CV.rateNow(p.waluta);
+    return { ...p, avgRate, now, efektCena: (p.wartosc - p.koszt) * avgRate, efektKurs: p.wartosc * (now - avgRate) };
+  });
+}
+
+/* koszty: prowizje, podatek u źródła, podatek PIT-38 (szacunek) */
+function costs(SV, CV) {
+  const byYear = {};
+  const add = (y, k, v) => { byYear[y] = byYear[y] || { prowizje: 0, zrodlo: 0, pit: 0 }; byYear[y][k] += v; };
+  SV.transakcje.filter(t => t.data && num(t.prowizja)).forEach(t => {
+    const cur = (SV.instrumenty.find(i => i.ticker === t.ticker) || {}).waluta || 'USD';
+    add(+String(t.data).slice(0, 4), 'prowizje', num(t.prowizja) * (cur === 'PLN' ? 1 : (has(t.kurs) ? num(t.kurs) : CV.rateNow(cur)))); });
+  CV.dyw.forEach(d => add(d.rok, 'zrodlo', d.podatekPLN + d.doplata));
+  CV.lata.forEach(y => { const P = CV.podatki(y); if (P.podatekPap + P.kPodatek) add(y, 'pit', P.podatekPap + P.kPodatek); });
+  return byYear;
+}
+
+/* dochód pasywny: ostatnie 12 miesięcy i prognoza */
+function passiveIncome(SV, CV) {
+  const from = new Date(Date.now() - 365 * DAY).toISOString().slice(0, 10);
+  const last = CV.dyw.filter(d => d.data >= from);
+  const months = []; for (let i = 11; i >= 0; i--) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); months.push(d.toISOString().slice(0, 7)); }
+  const byMonth = months.map(m => last.filter(d => d.data.slice(0, 7) === m).reduce((a, d) => a + d.nettoPLN, 0));
+  const tickers = [...new Set(last.map(d => d.ticker))].map(t => {
+    const sum = last.filter(d => d.ticker === t).reduce((a, d) => a + d.nettoPLN, 0);
+    const brutto = last.filter(d => d.ticker === t).reduce((a, d) => a + d.bruttoPLN, 0);
+    const poz = CV.pozycje.filter(p => p.ticker === t), koszt = poz.reduce((a, p) => a + p.kosztPLN, 0), wart = poz.reduce((a, p) => a + p.wartoscPLN, 0);
+    return { ticker: t, netto: sum, brutto, koszt, wart, yoc: koszt ? brutto / koszt : null, yld: wart ? brutto / wart : null, trzymane: poz.length > 0 };
+  }).sort((a, b) => b.netto - a.netto);
+  const prognoza = tickers.filter(t => t.trzymane).reduce((a, t) => a + t.netto, 0);
+  const nextMonths = months.map(m => { const [y, mm] = m.split('-').map(Number); return `${y + 1}-${String(mm).padStart(2, '0')}`; });
+  const fc = months.map(m => last.filter(d => d.data.slice(0, 7) === m && CV.pozycje.some(p => p.ticker === d.ticker)).reduce((a, d) => a + d.nettoPLN, 0));
+  return { months, byMonth, tickers, sum12: byMonth.reduce((a, b) => a + b, 0), prognoza, nextMonths, fc };
+}
+
+/* symulator przyszłości (procent składany) */
+function simulate(o) {
+  const r = Math.pow(1 + o.stopa / 100, 1 / 12) - 1, inf = Math.pow(1 + o.inflacja / 100, 1 / 12);
+  let V = o.start, dep = o.wplata, wplacone = o.start; const pts = []; let goalM = null;
+  for (let m = 0; m <= o.lata * 12; m++) {
+    if (m > 0) { V = V * (1 + r) + dep; wplacone += dep; if (m % 12 === 0) dep *= 1 + o.wzrost / 100; }
+    const real = V / Math.pow(inf, m);
+    if (goalM === null && o.cel > 0 && real >= o.cel) goalM = m;
+    pts.push({ m, V, real, wplacone });
+  }
+  return { pts, goalM };
+}
+
+/* mapa portfela (treemap, algorytm squarified) */
+function treemap(items, W, H) {
+  items = items.filter(i => i.v > 0).sort((a, b) => b.v - a.v);
+  const total = items.reduce((a, i) => a + i.v, 0); if (!total) return [];
+  const scale = W * H / total; const out = [];
+  const nodes = items.map(i => ({ ...i, a: i.v * scale }));
+  let x = 0, y = 0, w = W, h = H;
+  const worst = (row, side) => { const s = row.reduce((a, n) => a + n.a, 0), mx = Math.max(...row.map(n => n.a)), mn = Math.min(...row.map(n => n.a)); return Math.max(side * side * mx / (s * s), s * s / (side * side * mn)); };
+  let row = [];
+  const layout = (row) => {
+    const s = row.reduce((a, n) => a + n.a, 0);
+    if (w >= h) { const cw = s / h; let cy = y; row.forEach(n => { const ch = n.a / cw; out.push({ ...n, x, y: cy, w: cw, h: ch }); cy += ch; }); x += cw; w -= cw; }
+    else { const ch = s / w; let cx = x; row.forEach(n => { const cw = n.a / ch; out.push({ ...n, x: cx, y, w: cw, h: ch }); cx += cw; }); y += ch; h -= ch; }
+  };
+  for (const n of nodes) {
+    const side = Math.min(w, h);
+    if (!row.length || worst([...row, n], side) <= worst(row, side)) row.push(n);
+    else { layout(row); row = [n]; }
+  }
+  if (row.length) layout(row);
+  return out;
+}
+
 /* ===================== INTERFEJS ===================== */
 const $ = s => document.querySelector(s);
 const nf2 = new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -903,12 +1119,13 @@ function snapshotIntraday() {
   const cut = Date.now() - 3 * 864e5; lsSet(LS_INTRA, arr.filter(p => new Date(p.t).getTime() > cut));
 }
 function kontaMap() { const m = {}; C.konta.forEach(k => { if (k.razem) m[k.nazwa] = Math.round(k.razem * 100) / 100; }); return m; }
+function stratMap() { const m = {}; C.strategie.forEach(s => { if (s.wartosc) m[s.nazwa] = Math.round(s.wartosc * 100) / 100; }); return m; }
 function snapshot() {
   snapshotIntraday();
   if (!C || C.wartosc <= 0) return;
   const d = todayStr(), last = S.historia[S.historia.length - 1];
-  const rec = { data: d, wartosc: Math.round(C.wartosc * 100) / 100, kapital: Math.round(C.kapital * 100) / 100, konta: JSON.stringify(kontaMap()) };
-  if (last && last.data === d) { if (Math.abs(num(last.wartosc) - rec.wartosc) < 0.01 && Math.abs(num(last.kapital) - rec.kapital) < 0.01 && last.konta === rec.konta) return; Object.assign(last, rec); }
+  const rec = { data: d, wartosc: Math.round(C.wartosc * 100) / 100, kapital: Math.round(C.kapital * 100) / 100, konta: JSON.stringify(kontaMap()), strat: JSON.stringify(stratMap()) };
+  if (last && last.data === d) { if (Math.abs(num(last.wartosc) - rec.wartosc) < 0.01 && Math.abs(num(last.kapital) - rec.kapital) < 0.01 && last.konta === rec.konta && last.strat === rec.strat) return; Object.assign(last, rec); }
   else S.historia.push(rec);
   S.historia.sort((a, b) => String(a.data).localeCompare(String(b.data)));
   changed('historia');
@@ -935,8 +1152,9 @@ function renderNav() {
     <div class="nav-h">Konta i strategie</div>${tree}
     ${sieroty.length ? `<div class="nav-h">Strategie bez konta</div>${sieroty.map(stLink).join('')}` : ''}
     <a class="add" onclick="editKonto()"><span class="ic">＋</span>Dodaj konto</a><a class="add" onclick="editStrategia()"><span class="ic">＋</span>Dodaj strategię</a>
-    <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◎', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}
-    <div class="nav-h">Analiza</div>${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}
+    <div class="nav-h">Analizy</div>${it('waluta', '¤', 'Wpływ waluty')}${it('porownanie', '⚖', 'Porównanie strategii')}${it('koszty', '−', 'Koszty i podatki')}${it('dochod', '◎', 'Dochód pasywny')}${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}
+    <div class="nav-h">Planowanie</div>${it('symulator', '➚', 'Symulator przyszłości')}${it('mapa', '▦', 'Mapa portfela')}
+    <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◈', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}
     <div class="nav-h">Konfiguracja</div>${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`;
 }
 function toggleNav(id) { CFG.navClosed = CFG.navClosed || {}; CFG.navClosed[id] = !CFG.navClosed[id]; saveCfg(); renderNav(); }
@@ -950,7 +1168,7 @@ function render() {
   C = calc(S);
   renderNav(); renderSyncBadge();
   const V = { kokpit: vKokpit, portfel: vPortfel, strategia: vStrategia, konto: vKonto, transakcje: vTransakcje, dywidendy: vDywidendy, wplaty: vWplaty,
-    podatki: vPodatki, inflacja: vInflacja, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
+    podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, mapa: vMapa, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
   const [title, sub, body, actions] = V();
   $('#title').innerHTML = `${esc(title)}<small>${sub || ''}</small>`;
   $('#topActions').innerHTML = actions || `<button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`;
@@ -1069,6 +1287,7 @@ function vKokpitInner(SV, KK) {
       <div class="card"><h3>Struktura – klasy aktywów</h3>${klasy}</div></div>
     <div class="grid g2" style="margin-top:16px"><div class="card"><h3>Stopa zwrotu: nominalna i realna<span class="sp"></span>${rangeSeg()}</h3>${ret}</div>
       <div class="card"><h3>Ekspozycja walutowa</h3>${waluty}</div></div>
+    ${kokpitRynek(SV, KK)}
     <div class="card" style="margin-top:16px"><h3>Konta<span class="sp"></span><button class="btn sm ghost" onclick="editKonto()">＋ Konto</button></h3>${table([
       { h: 'Konto', f: k => `<b>${esc(k.nazwa)}</b>` }, { h: 'Typ', f: k => `<span class="tag">${esc(k.typ)}</span>` },
       { h: 'Pozycje', n: 1, f: k => zl(k.wartoscPozycji, 0) }, { h: 'Gotówka', n: 1, f: k => zl(k.gotowkaPLN, 0) }, { h: 'Razem', n: 1, f: k => `<b>${zl(k.razem, 0)}</b>` },
@@ -1673,7 +1892,9 @@ function demoState() {
   const fin = {}; CD.konta.forEach(k => fin[k.nazwa] = k.razem);
   S2.historia.forEach(h => { const dep = {}; let tot = 0; S2.wplaty.filter(w => w.data <= h.data).forEach(w => { dep[w.konto] = (dep[w.konto] || 0) + w.kwotaPLN; tot += w.kwotaPLN; });
     const wsp = {}; let sw = 0; Object.keys(dep).forEach(k => { wsp[k] = dep[k] * ((fin[k] || dep[k]) / Math.max(1, S2.wplaty.filter(w => w.konto === k).reduce((a, w) => a + w.kwotaPLN, 0))); sw += wsp[k]; });
-    const m = {}; Object.keys(wsp).forEach(k => m[k] = Math.round(h.wartosc * wsp[k] / sw)); h.konta = JSON.stringify(m); });
+    const m = {}; Object.keys(wsp).forEach(k => m[k] = Math.round(h.wartosc * wsp[k] / sw)); h.konta = JSON.stringify(m);
+    const sm = {}; CD.strategie.forEach((s, j) => { const kv = m[s.konto]; const ka = CD.konta.find(x => x.nazwa === s.konto); if (!kv || !ka || !ka.razem || !s.wartosc) return;
+      sm[s.nazwa] = Math.round(kv * s.wartosc / ka.razem * (1 + 0.03 * Math.sin(dnum(h.data) / (4e9 + j * 7e8) + j))); }); h.strat = JSON.stringify(sm); });
   return S2;
 }
 function wejdzDemo() {
@@ -1707,6 +1928,145 @@ function boot() {
   else setSync('local', CFG.sheetId ? 'Kliknij, aby połączyć z Google Sheets' : 'Dane tylko w tej przeglądarce');
   if (CFG.inflDay !== todayStr() || CFG.inflSrc !== 'fred') pobierzInflacje(true).then(r => { if (r) { render(); snapshot(); } }).catch(() => {});
   const kd = S.ustawienia.kursyData; if (!kd || kd < todayStr().slice(0, 10) && navigator.onLine) nbpCurrent().then(() => { render(); snapshot(); }).catch(() => {});
+}
+
+/* ===================== KOKPIT: ANALIZY RYNKOWE ===================== */
+function heatColor(p) { if (!p) return '#f5f7fa'; const a = Math.min(1, Math.abs(p) / 0.06); return p > 0 ? `rgba(22,163,74,${0.12 + a * 0.6})` : `rgba(220,38,38,${0.12 + a * 0.6})`; }
+function kokpitRynek(SV, KK) {
+  const pts = histPoints(SV), T = twrStats(pts), xr = xirrPortfel(SV, C);
+  // 1. benchmark
+  const step = Math.max(1, Math.floor(pts.length / 160)), dates = pts.filter((p, i) => i % step === 0 || i === pts.length - 1).map(p => p.d);
+  const B = dates.length > 1 ? benchSeries(SV, dates) : [];
+  const brak = B.filter(b => b.brak).length;
+  const benchChart = lineChart([{ name: KK ? 'To konto' : 'Mój portfel', points: pts.filter((p, i) => i % step === 0 || i === pts.length - 1).map(p => [p.d, p.w]), color: '#1565C0' },
+    { name: 'Wpłacony kapitał', points: dates.map(d => [d, pts.find(p => p.d === d).k]), color: '#94a3b8', dash: true },
+    ...B.filter(b => b.points.length).map(b => ({ name: b.label, points: b.points, color: b.color }))], { empty: 'Porównanie pojawi się, gdy będzie historia wartości i wpłaty' });
+  const benchTbl = table([
+    { h: 'Te same wpłaty w…', f: b => `<i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${b.color};margin-right:7px"></i>${esc(b.label)}` },
+    { h: 'Wartość dziś', n: 1, f: b => b.brak ? '<span class="mut">brak notowań</span>' : zl(b.dzis, 0) },
+    { h: 'Ty vs on', n: 1, f: b => b.brak ? '–' : pl(C.wartosc - b.dzis) },
+  ], B.length ? B : [], { empty: 'Brak wpłat do porównania' });
+  // 3. wyniki miesięczne
+  const M = monthlyResults(pts), last12 = M.slice(-12);
+  const years = [...new Set(M.map(x => x.m.slice(0, 4)))].sort().reverse();
+  const heat = years.length ? `<div class="tbl"><table class="heat"><thead><tr><th>Rok</th>${['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'].map(m => `<th class="n">${m}</th>`).join('')}<th class="n">Rok</th></tr></thead><tbody>
+    ${years.map(y => { const ym = M.filter(x => x.m.startsWith(y)); const rok = ym.reduce((a, x) => a * (1 + x.pct), 1) - 1;
+      return `<tr><td><b>${y}</b></td>${Array.from({ length: 12 }, (_, i) => { const x = ym.find(z => +z.m.slice(5) === i + 1);
+        return `<td class="n" style="background:${x ? heatColor(x.pct) : 'transparent'}" title="${x ? esc(zl(x.zysk, 0)) : ''}">${x ? (x.pct * 100).toFixed(1).replace('.', ',') : ''}</td>`; }).join('')}
+        <td class="n"><b class="${sgn(rok)}">${(rok * 100).toFixed(1).replace('.', ',')}%</b></td></tr>`; }).join('')}</tbody></table></div>` : '';
+  const monthBars = barChart(last12.map(x => x.m.slice(5) + '.' + x.m.slice(2, 4)), [{ name: 'Zysk', values: last12.map(x => x.zysk) }], { signColors: true, empty: 'Wyniki miesięczne pojawią się po pierwszym pełnym miesiącu historii', h: 200 });
+  // 4. obsunięcie
+  const ddChart = T ? lineChart([{ name: 'Obsunięcie od szczytu', points: T.dd.filter((p, i) => i % step === 0 || i === T.dd.length - 1), color: '#EF5350' }], { pct: true, area: true, h: 190, zero: false }) : emptyChart('Obsunięcie pojawi się, gdy będzie historia wartości');
+  const kpis = `<div class="kpis" style="margin-top:16px;margin-bottom:0">
+    ${kpi('Roczna stopa zwrotu (XIRR)', xr === null ? '–' : pp(xr), 'uwzględnia terminy wpłat')}
+    ${kpi('Stopa zwrotu TWR', T ? pp(T.tot) : '–', T ? (T.roczna !== null ? pp(T.roczna) + ' rocznie' : `za ${Math.round(T.days)} dni (bez wpływu wpłat)`) : 'brak historii')}
+    ${kpi('Maks. obsunięcie', T ? `<span class="neg">${pct(T.maxDD)}</span>` : '–', T && T.ddFrom ? `${T.ddFrom} → ${T.ddTo}` : '')}
+    ${kpi('Obecnie od szczytu', T ? (T.aktualne > -0.0005 ? '<span class="pos">na szczycie</span>' : `<span class="neg">${pct(T.aktualne)}</span>`) : '–', 'spadek od najwyższej wartości')}</div>`;
+  return kpis + `
+    <div class="grid g2" style="margin-top:16px"><div class="card"><h3>Porównanie z rynkiem<span class="sp"></span>${SYNC.token && !CFG.demo ? '<button class="btn sm ghost" onclick="odswiezBenchmarki(true)">↻ Notowania</button>' : ''}</h3>${benchChart}
+      ${brak ? `<div class="mut" style="font-size:12px;margin-top:6px">${CFG.demo ? 'W trybie demo notowania ETF nie są pobierane – widać tylko EDO.' : 'Notowania ETF i WIG20 pobiorą się po połączeniu z Google Sheets (skrypt Portfel_Ceny.gs z funkcją YAHOO_HIST).'}</div>` : ''}</div>
+      <div class="card"><h3>Ty vs rynek</h3>${benchTbl}<div class="mut" style="font-size:12px;margin-top:8px">Symulacja: każda Twoja wpłata kupuje benchmark w dniu wpłaty (po kursie USD/PLN z tego dnia).</div></div></div>
+    <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Wyniki miesięczne <small>ostatnie 12 miesięcy, zł (bez wpłat)</small></h3>${monthBars}</div>
+      <div class="card"><h3>Obsunięcie od szczytu <small>wg stopy TWR</small></h3>${ddChart}</div></div>
+    ${heat ? `<div class="card" style="margin-top:16px"><h3>Mapa miesięcy <small>stopa zwrotu w % (najedź, aby zobaczyć kwotę)</small></h3>${heat}</div>` : ''}`;
+}
+
+/* ===================== ANALIZY ===================== */
+function vWaluta() {
+  const R = fxEffect(C), sum = R.reduce((a, r) => ({ c: a.c + r.efektCena, k: a.k + r.efektKurs }), { c: 0, k: 0 });
+  const byCur = {}; R.forEach(r => { byCur[r.waluta] = byCur[r.waluta] || { c: 0, k: 0, w: 0 }; byCur[r.waluta].c += r.efektCena; byCur[r.waluta].k += r.efektKurs; byCur[r.waluta].w += r.wartoscPLN; });
+  return ['Wpływ waluty', 'Ile zarobiłeś na samych instrumentach, a ile na zmianie kursu walut (otwarte pozycje w walutach obcych)', `
+    <div class="kpis">${kpi('Zysk z ceny instrumentów', pl(sum.c), 'przy kursie z dnia zakupu', 'main')}${kpi('Zysk / strata z kursu walut', pl(sum.k), 'zmiana kursu od zakupu do dziś')}${kpi('Razem', pl(sum.c + sum.k), 'zysk niezrealizowany w PLN')}</div>
+    <div class="grid g2e"><div class="card"><h3>Podział zysku wg pozycji</h3>${barChart(R.map(r => r.ticker), [{ name: 'Cena instrumentu', values: R.map(r => r.efektCena), color: '#1565C0' }, { name: 'Kurs waluty', values: R.map(r => r.efektKurs), color: '#F9A825' }], { empty: 'Brak pozycji w walutach obcych' })}</div>
+      <div class="card"><h3>Wg waluty</h3>${table([
+        { h: 'Waluta', f: x => `<b>${esc(x[0])}</b>` }, { h: 'Wartość PLN', n: 1, f: x => zl(x[1].w, 0) }, { h: 'Z ceny', n: 1, f: x => pl(x[1].c) }, { h: 'Z kursu', n: 1, f: x => pl(x[1].k) },
+        { h: 'Kurs dziś', n: 1, f: x => C.rateNow(x[0]).toFixed(4) }], Object.entries(byCur), { empty: 'Brak' })}</div></div>
+    <div class="card" style="margin-top:16px">${table([
+      { h: 'Pozycja', f: r => `<b>${esc(r.ticker)}</b> <span class="mut">${esc(r.strategia)}</span>` }, { h: 'Śr. kurs zakupu', n: 1, f: r => r.avgRate.toFixed(4) }, { h: 'Kurs dziś', n: 1, f: r => r.now.toFixed(4) },
+      { h: 'Zmiana kursu', n: 1, f: r => pp(r.now / r.avgRate - 1) }, { h: 'Zysk z ceny', n: 1, f: r => pl(r.efektCena) }, { h: 'Zysk z kursu', n: 1, f: r => pl(r.efektKurs) }, { h: 'Razem PLN', n: 1, f: r => pl(r.zyskPLN) },
+    ], R, { empty: 'Brak pozycji w walutach obcych' })}</div>`, ' '];
+}
+
+function vPorownanie() {
+  const rows = C.strategie.filter(s => s.wartosc || s.zrealizowany || s.dywidendyNetto).map(s => ({ ...s, xirr: xirrStrategia(S, C, s), pct: s.koszt ? s.wynik / s.koszt : null }));
+  // historia strategii (zapisywana od teraz)
+  const series = rows.map(s => ({ name: s.nazwa, color: s.kolor, points: S.historia.map(h => { let m = h.strat; try { if (typeof m === 'string') m = m ? JSON.parse(m) : null; } catch (e) { m = null; }
+    return m && m[s.nazwa] !== undefined ? [String(h.data).slice(0, 10), m[s.nazwa]] : null; }).filter(Boolean) })).filter(s => s.points.length);
+  return ['Porównanie strategii', 'Która strategia zarabia najlepiej – wynik, roczna stopa zwrotu (XIRR) i wartość w czasie', `
+    <div class="grid g2e"><div class="card"><h3>Roczna stopa zwrotu (XIRR)</h3>${barChart(rows.map(s => s.nazwa), [{ name: 'XIRR', values: rows.map(s => s.xirr || 0) }], { signColors: true, fmt: v => (v * 100).toFixed(0) + '%', empty: 'Brak danych' })}</div>
+      <div class="card"><h3>Wynik łączny (PLN)</h3>${barChart(rows.map(s => s.nazwa), [{ name: 'Niezrealizowany', values: rows.map(s => s.niezreal), color: '#1565C0' }, { name: 'Zrealizowany', values: rows.map(s => s.zrealizowany), color: '#26A69A' }, { name: 'Dywidendy', values: rows.map(s => s.dywidendyNetto), color: '#F9A825' }], { empty: 'Brak danych' })}</div></div>
+    <div class="card" style="margin-top:16px"><h3>Wartość strategii w czasie</h3>${series.length ? lineChart(series, {}) : emptyChart('Historia strategii zapisuje się od teraz (raz dziennie) – wykres zapełni się w kolejnych dniach')}</div>
+    <div class="card" style="margin-top:16px">${table([
+      { h: 'Strategia', f: s => `<span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${esc(s.kolor)};margin-right:7px"></span><b>${esc(s.nazwa)}</b> <span class="mut">${esc(s.konto)}</span>` },
+      { h: 'Wartość', n: 1, f: s => zl(s.wartosc, 0) }, { h: 'Koszt', n: 1, f: s => zl(s.koszt, 0) }, { h: 'Wynik', n: 1, f: s => pl(s.wynik) }, { h: 'Wynik %', n: 1, f: s => s.pct === null ? '–' : pp(s.pct) },
+      { h: 'XIRR rocznie', n: 1, f: s => s.xirr === null ? '–' : pp(s.xirr) }, { h: 'Udział', n: 1, f: s => pct(s.udzial) },
+    ], rows.sort((a, b) => (b.xirr || -9) - (a.xirr || -9)), { empty: 'Brak strategii z pozycjami', click: s => `go('strategia','${s.id}')` })}</div>`, ' '];
+}
+
+function vKoszty() {
+  const by = costs(S, C), years = Object.keys(by).sort();
+  const tot = years.reduce((a, y) => ({ p: a.p + by[y].prowizje, z: a.z + by[y].zrodlo, t: a.t + by[y].pit }), { p: 0, z: 0, t: 0 });
+  const all = tot.p + tot.z + tot.t, zyskBrutto = C.zysk + all;
+  return ['Koszty i podatki', 'Ile kosztowały prowizje i podatki oraz jaką część zysku zabrały', `
+    <div class="kpis">${kpi('Koszty łącznie', zl(all), zyskBrutto > 0 ? pct(all / zyskBrutto) + ' zysku przed kosztami' : '', 'main')}${kpi('Prowizje', zl(tot.p))}${kpi('Podatek od dywidend', zl(tot.z), 'u źródła + dopłata w PL')}${kpi('Podatek PIT-38', zl(tot.t), 'od sprzedaży (szacunek)')}</div>
+    <div class="grid g2e"><div class="card"><h3>Koszty wg lat</h3>${barChart(years, [{ name: 'Prowizje', values: years.map(y => by[y].prowizje), color: '#1565C0' }, { name: 'Podatek od dywidend', values: years.map(y => by[y].zrodlo), color: '#F9A825' }, { name: 'PIT-38', values: years.map(y => by[y].pit), color: '#EF5350' }], { empty: 'Brak kosztów' })}</div>
+      <div class="card"><h3>Struktura kosztów</h3>${(() => { const d = [['Prowizje', tot.p, '#1565C0'], ['Podatek od dywidend', tot.z, '#F9A825'], ['PIT-38', tot.t, '#EF5350']].filter(x => x[1] > 0); return donut(d.map(x => [x[0], x[1]]), { empty: 'Brak kosztów', colors: d.map(x => x[2]) }); })()}</div></div>
+    <div class="mut" style="font-size:12px;margin-top:10px">Koszty przewalutowania nie są tu liczone (nie są zapisywane w aplikacji). Podatek PIT-38 to szacunek z zakładki Podatki.</div>`, ' '];
+}
+
+function vDochod() {
+  const P = passiveIncome(S, C), mies = P.months.map(m => m.slice(5) + '.' + m.slice(2, 4));
+  return ['Dochód pasywny', 'Dywidendy i odsetki z ostatnich 12 miesięcy oraz prognoza na kolejne 12', `
+    <div class="kpis">${kpi('Ostatnie 12 miesięcy', zl(P.sum12), 'netto', 'main')}${kpi('Średnio miesięcznie', zl(P.sum12 / 12))}${kpi('Prognoza na 12 miesięcy', zl(P.prognoza), 'z pozycji, które nadal masz')}
+      ${kpi('Stopa dywidendy portfela', C.wartoscPozycji ? pct(P.tickers.reduce((a, t) => a + t.brutto, 0) / C.wartoscPozycji) : '–', 'brutto, od bieżącej wartości')}</div>
+    <div class="grid g2e"><div class="card"><h3>Ostatnie 12 miesięcy <small>netto PLN</small></h3>${barChart(mies, [{ name: 'Netto', values: P.byMonth, color: '#26A69A' }], { empty: 'Brak dywidend w ostatnich 12 miesiącach' })}</div>
+      <div class="card"><h3>Prognoza <small>gdy wypłaty się powtórzą</small></h3>${barChart(P.nextMonths.map(m => m.slice(5) + '.' + m.slice(2, 4)), [{ name: 'Prognoza', values: P.fc, color: '#7E57C2' }], { empty: 'Brak danych do prognozy' })}</div></div>
+    <div class="card" style="margin-top:16px">${table([
+      { h: 'Instrument', f: t => `<b>${esc(t.ticker)}</b>${t.trzymane ? '' : ' <span class="mut">(sprzedany)</span>'}` }, { h: 'Netto 12 mies.', n: 1, f: t => zl(t.netto) },
+      { h: 'Stopa od kosztu (YoC)', n: 1, f: t => t.yoc === null ? '–' : pct(t.yoc) }, { h: 'Stopa od wartości', n: 1, f: t => t.yld === null ? '–' : pct(t.yld) },
+    ], P.tickers, { empty: 'Brak dywidend w ostatnich 12 miesiącach' })}</div>`, ' '];
+}
+
+/* ===================== PLANOWANIE ===================== */
+function vSymulator() {
+  const o = Object.assign({ start: Math.round(C.wartosc), wplata: 1000, stopa: 7, lata: 20, inflacja: 3, wzrost: 0, cel: 0, wydatki: 0 }, CFG.sym || {});
+  if (o.wydatki > 0) o.cel = o.wydatki * 12 / 0.04;
+  const R = simulate(o), end = R.pts[R.pts.length - 1];
+  const fld = (k, l, step = 'any') => `<label>${l}<input type="number" step="${step}" value="${esc(o[k])}" onchange="CFG.sym=Object.assign(CFG.sym||{},{${k}:num(this.value)});saveCfg();render()"></label>`;
+  const yearPts = R.pts.filter(p => p.m % 12 === 0);
+  const today = new Date(); const dateOf = m => { const d = new Date(today); d.setMonth(d.getMonth() + m); return d.toISOString().slice(0, 10); };
+  return ['Symulator przyszłości', 'Procent składany: ile możesz mieć za X lat przy regularnych wpłatach', `
+    <div class="grid g2"><div class="card"><h3>Prognoza wartości</h3>${lineChart([
+      { name: 'Wartość (nominalnie)', points: yearPts.map(p => [dateOf(p.m), p.V]), color: '#1565C0' },
+      { name: 'Wartość w dzisiejszych złotych', points: yearPts.map(p => [dateOf(p.m), p.real]), color: '#7E57C2' },
+      { name: 'Suma wpłat', points: yearPts.map(p => [dateOf(p.m), p.wplacone]), color: '#94a3b8', dash: true },
+      ...(o.cel > 0 ? [{ name: 'Cel', points: [[dateOf(0), o.cel], [dateOf(o.lata * 12), o.cel]], color: '#F9A825', dash: true }] : [])], { area: true })}</div>
+      <div class="card"><h3>Założenia</h3><div class="form">${fld('start', 'Kwota startowa (zł)')}${fld('wplata', 'Wpłata miesięczna (zł)')}${fld('stopa', 'Stopa zwrotu rocznie (%)', '0.1')}${fld('lata', 'Liczba lat', '1')}
+        ${fld('inflacja', 'Inflacja rocznie (%)', '0.1')}${fld('wzrost', 'Wzrost wpłat co rok (%)', '0.5')}${fld('cel', 'Cel (zł, w dzisiejszych pieniądzach)')}${fld('wydatki', 'albo: miesięczne wydatki (FIRE, reguła 4%)')}</div>
+        <div class="mut" style="font-size:12px;margin-top:8px">Twoja dotychczasowa roczna stopa (XIRR): ${(() => { const x = xirrPortfel(S, C); return x === null ? 'brak danych' : pct(x); })()}. Historycznie akcje globalne dawały ok. 6–8% rocznie ponad inflację – to nie jest gwarancja.</div></div></div>
+    <div class="kpis" style="margin-top:16px;margin-bottom:0">${kpi(`Za ${o.lata} lat`, zl(end.V, 0), 'nominalnie', 'main')}${kpi('W dzisiejszych złotych', zl(end.real, 0), `przy inflacji ${o.inflacja}%`)}${kpi('Suma wpłat', zl(end.wplacone, 0))}${kpi('Zysk z procentu składanego', zl(end.V - end.wplacone, 0))}
+      ${o.cel > 0 ? kpi('Cel osiągniesz', R.goalM === null ? `<span class="neg">nie w ${o.lata} lat</span>` : dateOf(R.goalM).slice(0, 7), R.goalM === null ? 'zwiększ wpłaty lub horyzont' : `za ${Math.floor(R.goalM / 12)} lat ${R.goalM % 12} mies.` + (o.wydatki > 0 ? ` · cel FIRE ${zl(o.cel, 0)}` : '')) : ''}</div>
+    <div class="card" style="margin-top:16px">${table([
+      { h: 'Rok', f: p => `${p.m / 12}` }, { h: 'Data', f: p => dateOf(p.m).slice(0, 7) }, { h: 'Suma wpłat', n: 1, f: p => zl(p.wplacone, 0) }, { h: 'Wartość', n: 1, f: p => zl(p.V, 0) },
+      { h: 'W dzisiejszych zł', n: 1, f: p => zl(p.real, 0) }, { h: 'Zysk', n: 1, f: p => pl(p.V - p.wplacone) }], yearPts.filter(p => p.m % 60 === 0 || p.m === o.lata * 12))}</div>`, ' '];
+}
+
+function vMapa() {
+  const by = FILT.mapaBy || 'pozycje';
+  let items;
+  if (by === 'strategie') items = C.strategie.map(s => ({ label: s.nazwa, sub: s.konto, v: s.wartosc, p: s.koszt ? s.niezreal / s.koszt : 0 }));
+  else if (by === 'konta') items = C.konta.map(k => ({ label: k.nazwa, sub: k.typ, v: k.razem, p: k.zyskPct || 0 }));
+  else { const m = {}; C.pozycje.forEach(p => { const x = m[p.ticker] = m[p.ticker] || { label: p.ticker, sub: p.nazwa, v: 0, k: 0 }; x.v += p.wartoscPLN; x.k += p.kosztPLN; });
+    items = Object.values(m).map(x => ({ ...x, p: x.k ? x.v / x.k - 1 : 0 })); }
+  const W = 1000, H = 520, tiles = treemap(items, W, H);
+  const col = p => { const a = Math.min(1, Math.abs(p) / 0.3); return p >= 0 ? `rgb(${Math.round(232 - a * 200)},${Math.round(245 - a * 90)},${Math.round(233 - a * 180)})` : `rgb(${Math.round(250 - a * 30)},${Math.round(225 - a * 170)},${Math.round(225 - a * 170)})`; };
+  const svg = tiles.length ? `<svg viewBox="0 0 ${W} ${H}" class="chart" style="border-radius:10px">${tiles.map(t => `<g><rect x="${t.x + 1}" y="${t.y + 1}" width="${Math.max(0, t.w - 2)}" height="${Math.max(0, t.h - 2)}" rx="6" fill="${col(t.p)}"><title>${esc(t.label)}: ${esc(zl(t.v, 0))} (${esc(pct(t.p))})</title></rect>
+    ${t.w > 70 && t.h > 38 ? `<text x="${t.x + 10}" y="${t.y + 24}" font-size="${Math.min(22, Math.max(12, t.w / 9))}" font-weight="700" fill="#0f172a">${esc(t.label)}</text>
+    <text x="${t.x + 10}" y="${t.y + 24 + Math.min(20, Math.max(13, t.w / 11))}" font-size="12" fill="#334155">${esc(zl(t.v, 0))} · ${(t.p >= 0 ? '+' : '') + (t.p * 100).toFixed(1).replace('.', ',')}%</text>` : ''}</g>`).join('')}</svg>` : emptyChart('Brak pozycji');
+  const seg = `<div class="seg">${[['pozycje', 'Instrumenty'], ['strategie', 'Strategie'], ['konta', 'Konta']].map(([k, l]) => `<button class="${by === k ? 'on' : ''}" onclick="FILT.mapaBy='${k}';render()">${l}</button>`).join('')}</div>`;
+  return ['Mapa portfela', 'Wielkość pola = wartość, kolor = zysk lub strata od zakupu', `
+    <div class="card"><h3>Mapa<span class="sp"></span>${seg}</h3>${svg}
+      <div class="legend"><span><i style="background:${col(-0.3)}"></i>−30% i mniej</span><span><i style="background:${col(0)}"></i>0%</span><span><i style="background:${col(0.3)}"></i>+30% i więcej</span></div></div>`, ' '];
 }
 
 boot();
