@@ -79,6 +79,9 @@ input.cell{padding:5px 7px;width:100px;text-align:right}
 .sr{display:grid;grid-template-columns:110px 1fr;gap:2px 10px;padding:7px 9px;border-radius:8px;cursor:pointer;font-size:13px}
 .sr:hover{background:#e8f0fc}.sr.on{background:#d6e6fd}.sr span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sr i{grid-column:2;font-style:normal;color:var(--muted);font-size:12px}
 .btn:disabled{opacity:.6;cursor:wait}
+[data-drag]{cursor:grab}.dragging{opacity:.4}
+.nav a.drop-before{box-shadow:inset 0 2px 0 #7fb0ff}.nav a.drop-after{box-shadow:inset 0 -2px 0 #7fb0ff}
+tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:inset 0 -2px 0 #1565c0}
 </style>
 </head>
 <body>
@@ -868,11 +871,11 @@ function readHash() { const h = decodeURIComponent(location.hash.slice(1) || 'ko
 
 function renderNav() {
   const it = (r, ic, label, p = '') => `<a class="${ROUTE === r && PARAM === p ? 'on' : ''}" onclick="go('${r}','${esc(p).replace(/'/g, "\\'")}')"><span class="ic">${ic}</span>${esc(label)}</a>`;
-  const st = S.strategie.map(s => `<a class="${ROUTE === 'strategia' && PARAM === s.id ? 'on' : ''}" onclick="go('strategia','${s.id}')"><span class="dot" style="background:${esc(s.kolor || '#1565c0')}"></span>${esc(s.nazwa)}</a>`).join('');
+  const st = S.strategie.map(s => `<a class="${ROUTE === 'strategia' && PARAM === s.id ? 'on' : ''}" draggable="true" data-drag="strategie" data-id="${s.id}" title="Przeciągnij, aby zmienić kolejność" onclick="go('strategia','${s.id}')"><span class="dot" style="background:${esc(s.kolor || '#1565c0')}"></span>${esc(s.nazwa)}</a>`).join('');
   $('#nav').innerHTML = `
     ${it('kokpit', '◧', 'Kokpit')}${it('portfel', '▤', 'Portfel – pozycje')}
     <div class="nav-h">Strategie</div>${st}<a class="add" onclick="editStrategia()"><span class="ic">＋</span>Dodaj strategię</a>
-    <div class="nav-h">Konta</div>${S.konta.map(k => `<a class="${ROUTE === 'konto' && PARAM === k.id ? 'on' : ''}" onclick="go('konto','${k.id}')"><span class="ic">${KICON[k.typ] || '▣'}</span>${esc(k.nazwa)}</a>`).join('')}<a class="add" onclick="editKonto()"><span class="ic">＋</span>Dodaj konto</a>
+    <div class="nav-h">Konta</div>${S.konta.map(k => `<a class="${ROUTE === 'konto' && PARAM === k.id ? 'on' : ''}" draggable="true" data-drag="konta" data-id="${k.id}" title="Przeciągnij, aby zmienić kolejność" onclick="go('konto','${k.id}')"><span class="ic">${KICON[k.typ] || '▣'}</span>${esc(k.nazwa)}</a>`).join('')}<a class="add" onclick="editKonto()"><span class="ic">＋</span>Dodaj konto</a>
     <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◎', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}
     <div class="nav-h">Analiza</div>${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}
     <div class="nav-h">Konfiguracja</div>${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`;
@@ -899,7 +902,7 @@ const kpi = (l, v, s = '', cls = '') => `<div class="kpi ${cls}"><div class="l">
 function table(cols, rows, opts = {}) {
   if (!rows.length) return `<div class="empty">${opts.empty || 'Brak danych'}</div>`;
   const th = cols.map(c => `<th class="${c.n ? 'n' : ''}">${c.h}</th>`).join('');
-  const tr = rows.map(r => `<tr class="${opts.click ? 'click' : ''}" ${opts.click ? `onclick="${opts.click(r)}"` : ''}>${cols.map(c => `<td class="${c.n ? 'n' : ''} ${c.cls ? c.cls(r) : ''}">${c.f(r)}</td>`).join('')}</tr>`).join('');
+  const tr = rows.map(r => `<tr class="${opts.click ? 'click' : ''}" ${opts.click ? `onclick="${opts.click(r)}"` : ''} ${opts.drag ? `draggable="true" data-drag="${opts.drag}" data-id="${r.id}"` : ''}>${cols.map(c => `<td class="${c.n ? 'n' : ''} ${c.cls ? c.cls(r) : ''}">${c.f(r)}</td>`).join('')}</tr>`).join('');
   const foot = opts.foot ? `<tr>${opts.foot.map((f, i) => `<td class="${cols[i] && cols[i].n ? 'n' : ''}"><b>${f ?? ''}</b></td>`).join('')}</tr>` : '';
   return `<div class="tbl"><table><thead><tr>${th}</tr></thead><tbody>${tr}${foot}</tbody></table></div>`;
 }
@@ -1211,7 +1214,8 @@ function vInstrumenty() {
       { h: 'Data ceny', f: i => esc(i.dataCeny) },
       { h: 'Ilość w portfelu', n: 1, f: i => { const q = C.pozycje.filter(p => p.ticker === i.ticker).reduce((a, p) => a + p.ilosc, 0); return q ? nfq.format(q) : '–'; } },
       { h: '', f: i => `<a onclick="event.stopPropagation();editInstrument('${i.id}')">edytuj</a>` },
-    ], rows, { empty: 'Brak instrumentów' })}</div>`,
+    ], rows, { empty: 'Brak instrumentów', drag: 'instrumenty' })}</div>
+    <div class="mut" style="font-size:12px;margin-top:8px">⇅ Kolejność zmienisz, przeciągając wiersz myszką.</div>`,
     `${SYNC.token ? '<button class="btn ghost" onclick="refreshAutoPrices().then(()=>toast(\'Ceny odświeżone\'))">↻ Ceny z Google</button>' : ''}<button class="btn" onclick="editInstrument()">＋ Instrument</button>`];
 }
 
@@ -1222,7 +1226,7 @@ function vUstawienia() {
     { h: 'Konto', f: k => `<b>${esc(k.nazwa)}</b>` }, { h: 'Typ podatkowy', f: k => esc(k.typ) }, { h: 'Waluta', f: k => esc(k.waluta) },
     { h: 'Gotówka', n: 1, f: k => has(k.gotowka) ? money(num(k.gotowka), k.waluta) : '–' }, { h: 'Model 2.1', f: k => esc(k.model) },
     { h: 'Wartość', n: 1, f: k => zl(C.konta.find(x => x.id === k.id)?.razem || 0, 0) },
-  ], S.konta, { click: k => `editKonto('${k.id}')` });
+  ], S.konta, { click: k => `editKonto('${k.id}')`, drag: 'konta' });
   const celeTbl = table([
     { h: 'Koszyk', f: c => `<b>${esc(c.koszyk)}</b>` }, { h: 'Grupa', f: c => esc(c.grupa) }, { h: 'Cel', n: 1, f: c => num(c.cel) + '%' },
   ], S.cele, { click: c => `editCel('${c.id}')`, foot: ['Suma', '', S.cele.reduce((a, c) => a + num(c.cel), 0) + '%'] });
@@ -1462,6 +1466,20 @@ function importJSON(file) {
   r.readAsText(file);
 }
 function resetAll() { if (!confirm('Usunąć wszystkie dane z tej przeglądarki? (arkusz Google zostaje bez zmian)')) return; S = defaultState(); DIRTY = new Set(); saveLocal(); render(); }
+
+/* ---------- zmiana kolejności przeciąganiem ---------- */
+let DRAG = null;
+document.addEventListener('dragstart', e => { const el = e.target.closest && e.target.closest('[data-drag]'); if (!el) return;
+  DRAG = { list: el.dataset.drag, id: el.dataset.id }; el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', el.dataset.id); } catch (x) {} });
+document.addEventListener('dragend', e => { DRAG = null; document.querySelectorAll('.dragging,.drop-before,.drop-after').forEach(x => x.classList.remove('dragging', 'drop-before', 'drop-after')); });
+document.addEventListener('dragover', e => { if (!DRAG) return; const el = e.target.closest && e.target.closest(`[data-drag="${DRAG.list}"]`); if (!el) return;
+  e.preventDefault(); const r = el.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2;
+  document.querySelectorAll('.drop-before,.drop-after').forEach(x => x.classList.remove('drop-before', 'drop-after')); el.classList.add(after ? 'drop-after' : 'drop-before'); });
+document.addEventListener('drop', e => { if (!DRAG) return; const el = e.target.closest && e.target.closest(`[data-drag="${DRAG.list}"]`); if (!el) return;
+  e.preventDefault(); const r = el.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2;
+  const arr = S[DRAG.list], from = arr.findIndex(x => x.id === DRAG.id); if (from < 0 || el.dataset.id === DRAG.id) return;
+  const [item] = arr.splice(from, 1); let to = arr.findIndex(x => x.id === el.dataset.id); if (after) to++;
+  arr.splice(to, 0, item); changed(DRAG.list); DRAG = null; render(); toast('Zmieniono kolejność'); });
 
 /* ---------- start ---------- */
 setInterval(() => { if (document.visibilityState === 'visible') { C = calc(S); snapshotIntraday(); if (ROUTE === 'kokpit' && RANGE === '1d') render(); } }, 15 * 60000);
