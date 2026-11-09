@@ -240,7 +240,8 @@ function vKonto() {
   return [k.nazwa, `${esc(k.typ)} · ${esc(opis)} · waluta ${esc(k.waluta)}`, `
     <div class="kpis">${kpi('Wartość konta', zl(k.razem, 0), C.wartosc ? pct(k.razem / C.wartosc) + ' portfela' : '', 'main')}
       ${kpi('Pozycje', zl(k.wartoscPozycji, 0), poz.length + ' otwartych')}
-      ${kpi('Gotówka u brokera', `<input class="cell" style="width:120px;font-size:16px" type="number" step="any" value="${esc(k.gotowka)}" placeholder="0" onchange="setGotowka('${k.id}',this.value)"> <span style="font-size:14px">${esc(k.waluta)}</span>`, k.waluta !== 'PLN' ? '≈ ' + zl(k.gotowkaPLN, 0) : 'wpisz saldo z brokera')}
+      ${kpi('Gotówka na koncie', `${money(k.gotowkaKwota, k.waluta)}`, (k.gotowkaAuto ? 'liczona: wpłaty − zakupy + sprzedaże + dywidendy' : '<span class="warn">wpisana ręcznie</span>') + (k.waluta !== 'PLN' ? ' · ≈ ' + zl(k.gotowkaPLN, 0) : '') +
+        `<br><a onclick="korektaGotowki('${k.id}')">${k.gotowkaAuto ? 'wpisz saldo ręcznie' : 'wróć do liczenia automatycznego'}</a>`)}
       ${kpi('Wpłacony kapitał', zl(k.kapital, 0), wpl.length + ' wpłat')}
       ${kpi('Zysk / strata', k.zysk === null ? '–' : pl(k.zysk), k.zyskPct === null ? 'dodaj wpłaty, aby policzyć' : pp(k.zyskPct))}</div>
     <div class="grid g2"><div class="card"><h3>Strategie na tym koncie<span class="sp"></span><button class="btn sm ghost" onclick="editStrategiaNaKoncie('${esc(k.nazwa)}')">＋ Strategia</button></h3>${table([
@@ -259,6 +260,12 @@ function vKonto() {
     `<button class="btn ghost" onclick="editKonto('${k.id}')">Edytuj / usuń konto</button><button class="btn" onclick="editWplata(null,'${esc(k.nazwa)}')">＋ Wpłata</button>`];
 }
 function setGotowka(id, v) { const k = S.konta.find(x => x.id === id); k.gotowka = v === '' ? '' : num(v); changed('konta'); render(); }
+function korektaGotowki(id) {
+  const k = S.konta.find(x => x.id === id), ck = C.konta.find(x => x.id === id);
+  if (has(k.gotowka)) { k.gotowka = ''; changed('konta'); render(); toast('Gotówka liczona automatycznie'); return; }
+  const v = prompt(`Saldo gotówki na koncie ${k.nazwa} (${k.waluta}) – np. z XTB.\nWyliczone przez aplikację: ${nf2.format(ck.gotowkaWyliczona)}`, nf2.format(ck.gotowkaWyliczona).replace(/\s/g, ''));
+  if (v === null) return; setGotowka(id, String(v).replace(',', '.'));
+}
 function editStrategiaNaKoncie(konto) { editStrategia(null, konto); }
 
 function txCols() {
@@ -393,7 +400,7 @@ function vUstawienia() {
   const g = CFG.sheetId ? `<p>Arkusz: <a href="${esc(CFG.sheetUrl || ('https://docs.google.com/spreadsheets/d/' + CFG.sheetId))}" target="_blank">otwórz „Portfel – dane” ↗</a></p>` : '';
   const kontaTbl = table([
     { h: 'Konto', f: k => `<b>${esc(k.nazwa)}</b>` }, { h: 'Typ podatkowy', f: k => esc(k.typ) }, { h: 'Waluta', f: k => esc(k.waluta) },
-    { h: 'Gotówka', n: 1, f: k => has(k.gotowka) ? money(num(k.gotowka), k.waluta) : '–' }, { h: 'Model 2.1', f: k => esc(k.model) },
+    { h: 'Gotówka', n: 1, f: k => { const c = C.konta.find(x => x.id === k.id); return money(c.gotowkaKwota, k.waluta) + (c.gotowkaAuto ? '' : ' <span class="warn">(ręcznie)</span>'); } }, { h: 'Model 2.1', f: k => esc(k.model) },
     { h: 'Wartość', n: 1, f: k => zl(C.konta.find(x => x.id === k.id)?.razem || 0, 0) },
   ], S.konta, { click: k => `editKonto('${k.id}')`, drag: 'konta' });
   const celeTbl = table([
@@ -415,7 +422,7 @@ function vUstawienia() {
     </div>
     <div class="grid g2e" style="margin-top:16px">
       <div class="card"><h3>Konta<span class="sp"></span><button class="btn sm" onclick="editKonto()">＋ Konto</button></h3>${kontaTbl}
-        <div class="mut" style="font-size:12px;margin-top:8px">„Opodatkowane” wchodzi do PIT-38. IKE/IKZE i „Poza PIT-38” są pomijane. Gotówkę u brokera aktualizuj ręcznie.</div></div>
+        <div class="mut" style="font-size:12px;margin-top:8px">„Opodatkowane” wchodzi do PIT-38. IKE/IKZE i „Poza PIT-38” są pomijane. Gotówka liczy się sama z wpłat i transakcji (możesz ją nadpisać ręcznie).</div></div>
       <div class="card"><h3>Portfel 2.1 – alokacja docelowa<span class="sp"></span><button class="btn sm" onclick="editCel()">＋ Koszyk</button></h3>${celeTbl}
         <div class="mut" style="font-size:12px;margin-top:8px">Koszyk przypisujesz instrumentowi w „Instrumenty i ceny”.</div></div>
     </div>
@@ -526,7 +533,7 @@ function editKonto(id) {
   const k = S.konta.find(x => x.id === id) || { typ: 'Opodatkowane', waluta: 'PLN', model: 'TAK' }; const old = k.nazwa;
   modal(id ? 'Edytuj konto' : 'Nowe konto', [
     { k: 'nazwa', l: 'Nazwa', full: 1 }, { k: 'typ', l: 'Typ podatkowy', t: 'select', o: ['Opodatkowane', 'IKE', 'IKZE', 'Poza PIT-38'] },
-    { k: 'waluta', l: 'Waluta', t: 'select', o: ['PLN', 'USD', 'EUR', 'GBP', 'CHF'] }, { k: 'gotowka', l: 'Gotówka u brokera (waluta konta)', t: 'number' },
+    { k: 'waluta', l: 'Waluta', t: 'select', o: ['PLN', 'USD', 'EUR', 'GBP', 'CHF'] }, { k: 'gotowka', l: 'Gotówka – tylko gdy chcesz wpisać ręcznie (puste = liczona automatycznie)', t: 'number', full: 1 },
     { k: 'model', l: 'Wliczaj do modelu 2.1', t: 'select', o: ['TAK', 'NIE'] },
   ], k, o => {
     if (!o.nazwa) return 'Podaj nazwę';

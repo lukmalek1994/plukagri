@@ -217,7 +217,7 @@ async function detectSep() {
 }
 function summarySig() {
   const pairs = [...new Set(S.transakcje.map(t => t.strategia + '|' + t.ticker))].sort();
-  return JSON.stringify([pairs, S.strategie.map(s => s.nazwa), S.konta.map(k => k.nazwa), S.instrumenty.map(i => i.ticker), 2]);
+  return JSON.stringify([pairs, S.strategie.map(s => s.nazwa), S.konta.map(k => k.nazwa), S.instrumenty.map(i => i.ticker), 3]);
 }
 async function buildSummary(force) {
   if (!CFG.sheetId || !SYNC.token) return;
@@ -246,7 +246,7 @@ async function buildSummary(force) {
   // --- część widoczna (kolumny B:I) ---
   const rows = []; const put = (r, c, v) => { while (rows.length < r) rows.push([]); const row = rows[r - 1]; while (row.length < c) row.push(''); row[c - 1] = v; };
   put(1, 2, 'Mój portfel – podsumowanie');
-  put(2, 2, 'Liczy się samo z zakładek tego arkusza – działa także bez aplikacji. Koszt pozycji liczony średnią ceną zakupu (dokładny FIFO i podatki są w aplikacji).');
+  put(2, 2, 'Liczy się samo z zakładek tego arkusza – działa także bez aplikacji. Koszt pozycji liczony średnią ceną zakupu, gotówka ≈ wpłaty − koszt pozycji (dokładne wyliczenia, FIFO i podatki są w aplikacji).');
   const sK0 = 9 + strat.length + 3, sKL = sK0 + konta.length - 1, sKT = sKL + 1;
   const sI0 = sKT + 4, sIL = sI0 + Math.max(instr.length, 1) - 1;
   const VAL = `$F$${sKT}`;
@@ -267,7 +267,7 @@ async function buildSummary(force) {
   konta.forEach((k, i) => { const r = sK0 + i, m = `MATCH(B${r}§Konta!$B:$B§0)`;
     put(r, 2, k.nazwa); put(r, 3, f(`=IFERROR(INDEX(Konta!$C:$C§${m})§"")`));
     put(r, 4, f(`=SUMIF(${HR('AB')}§B${r}§${HR('Z')})`));
-    put(r, 5, f(`=IFERROR(N(INDEX(Konta!$E:$E§${m}))*${kursF(`INDEX(Konta!$D:$D§${m})`)}§0)`));
+    put(r, 5, f(`=IFERROR(IF(INDEX(Konta!$E:$E§${m})<>""§N(INDEX(Konta!$E:$E§${m}))*${kursF(`INDEX(Konta!$D:$D§${m})`)}§MAX(0§SUMIF('Wpłaty'!$C:$C§B${r}§'Wpłaty'!$D:$D)-SUMIF(${HR('AB')}§B${r}§${HR('AA')})))§0)`));
     put(r, 6, `=D${r}+E${r}`); put(r, 7, f(`=SUMIF('Wpłaty'!$C:$C§B${r}§'Wpłaty'!$D:$D)`));
     put(r, 8, f(`=IF(G${r}=0§""§F${r}-G${r})`)); put(r, 9, f(`=IF(G${r}=0§""§H${r}/G${r})`)); });
   put(sKT, 2, 'RAZEM'); ['D', 'E', 'F', 'G'].forEach((c, k) => put(sKT, 4 + k, `=SUM(${c}${sK0}:${c}${sKL})`));

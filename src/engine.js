@@ -126,7 +126,22 @@ function calc(S) {
       nettoPLN: bruttoPLN - podatekPLN, doplata, rok: +d.data.slice(0, 4), typ };
   });
 
-  const gotowka = S.konta.map(k => ({ konto: k.nazwa, waluta: k.waluta, kwota: num(k.gotowka), pln: num(k.gotowka) * rateNow(k.waluta) }));
+  // gotówka na koncie: liczona automatycznie (wpłaty − zakupy + sprzedaże + dywidendy), chyba że wpisana ręcznie
+  const kontoStrat = s => (strat[s] || {}).konto || '';
+  const toAcc = (amount, cur, kurs, accCur) => cur === accCur ? amount : (accCur === 'PLN' ? amount * kurs : (rateNow(accCur) ? amount * kurs / rateNow(accCur) : 0));
+  const cashAuto = {};
+  S.konta.forEach(k => { cashAuto[k.nazwa] = 0; });
+  S.wplaty.filter(w => w.data && has(w.kwotaPLN)).forEach(w => { const k = konto[w.konto]; if (!k) return;
+    cashAuto[k.nazwa] += k.waluta === 'PLN' ? num(w.kwotaPLN) : (has(w.kwotaWal) ? num(w.kwotaWal) : (rateNow(k.waluta) ? num(w.kwotaPLN) / rateNow(k.waluta) : 0)); });
+  txs.forEach(t => { const k = konto[kontoStrat(t.strategia)]; if (!k) return; const cur = curOf(t.ticker);
+    const kurs = cur === 'PLN' ? 1 : (has(t.kurs) ? num(t.kurs) : rateNow(cur));
+    const amt = t.typ === 'KUPNO' ? -(num(t.ilosc) * num(t.cena) + num(t.prowizja)) : (num(t.ilosc) * num(t.cena) - num(t.prowizja));
+    cashAuto[k.nazwa] += toAcc(amt, cur, kurs, k.waluta); });
+  S.dywidendy.filter(d => d.data && has(d.brutto)).forEach(d => { const k = konto[kontoStrat(d.strategia)]; if (!k) return;
+    const cur = d.ticker ? curOf(d.ticker) : k.waluta, kurs = cur === 'PLN' ? 1 : (has(d.kurs) ? num(d.kurs) : rateNow(cur));
+    cashAuto[k.nazwa] += toAcc(num(d.brutto) - num(d.podatek), cur, kurs, k.waluta); });
+  const gotowka = S.konta.map(k => { const manual = has(k.gotowka), kw = manual ? num(k.gotowka) : Math.round(cashAuto[k.nazwa] * 100) / 100;
+    return { konto: k.nazwa, waluta: k.waluta, kwota: kw, auto: !manual, wyliczona: cashAuto[k.nazwa], pln: kw * rateNow(k.waluta) }; });
   const sumPLN = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
   const wartoscPozycji = sumPLN(pozycje, p => p.wartoscPLN);
   const gotowkaPLN = sumPLN(gotowka, g => g.pln);
@@ -155,9 +170,9 @@ function calc(S) {
   // konta
   const konta = S.konta.map(k => {
     const w = sumPLN(pozycje.filter(p => p.konto === k.nazwa), p => p.wartoscPLN);
-    const g = num(k.gotowka) * rateNow(k.waluta);
+    const gg = gotowka.find(x => x.konto === k.nazwa), g = gg.pln;
     const kap = sumPLN(wplaty.filter(x => x.konto === k.nazwa), x => num(x.kwotaPLN));
-    return { ...k, wartoscPozycji: w, gotowkaPLN: g, razem: w + g, kapital: kap, zysk: kap ? w + g - kap : null, zyskPct: kap ? (w + g - kap) / kap : null };
+    return { ...k, wartoscPozycji: w, gotowkaPLN: g, gotowkaKwota: gg.kwota, gotowkaAuto: gg.auto, gotowkaWyliczona: gg.wyliczona, razem: w + g, kapital: kap, zysk: kap ? w + g - kap : null, zyskPct: kap ? (w + g - kap) / kap : null };
   });
 
   const groupBy = (arr, f, v) => { const m = {}; arr.forEach(x => { const k = f(x); m[k] = (m[k] || 0) + v(x); }); return m; };

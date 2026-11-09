@@ -227,7 +227,22 @@ function calc(S) {
       nettoPLN: bruttoPLN - podatekPLN, doplata, rok: +d.data.slice(0, 4), typ };
   });
 
-  const gotowka = S.konta.map(k => ({ konto: k.nazwa, waluta: k.waluta, kwota: num(k.gotowka), pln: num(k.gotowka) * rateNow(k.waluta) }));
+  // gotówka na koncie: liczona automatycznie (wpłaty − zakupy + sprzedaże + dywidendy), chyba że wpisana ręcznie
+  const kontoStrat = s => (strat[s] || {}).konto || '';
+  const toAcc = (amount, cur, kurs, accCur) => cur === accCur ? amount : (accCur === 'PLN' ? amount * kurs : (rateNow(accCur) ? amount * kurs / rateNow(accCur) : 0));
+  const cashAuto = {};
+  S.konta.forEach(k => { cashAuto[k.nazwa] = 0; });
+  S.wplaty.filter(w => w.data && has(w.kwotaPLN)).forEach(w => { const k = konto[w.konto]; if (!k) return;
+    cashAuto[k.nazwa] += k.waluta === 'PLN' ? num(w.kwotaPLN) : (has(w.kwotaWal) ? num(w.kwotaWal) : (rateNow(k.waluta) ? num(w.kwotaPLN) / rateNow(k.waluta) : 0)); });
+  txs.forEach(t => { const k = konto[kontoStrat(t.strategia)]; if (!k) return; const cur = curOf(t.ticker);
+    const kurs = cur === 'PLN' ? 1 : (has(t.kurs) ? num(t.kurs) : rateNow(cur));
+    const amt = t.typ === 'KUPNO' ? -(num(t.ilosc) * num(t.cena) + num(t.prowizja)) : (num(t.ilosc) * num(t.cena) - num(t.prowizja));
+    cashAuto[k.nazwa] += toAcc(amt, cur, kurs, k.waluta); });
+  S.dywidendy.filter(d => d.data && has(d.brutto)).forEach(d => { const k = konto[kontoStrat(d.strategia)]; if (!k) return;
+    const cur = d.ticker ? curOf(d.ticker) : k.waluta, kurs = cur === 'PLN' ? 1 : (has(d.kurs) ? num(d.kurs) : rateNow(cur));
+    cashAuto[k.nazwa] += toAcc(num(d.brutto) - num(d.podatek), cur, kurs, k.waluta); });
+  const gotowka = S.konta.map(k => { const manual = has(k.gotowka), kw = manual ? num(k.gotowka) : Math.round(cashAuto[k.nazwa] * 100) / 100;
+    return { konto: k.nazwa, waluta: k.waluta, kwota: kw, auto: !manual, wyliczona: cashAuto[k.nazwa], pln: kw * rateNow(k.waluta) }; });
   const sumPLN = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
   const wartoscPozycji = sumPLN(pozycje, p => p.wartoscPLN);
   const gotowkaPLN = sumPLN(gotowka, g => g.pln);
@@ -256,9 +271,9 @@ function calc(S) {
   // konta
   const konta = S.konta.map(k => {
     const w = sumPLN(pozycje.filter(p => p.konto === k.nazwa), p => p.wartoscPLN);
-    const g = num(k.gotowka) * rateNow(k.waluta);
+    const gg = gotowka.find(x => x.konto === k.nazwa), g = gg.pln;
     const kap = sumPLN(wplaty.filter(x => x.konto === k.nazwa), x => num(x.kwotaPLN));
-    return { ...k, wartoscPozycji: w, gotowkaPLN: g, razem: w + g, kapital: kap, zysk: kap ? w + g - kap : null, zyskPct: kap ? (w + g - kap) / kap : null };
+    return { ...k, wartoscPozycji: w, gotowkaPLN: g, gotowkaKwota: gg.kwota, gotowkaAuto: gg.auto, gotowkaWyliczona: gg.wyliczona, razem: w + g, kapital: kap, zysk: kap ? w + g - kap : null, zyskPct: kap ? (w + g - kap) / kap : null };
   });
 
   const groupBy = (arr, f, v) => { const m = {}; arr.forEach(x => { const k = f(x); m[k] = (m[k] || 0) + v(x); }); return m; };
@@ -611,7 +626,7 @@ async function detectSep() {
 }
 function summarySig() {
   const pairs = [...new Set(S.transakcje.map(t => t.strategia + '|' + t.ticker))].sort();
-  return JSON.stringify([pairs, S.strategie.map(s => s.nazwa), S.konta.map(k => k.nazwa), S.instrumenty.map(i => i.ticker), 2]);
+  return JSON.stringify([pairs, S.strategie.map(s => s.nazwa), S.konta.map(k => k.nazwa), S.instrumenty.map(i => i.ticker), 3]);
 }
 async function buildSummary(force) {
   if (!CFG.sheetId || !SYNC.token) return;
@@ -640,7 +655,7 @@ async function buildSummary(force) {
   // --- część widoczna (kolumny B:I) ---
   const rows = []; const put = (r, c, v) => { while (rows.length < r) rows.push([]); const row = rows[r - 1]; while (row.length < c) row.push(''); row[c - 1] = v; };
   put(1, 2, 'Mój portfel – podsumowanie');
-  put(2, 2, 'Liczy się samo z zakładek tego arkusza – działa także bez aplikacji. Koszt pozycji liczony średnią ceną zakupu (dokładny FIFO i podatki są w aplikacji).');
+  put(2, 2, 'Liczy się samo z zakładek tego arkusza – działa także bez aplikacji. Koszt pozycji liczony średnią ceną zakupu, gotówka ≈ wpłaty − koszt pozycji (dokładne wyliczenia, FIFO i podatki są w aplikacji).');
   const sK0 = 9 + strat.length + 3, sKL = sK0 + konta.length - 1, sKT = sKL + 1;
   const sI0 = sKT + 4, sIL = sI0 + Math.max(instr.length, 1) - 1;
   const VAL = `$F$${sKT}`;
@@ -661,7 +676,7 @@ async function buildSummary(force) {
   konta.forEach((k, i) => { const r = sK0 + i, m = `MATCH(B${r}§Konta!$B:$B§0)`;
     put(r, 2, k.nazwa); put(r, 3, f(`=IFERROR(INDEX(Konta!$C:$C§${m})§"")`));
     put(r, 4, f(`=SUMIF(${HR('AB')}§B${r}§${HR('Z')})`));
-    put(r, 5, f(`=IFERROR(N(INDEX(Konta!$E:$E§${m}))*${kursF(`INDEX(Konta!$D:$D§${m})`)}§0)`));
+    put(r, 5, f(`=IFERROR(IF(INDEX(Konta!$E:$E§${m})<>""§N(INDEX(Konta!$E:$E§${m}))*${kursF(`INDEX(Konta!$D:$D§${m})`)}§MAX(0§SUMIF('Wpłaty'!$C:$C§B${r}§'Wpłaty'!$D:$D)-SUMIF(${HR('AB')}§B${r}§${HR('AA')})))§0)`));
     put(r, 6, `=D${r}+E${r}`); put(r, 7, f(`=SUMIF('Wpłaty'!$C:$C§B${r}§'Wpłaty'!$D:$D)`));
     put(r, 8, f(`=IF(G${r}=0§""§F${r}-G${r})`)); put(r, 9, f(`=IF(G${r}=0§""§H${r}/G${r})`)); });
   put(sKT, 2, 'RAZEM'); ['D', 'E', 'F', 'G'].forEach((c, k) => put(sKT, 4 + k, `=SUM(${c}${sK0}:${c}${sKL})`));
@@ -1071,7 +1086,8 @@ function vKonto() {
   return [k.nazwa, `${esc(k.typ)} · ${esc(opis)} · waluta ${esc(k.waluta)}`, `
     <div class="kpis">${kpi('Wartość konta', zl(k.razem, 0), C.wartosc ? pct(k.razem / C.wartosc) + ' portfela' : '', 'main')}
       ${kpi('Pozycje', zl(k.wartoscPozycji, 0), poz.length + ' otwartych')}
-      ${kpi('Gotówka u brokera', `<input class="cell" style="width:120px;font-size:16px" type="number" step="any" value="${esc(k.gotowka)}" placeholder="0" onchange="setGotowka('${k.id}',this.value)"> <span style="font-size:14px">${esc(k.waluta)}</span>`, k.waluta !== 'PLN' ? '≈ ' + zl(k.gotowkaPLN, 0) : 'wpisz saldo z brokera')}
+      ${kpi('Gotówka na koncie', `${money(k.gotowkaKwota, k.waluta)}`, (k.gotowkaAuto ? 'liczona: wpłaty − zakupy + sprzedaże + dywidendy' : '<span class="warn">wpisana ręcznie</span>') + (k.waluta !== 'PLN' ? ' · ≈ ' + zl(k.gotowkaPLN, 0) : '') +
+        `<br><a onclick="korektaGotowki('${k.id}')">${k.gotowkaAuto ? 'wpisz saldo ręcznie' : 'wróć do liczenia automatycznego'}</a>`)}
       ${kpi('Wpłacony kapitał', zl(k.kapital, 0), wpl.length + ' wpłat')}
       ${kpi('Zysk / strata', k.zysk === null ? '–' : pl(k.zysk), k.zyskPct === null ? 'dodaj wpłaty, aby policzyć' : pp(k.zyskPct))}</div>
     <div class="grid g2"><div class="card"><h3>Strategie na tym koncie<span class="sp"></span><button class="btn sm ghost" onclick="editStrategiaNaKoncie('${esc(k.nazwa)}')">＋ Strategia</button></h3>${table([
@@ -1090,6 +1106,12 @@ function vKonto() {
     `<button class="btn ghost" onclick="editKonto('${k.id}')">Edytuj / usuń konto</button><button class="btn" onclick="editWplata(null,'${esc(k.nazwa)}')">＋ Wpłata</button>`];
 }
 function setGotowka(id, v) { const k = S.konta.find(x => x.id === id); k.gotowka = v === '' ? '' : num(v); changed('konta'); render(); }
+function korektaGotowki(id) {
+  const k = S.konta.find(x => x.id === id), ck = C.konta.find(x => x.id === id);
+  if (has(k.gotowka)) { k.gotowka = ''; changed('konta'); render(); toast('Gotówka liczona automatycznie'); return; }
+  const v = prompt(`Saldo gotówki na koncie ${k.nazwa} (${k.waluta}) – np. z XTB.\nWyliczone przez aplikację: ${nf2.format(ck.gotowkaWyliczona)}`, nf2.format(ck.gotowkaWyliczona).replace(/\s/g, ''));
+  if (v === null) return; setGotowka(id, String(v).replace(',', '.'));
+}
 function editStrategiaNaKoncie(konto) { editStrategia(null, konto); }
 
 function txCols() {
@@ -1224,7 +1246,7 @@ function vUstawienia() {
   const g = CFG.sheetId ? `<p>Arkusz: <a href="${esc(CFG.sheetUrl || ('https://docs.google.com/spreadsheets/d/' + CFG.sheetId))}" target="_blank">otwórz „Portfel – dane” ↗</a></p>` : '';
   const kontaTbl = table([
     { h: 'Konto', f: k => `<b>${esc(k.nazwa)}</b>` }, { h: 'Typ podatkowy', f: k => esc(k.typ) }, { h: 'Waluta', f: k => esc(k.waluta) },
-    { h: 'Gotówka', n: 1, f: k => has(k.gotowka) ? money(num(k.gotowka), k.waluta) : '–' }, { h: 'Model 2.1', f: k => esc(k.model) },
+    { h: 'Gotówka', n: 1, f: k => { const c = C.konta.find(x => x.id === k.id); return money(c.gotowkaKwota, k.waluta) + (c.gotowkaAuto ? '' : ' <span class="warn">(ręcznie)</span>'); } }, { h: 'Model 2.1', f: k => esc(k.model) },
     { h: 'Wartość', n: 1, f: k => zl(C.konta.find(x => x.id === k.id)?.razem || 0, 0) },
   ], S.konta, { click: k => `editKonto('${k.id}')`, drag: 'konta' });
   const celeTbl = table([
@@ -1246,7 +1268,7 @@ function vUstawienia() {
     </div>
     <div class="grid g2e" style="margin-top:16px">
       <div class="card"><h3>Konta<span class="sp"></span><button class="btn sm" onclick="editKonto()">＋ Konto</button></h3>${kontaTbl}
-        <div class="mut" style="font-size:12px;margin-top:8px">„Opodatkowane” wchodzi do PIT-38. IKE/IKZE i „Poza PIT-38” są pomijane. Gotówkę u brokera aktualizuj ręcznie.</div></div>
+        <div class="mut" style="font-size:12px;margin-top:8px">„Opodatkowane” wchodzi do PIT-38. IKE/IKZE i „Poza PIT-38” są pomijane. Gotówka liczy się sama z wpłat i transakcji (możesz ją nadpisać ręcznie).</div></div>
       <div class="card"><h3>Portfel 2.1 – alokacja docelowa<span class="sp"></span><button class="btn sm" onclick="editCel()">＋ Koszyk</button></h3>${celeTbl}
         <div class="mut" style="font-size:12px;margin-top:8px">Koszyk przypisujesz instrumentowi w „Instrumenty i ceny”.</div></div>
     </div>
@@ -1357,7 +1379,7 @@ function editKonto(id) {
   const k = S.konta.find(x => x.id === id) || { typ: 'Opodatkowane', waluta: 'PLN', model: 'TAK' }; const old = k.nazwa;
   modal(id ? 'Edytuj konto' : 'Nowe konto', [
     { k: 'nazwa', l: 'Nazwa', full: 1 }, { k: 'typ', l: 'Typ podatkowy', t: 'select', o: ['Opodatkowane', 'IKE', 'IKZE', 'Poza PIT-38'] },
-    { k: 'waluta', l: 'Waluta', t: 'select', o: ['PLN', 'USD', 'EUR', 'GBP', 'CHF'] }, { k: 'gotowka', l: 'Gotówka u brokera (waluta konta)', t: 'number' },
+    { k: 'waluta', l: 'Waluta', t: 'select', o: ['PLN', 'USD', 'EUR', 'GBP', 'CHF'] }, { k: 'gotowka', l: 'Gotówka – tylko gdy chcesz wpisać ręcznie (puste = liczona automatycznie)', t: 'number', full: 1 },
     { k: 'model', l: 'Wliczaj do modelu 2.1', t: 'select', o: ['TAK', 'NIE'] },
   ], k, o => {
     if (!o.nazwa) return 'Podaj nazwę';
