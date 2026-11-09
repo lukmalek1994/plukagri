@@ -40,15 +40,25 @@ function readHash() { const h = decodeURIComponent(location.hash.slice(1) || 'ko
 
 function renderNav() {
   const it = (r, ic, label, p = '') => `<a class="${ROUTE === r && PARAM === p ? 'on' : ''}" onclick="go('${r}','${esc(p).replace(/'/g, "\\'")}')"><span class="ic">${ic}</span>${esc(label)}</a>`;
-  const st = S.strategie.map(s => `<a class="${ROUTE === 'strategia' && PARAM === s.id ? 'on' : ''}" draggable="true" data-drag="strategie" data-id="${s.id}" title="Przeciągnij, aby zmienić kolejność" onclick="go('strategia','${s.id}')"><span class="dot" style="background:${esc(s.kolor || '#1565c0')}"></span>${esc(s.nazwa)}</a>`).join('');
+  const stLink = s => `<a class="sub ${ROUTE === 'strategia' && PARAM === s.id ? 'on' : ''}" draggable="true" data-drag="strategie" data-id="${s.id}" title="Przeciągnij na inne konto lub zmień kolejność" onclick="go('strategia','${s.id}')"><span class="dot" style="background:${esc(s.kolor || '#1565c0')}"></span>${esc(s.nazwa)}</a>`;
+  CFG.navClosed = CFG.navClosed || {};
+  const tree = S.konta.map(k => {
+    const ss = S.strategie.filter(s => s.konto === k.nazwa), open = !CFG.navClosed[k.id];
+    return `<a class="acc ${ROUTE === 'konto' && PARAM === k.id ? 'on' : ''}" draggable="true" data-drag="konta" data-id="${k.id}" title="Przeciągnij, aby zmienić kolejność" onclick="go('konto','${k.id}')">
+        <span class="chev ${open && ss.length ? 'open' : ''} ${ss.length ? '' : 'noch'}" onclick="event.stopPropagation();toggleNav('${k.id}')">${ss.length ? '▸' : ''}</span><span class="ic">${KICON[k.typ] || '▣'}</span><span class="nm">${esc(k.nazwa)}</span>${ss.length ? `<span class="cnt">${ss.length}</span>` : ''}</a>
+      ${open ? ss.map(stLink).join('') : ''}`;
+  }).join('');
+  const sieroty = S.strategie.filter(s => !S.konta.some(k => k.nazwa === s.konto));
   $('#nav').innerHTML = `
     ${it('kokpit', '◧', 'Kokpit')}${it('portfel', '▤', 'Portfel – pozycje')}
-    <div class="nav-h">Strategie</div>${st}<a class="add" onclick="editStrategia()"><span class="ic">＋</span>Dodaj strategię</a>
-    <div class="nav-h">Konta</div>${S.konta.map(k => `<a class="${ROUTE === 'konto' && PARAM === k.id ? 'on' : ''}" draggable="true" data-drag="konta" data-id="${k.id}" title="Przeciągnij, aby zmienić kolejność" onclick="go('konto','${k.id}')"><span class="ic">${KICON[k.typ] || '▣'}</span>${esc(k.nazwa)}</a>`).join('')}<a class="add" onclick="editKonto()"><span class="ic">＋</span>Dodaj konto</a>
+    <div class="nav-h">Konta i strategie</div>${tree}
+    ${sieroty.length ? `<div class="nav-h">Strategie bez konta</div>${sieroty.map(stLink).join('')}` : ''}
+    <a class="add" onclick="editKonto()"><span class="ic">＋</span>Dodaj konto</a><a class="add" onclick="editStrategia()"><span class="ic">＋</span>Dodaj strategię</a>
     <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◎', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}
     <div class="nav-h">Analiza</div>${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}
     <div class="nav-h">Konfiguracja</div>${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`;
 }
+function toggleNav(id) { CFG.navClosed = CFG.navClosed || {}; CFG.navClosed[id] = !CFG.navClosed[id]; saveCfg(); renderNav(); }
 const KICON = { 'Opodatkowane': '▣', 'IKE': '◈', 'IKZE': '◈', 'Poza PIT-38': '◇' };
 function renderSyncBadge() {
   const b = $('#sync'); if (!b) return;
@@ -681,14 +691,30 @@ let DRAG = null;
 document.addEventListener('dragstart', e => { const el = e.target.closest && e.target.closest('[data-drag]'); if (!el) return;
   DRAG = { list: el.dataset.drag, id: el.dataset.id }; el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', el.dataset.id); } catch (x) {} });
 document.addEventListener('dragend', e => { DRAG = null; document.querySelectorAll('.dragging,.drop-before,.drop-after').forEach(x => x.classList.remove('dragging', 'drop-before', 'drop-after')); });
-document.addEventListener('dragover', e => { if (!DRAG) return; const el = e.target.closest && e.target.closest(`[data-drag="${DRAG.list}"]`); if (!el) return;
-  e.preventDefault(); const r = el.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2;
-  document.querySelectorAll('.drop-before,.drop-after').forEach(x => x.classList.remove('drop-before', 'drop-after')); el.classList.add(after ? 'drop-after' : 'drop-before'); });
-document.addEventListener('drop', e => { if (!DRAG) return; const el = e.target.closest && e.target.closest(`[data-drag="${DRAG.list}"]`); if (!el) return;
-  e.preventDefault(); const r = el.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2;
-  const arr = S[DRAG.list], from = arr.findIndex(x => x.id === DRAG.id); if (from < 0 || el.dataset.id === DRAG.id) return;
+function dropTarget(e) {
+  if (!DRAG || !e.target.closest) return null;
+  if (DRAG.list === 'strategie') return e.target.closest('[data-drag="strategie"],[data-drag="konta"]');
+  return e.target.closest(`[data-drag="${DRAG.list}"]`);
+}
+document.addEventListener('dragover', e => { const el = dropTarget(e); if (!el) return;
+  e.preventDefault(); document.querySelectorAll('.drop-before,.drop-after,.drop-into').forEach(x => x.classList.remove('drop-before', 'drop-after', 'drop-into'));
+  if (DRAG.list === 'strategie' && el.dataset.drag === 'konta') { el.classList.add('drop-into'); return; }
+  const r = el.getBoundingClientRect(); el.classList.add(e.clientY > r.top + r.height / 2 ? 'drop-after' : 'drop-before'); });
+document.addEventListener('drop', e => { const el = dropTarget(e); if (!el) return; e.preventDefault();
+  const list = DRAG.list, arr = S[list], from = arr.findIndex(x => x.id === DRAG.id); if (from < 0) return;
+  if (list === 'strategie' && el.dataset.drag === 'konta') {
+    const k = S.konta.find(x => x.id === el.dataset.id), s = arr[from];
+    if (k && s.konto !== k.nazwa) { s.konto = k.nazwa; CFG.navClosed && (CFG.navClosed[k.id] = false); saveCfg(); changed('strategie'); toast(`„${s.nazwa}” przeniesiona na konto ${k.nazwa}`); }
+    DRAG = null; render(); return;
+  }
+  if (el.dataset.id === DRAG.id) return;
+  const r = el.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2;
   const [item] = arr.splice(from, 1); let to = arr.findIndex(x => x.id === el.dataset.id); if (after) to++;
-  arr.splice(to, 0, item); changed(DRAG.list); DRAG = null; render(); toast('Zmieniono kolejność'); });
+  arr.splice(to, 0, item);
+  let msg = 'Zmieniono kolejność';
+  if (list === 'strategie') { const tgt = arr.find(x => x.id === el.dataset.id); if (tgt && item.konto !== tgt.konto) { item.konto = tgt.konto; msg = `„${item.nazwa}” przeniesiona na konto ${tgt.konto}`; } }
+  changed(list); DRAG = null; render(); toast(msg); });
+document.addEventListener('dragend', () => document.querySelectorAll('.drop-into').forEach(x => x.classList.remove('drop-into')));
 
 /* ---------- start ---------- */
 setInterval(() => { if (document.visibilityState === 'visible') { C = calc(S); snapshotIntraday(); if (ROUTE === 'kokpit' && RANGE === '1d') render(); } }, 15 * 60000);
