@@ -98,7 +98,7 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 </head>
 <body>
 <div class="app">
-  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 23:14</div></aside>
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 23:25</div></aside>
   <main>
     <div class="top">
       <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
@@ -1305,7 +1305,7 @@ function renderNav() {
     <div class="nav-h">Analizy</div>${it('waluta', '¤', 'Wpływ waluty')}${it('porownanie', '⚖', 'Porównanie strategii')}${it('koszty', '−', 'Koszty i podatki')}${it('dochod', '◎', 'Dochód pasywny')}${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}
     <div class="nav-h">Planowanie</div>${it('symulator', '➚', 'Symulator przyszłości')}${it('fire', '🔥', 'FIRE – ile brakuje')}${it('mapa', '▦', 'Mapa portfela')}${it('alerty', '🔔', 'Alerty' + (() => { const n = C ? alertyAktywne().filter(x => x.e.stan === 'osiągnięty' || x.e.stan === 'blisko').length : 0; return n ? ` (${n})` : ''; })())}
     <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◈', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}
-    <div class="nav-h">Konfiguracja</div>${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('import', '⤓', 'Import z XTB')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`;
+    <div class="nav-h">Konfiguracja</div>${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('import', '⤓', 'Import')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`;
 }
 function toggleNav(id) { CFG.navClosed = CFG.navClosed || {}; CFG.navClosed[id] = !CFG.navClosed[id]; saveCfg(); renderNav(); }
 const KICON = { 'Opodatkowane': '▣', 'IKE': '◈', 'IKZE': '◈', 'Poza PIT-38': '◇' };
@@ -1636,7 +1636,7 @@ function vTransakcje() {
   const sel = (key, label, opts) => `<select onchange="FILT.tx.${key}=this.value;render()"><option value="">${label}</option>${opts.map(o => `<option ${f[key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   return ['Transakcje', `${rows.length} z ${S.transakcje.length}`, `
     <div class="filters">${sel('s', 'Wszystkie strategie', S.strategie.map(s => s.nazwa))}${sel('t', 'Kupno i sprzedaż', ['KUPNO', 'SPRZEDAŻ'])}${sel('r', 'Wszystkie lata', lata)}</div>
-    <div class="card">${table(txCols(), rows, { empty: 'Brak transakcji – kliknij „＋ Transakcja”', click: t => `editTransakcja('${t.id}')` })}</div>`, `<label class="btn ghost" style="cursor:pointer" title="Plik CSV: Data; Konto; Strategia; Typ; Ticker; Nazwa; Klasa; Waluta; Symbol; Ilość; Cena; Prowizja; Kurs; Notatka">⤓ Import CSV<input type="file" accept=".csv,.txt" style="display:none" onchange="importTxCSV(this.files[0]);this.value=''"></label><button class="btn ghost" onclick="go('import')">⤓ Import z XTB</button><button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`];
+    <div class="card">${table(txCols(), rows, { empty: 'Brak transakcji – kliknij „＋ Transakcja”', click: t => `editTransakcja('${t.id}')` })}</div>`, `<button class="btn ghost" onclick="go('import')">⤓ Import</button><button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`];
 }
 
 function vDywidendy() {
@@ -1801,7 +1801,7 @@ function vUstawienia() {
     </div>
     <div class="card" style="margin-top:16px"><h3>Kopia zapasowa</h3>
       <div class="row"><button class="btn ghost" onclick="exportJSON()">⬇ Eksport (plik JSON)</button><button class="btn ghost" onclick="exportCSV()">⬇ Transakcje do Excela (CSV)</button>
-      <label class="btn ghost" style="cursor:pointer">⬆ Import transakcji (CSV)<input type="file" accept=".csv,.txt" style="display:none" onchange="importTxCSV(this.files[0]);this.value=''"></label>
+      <button class="btn ghost" onclick="FILT.impTab='csv';go('import')">⬆ Import transakcji (CSV)</button>
       <label class="btn ghost" style="cursor:pointer">⬆ Import z pliku<input type="file" accept=".json" style="display:none" onchange="importJSON(this.files[0])"></label>
       <span class="sp" style="flex:1"></span><button class="btn danger" onclick="resetAll()">Wyczyść dane w przeglądarce</button></div></div>
     <div class="card" style="margin-top:16px"><h3>Tryb demonstracyjny</h3>
@@ -2062,41 +2062,85 @@ function importJSON(file) {
     catch (e) { toast('To nie jest plik eksportu Portfela'); } };
   r.readAsText(file);
 }
-/* import transakcji z CSV (własny plik albo eksport z aplikacji); brakujące instrumenty i strategie są zakładane */
+/* ===================== IMPORT: zakładki XTB / inny plik ===================== */
+function vImport() {
+  const tab = FILT.impTab || 'xtb';
+  const seg = `<div class="seg" style="margin-bottom:16px">${[['xtb', 'XTB (wyciąg operacji gotówkowych)'], ['csv', 'Inny plik (CSV)']].map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" onclick="FILT.impTab='${k}';render()">${l}</button>`).join('')}</div>`;
+  const [, sub, html, act] = tab === 'csv' ? vImportCsv() : vImportXtb();
+  return ['Import', sub, seg + html, act];
+}
+/* import transakcji z CSV (własny plik albo eksport z aplikacji); wybierasz konto i strategię, brakujące instrumenty są zakładane */
+let CIMP = null;   // { konto, strategia ('' = z pliku), plik, tx, blad }
 const TXCSV = { data: /^data$/i, konto: /^konto$/i, strategia: /^strategia$/i, typ: /^typ$/i, ticker: /^ticker$/i, nazwa: /^nazwa$/i, klasa: /^klasa$/i,
   waluta: /^waluta$/i, symbol: /^symbol/i, ilosc: /^ilo[śs][ćc]/i, cena: /^cena/i, prowizja: /^prowizja/i, kurs: /^kurs/i, notatka: /^notatka/i };
-async function importTxCSV(file) {
-  if (!file) return;
-  try {
-    const rows = readCsv(await file.text()).CSV.filter(r => r.some(c => String(c).trim()));
-    const head = (rows[0] || []).map(c => String(c).trim()), ci = {}; Object.entries(TXCSV).forEach(([k, re]) => ci[k] = head.findIndex(h => re.test(h)));
-    if (ci.data < 0 || ci.ticker < 0 || ci.ilosc < 0 || ci.cena < 0) throw new Error('brak kolumn Data / Ticker / Ilość / Cena');
-    const g = (r, k) => ci[k] >= 0 ? String(r[ci[k]] ?? '').trim() : '';
-    const tx = rows.slice(1).map(r => ({ data: xtbDate(g(r, 'data')), konto: g(r, 'konto'), strategia: g(r, 'strategia'), typ: /sprz/i.test(g(r, 'typ')) ? 'SPRZEDAŻ' : 'KUPNO',
-      ticker: g(r, 'ticker'), nazwa: g(r, 'nazwa'), klasa: g(r, 'klasa'), waluta: g(r, 'waluta').toUpperCase(), symbol: g(r, 'symbol'),
-      ilosc: num(g(r, 'ilosc')), cena: num(g(r, 'cena')), prowizja: g(r, 'prowizja') ? num(g(r, 'prowizja')) : '', kurs: g(r, 'kurs') ? num(g(r, 'kurs')) : '', notatka: g(r, 'notatka') }))
-      .filter(t => t.data && t.ticker && t.ilosc > 0);
-    if (!tx.length) throw new Error('nie znaleziono transakcji');
-    const jest = t => S.transakcje.some(x => x.data === t.data && x.ticker === t.ticker && x.typ === t.typ && Math.abs(num(x.ilosc) - t.ilosc) < 1e-9 && Math.abs(num(x.cena) - t.cena) < 1e-6);
-    const nowe = tx.filter(t => !jest(t)), dupl = tx.length - nowe.length;
-    const nInstr = [...new Set(nowe.map(t => t.ticker))].filter(t => !S.instrumenty.some(i => i.ticker === t));
-    const nStrat = [...new Set(nowe.map(t => t.strategia).filter(Boolean))].filter(s => !S.strategie.some(x => x.nazwa === s));
-    if (!nowe.length) return toast(`Wszystkie ${tx.length} transakcje już są w aplikacji`);
-    if (!confirm(`Zaimportować ${nowe.length} transakcji${dupl ? ` (${dupl} już jest – pominę)` : ''}?` + (nInstr.length ? `\n\nNowe instrumenty: ${nInstr.join(', ')}` : '') + (nStrat.length ? `\nNowe strategie: ${nStrat.join(', ')}` : ''))) return;
-    toast('Importuję…');
-    nInstr.forEach(tk => { const t = nowe.find(x => x.ticker === tk);
-      S.instrumenty.push({ id: uid(), ticker: tk, nazwa: t.nazwa || tk, klasa: KLASY.includes(t.klasa) ? t.klasa : 'Inne', waluta: t.waluta || 'PLN', cena: '', dataCeny: '', symbol: t.symbol, cenaAuto: '' }); });
-    nStrat.forEach(sn => { const t = nowe.find(x => x.strategia === sn), k = S.konta.find(x => x.nazwa === t.konto) || S.konta[0];
-      S.strategie.push({ id: uid(), nazwa: sn, konto: k ? k.nazwa : '', kapital: '', opis: '', kolor: PAL[S.strategie.length % PAL.length] }); });
-    for (const t of nowe) {
-      let st = t.strategia || ((S.strategie.find(s => s.konto === t.konto) || S.strategie[0] || {}).nazwa || '');
-      const cur = (S.instrumenty.find(i => i.ticker === t.ticker) || {}).waluta || 'PLN';
-      let kurs = t.kurs; if (cur !== 'PLN' && kurs === '') { try { kurs = await nbpRate(cur, t.data); } catch (e) { kurs = ''; } }
-      S.transakcje.push({ id: uid(), data: t.data, strategia: st, typ: t.typ, ticker: t.ticker, ilosc: t.ilosc, cena: t.cena, prowizja: t.prowizja, kurs: cur === 'PLN' ? '' : kurs, notatka: t.notatka, zakup: '' });
-    }
-    changed('instrumenty', 'strategie', 'transakcje'); render();
-    toast(`Zaimportowano ${nowe.length} transakcji${nInstr.length ? ` · nowe instrumenty: ${nInstr.length}` : ''}${nStrat.length ? ` · nowe strategie: ${nStrat.length}` : ''}`);
-  } catch (e) { toast('Import CSV: ' + e.message); }
+function txcsvParse(text) {
+  const rows = readCsv(text).CSV.filter(r => r.some(c => String(c).trim()));
+  const head = (rows[0] || []).map(c => String(c).trim()), ci = {}; Object.entries(TXCSV).forEach(([k, re]) => ci[k] = head.findIndex(h => re.test(h)));
+  if (ci.data < 0 || ci.ticker < 0 || ci.ilosc < 0 || ci.cena < 0) throw new Error('w pierwszym wierszu brakuje kolumn Data / Ticker / Ilość / Cena');
+  const g = (r, k) => ci[k] >= 0 ? String(r[ci[k]] ?? '').trim() : '';
+  const tx = rows.slice(1).map(r => ({ data: xtbDate(g(r, 'data')), strategiaPlik: g(r, 'strategia'), typ: /sprz/i.test(g(r, 'typ')) ? 'SPRZEDAŻ' : 'KUPNO',
+    ticker: g(r, 'ticker'), nazwa: g(r, 'nazwa'), klasa: g(r, 'klasa'), waluta: g(r, 'waluta').toUpperCase(), symbol: g(r, 'symbol'),
+    ilosc: num(g(r, 'ilosc')), cena: num(g(r, 'cena')), prowizja: g(r, 'prowizja') ? num(g(r, 'prowizja')) : '', kurs: g(r, 'kurs') ? num(g(r, 'kurs')) : '', notatka: g(r, 'notatka'), wybrane: true }))
+    .filter(t => t.data && t.ticker && t.ilosc > 0);
+  if (!tx.length) throw new Error('nie znaleziono transakcji (wiersze z datą, tickerem i ilością)');
+  return tx;
+}
+const txcsvJest = t => S.transakcje.some(x => x.data === t.data && x.ticker === t.ticker && x.typ === t.typ && Math.abs(num(x.ilosc) - t.ilosc) < 1e-9 && Math.abs(num(x.cena) - t.cena) < 1e-6);
+async function txcsvWczytaj(file) {
+  if (!file) return; CIMP.plik = file.name; CIMP.blad = ''; CIMP.tx = null;
+  try { CIMP.tx = txcsvParse(await file.text()); CIMP.tx.forEach(t => { if (txcsvJest(t)) t.wybrane = false; });
+    const zPliku = [...new Set(CIMP.tx.map(t => t.strategiaPlik).filter(Boolean))];
+    if (zPliku.length) CIMP.strategia = '';   // plik ma strategie – domyślnie użyj ich
+  } catch (e) { CIMP.blad = e.message; }
+  render();
+}
+function vImportCsv() {
+  const konta = S.konta;
+  if (!CIMP) CIMP = { konto: (konta[0] || {}).nazwa || '', strategia: null };
+  const strat = S.strategie.filter(s => s.konto === CIMP.konto);
+  if (CIMP.strategia === null || (CIMP.strategia && !strat.some(s => s.nazwa === CIMP.strategia))) CIMP.strategia = (strat[0] || {}).nazwa || '';
+  const tx = CIMP.tx || [], maPlikStrat = tx.some(t => t.strategiaPlik);
+  const stratOf = t => CIMP.strategia || t.strategiaPlik || (strat[0] || {}).nazwa || 'Import';
+  const stratOpts = strat.map(s => [s.nazwa, s.nazwa]).concat([['', maPlikStrat ? 'z pliku (kolumna Strategia) – brakujące zostaną założone na tym koncie' : 'nowa strategia „Import” na tym koncie']]);
+  const step1 = `<div class="card"><h3>1. Konto, strategia i plik</h3>
+    <div class="form" style="grid-template-columns:1fr 1fr 1fr">
+      <label>Konto, na które wgrywasz<select onchange="CIMP.konto=this.value;CIMP.strategia=null;render()">${konta.map(k => `<option ${k.nazwa === CIMP.konto ? 'selected' : ''}>${esc(k.nazwa)}</option>`).join('')}</select>
+        <span class="help">Waluta konta: ${esc((konta.find(k => k.nazwa === CIMP.konto) || {}).waluta || '–')} · <a onclick="editKonto()">＋ nowe konto</a></span></label>
+      <label>Strategia<select onchange="CIMP.strategia=this.value;render()">${stratOpts.map(([v, l]) => `<option value="${esc(v)}" ${v === CIMP.strategia ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+        <span class="help"><a onclick="editStrategia(null,'${esc(CIMP.konto)}')">＋ nowa strategia</a></span></label>
+      <label>Plik CSV<input type="file" accept=".csv,.txt" onchange="txcsvWczytaj(this.files[0]);this.value=''"><span class="help">${CIMP.plik ? '✓ ' + esc(CIMP.plik) : 'Czytany tylko w Twojej przeglądarce'}</span></label></div>
+    ${CIMP.blad ? `<div class="warn" style="margin-top:8px">${esc(CIMP.blad)}</div>` : ''}
+    <div class="mut" style="font-size:12px;margin-top:8px">Kolumny (pierwszy wiersz, kolejność dowolna, separator ; lub ,): <b>Data; Ticker; Ilość; Cena</b> – wymagane · Typ (KUPNO/SPRZEDAŻ, domyślnie KUPNO); Nazwa; Klasa; Waluta; Symbol – do założenia nowego instrumentu · Prowizja; Kurs (puste = NBP z dnia przed transakcją); Strategia; Notatka. Pasuje też plik z „Transakcje do Excela (CSV)”.</div></div>`;
+  if (!tx.length) return ['Import', 'Transakcje z dowolnego pliku CSV', step1, ' '];
+  const wyb = tx.filter(t => t.wybrane), nInstr = [...new Set(wyb.map(t => t.ticker))].filter(tk => !S.instrumenty.some(i => i.ticker === tk));
+  const nStrat = [...new Set(wyb.map(stratOf))].filter(sn => !S.strategie.some(s => s.nazwa === sn));
+  const tbl = table([
+    { h: `<input type="checkbox" ${tx.every(t => t.wybrane) ? 'checked' : ''} onchange="CIMP.tx.forEach(t=>t.wybrane=this.checked);render()">`, f: t => `<input type="checkbox" ${t.wybrane ? 'checked' : ''} onchange="CIMP.tx[${tx.indexOf(t)}].wybrane=this.checked;render()">` },
+    { h: 'Data', f: t => esc(t.data) }, { h: 'Typ', f: t => esc(t.typ) }, { h: 'Instrument', f: t => `<b>${esc(t.ticker)}</b> <span class="mut" style="font-size:12px">${esc(t.nazwa)}</span>${nInstr.includes(t.ticker) ? ' <span class="tag">nowy</span>' : ''}` },
+    { h: 'Strategia', f: t => esc(stratOf(t)) }, { h: 'Ilość', n: 1, f: t => nfq.format(t.ilosc) }, { h: 'Cena', n: 1, f: t => nf2.format(t.cena) + ' ' + esc(t.waluta || (S.instrumenty.find(i => i.ticker === t.ticker) || {}).waluta || '') },
+    { h: 'Kurs', n: 1, f: t => t.kurs === '' ? '<span class="mut">NBP</span>' : String(t.kurs).replace('.', ',') }, { h: 'Notatka', f: t => esc(t.notatka) },
+    { h: 'Status', f: t => txcsvJest(t) ? '<span class="mut">już jest</span>' : '<span class="pos">nowa</span>' },
+  ], tx);
+  const step2 = `<div class="card" style="margin-top:16px"><h3>2. Transakcje <small>${wyb.length} wybranych z ${tx.length}</small><span class="sp"></span>
+      <button class="btn ghost sm" onclick="CIMP=null;render()">Anuluj</button><button class="btn" ${wyb.length && CIMP.konto ? '' : 'disabled'} onclick="txcsvImportuj()">Importuj ${wyb.length} transakcji na ${esc(CIMP.konto)}</button></h3>
+    ${nInstr.length || nStrat.length ? `<div class="alert info">${nInstr.length ? `Nowe instrumenty: <b>${nInstr.map(esc).join(', ')}</b>. ` : ''}${nStrat.length ? `Nowe strategie na koncie ${esc(CIMP.konto)}: <b>${nStrat.map(esc).join(', ')}</b>.` : ''}</div>` : ''}${tbl}</div>`;
+  return ['Import', 'Transakcje z dowolnego pliku CSV', step1 + step2, ' '];
+}
+async function txcsvImportuj() {
+  const strat = S.strategie.filter(s => s.konto === CIMP.konto), stratOf = t => CIMP.strategia || t.strategiaPlik || (strat[0] || {}).nazwa || 'Import';
+  const wyb = CIMP.tx.filter(t => t.wybrane && !txcsvJest(t)); if (!wyb.length) return toast('Nic nowego do zaimportowania');
+  toast('Importuję…');
+  let ni = 0, ns = 0;
+  wyb.forEach(t => { if (!S.instrumenty.some(i => i.ticker === t.ticker)) { ni++;
+    S.instrumenty.push({ id: uid(), ticker: t.ticker, nazwa: t.nazwa || t.ticker, klasa: KLASY.includes(t.klasa) ? t.klasa : 'Inne', waluta: t.waluta || 'PLN', cena: '', dataCeny: '', symbol: t.symbol, cenaAuto: '' }); }
+    const sn = stratOf(t); if (!S.strategie.some(s => s.nazwa === sn)) { ns++; S.strategie.push({ id: uid(), nazwa: sn, konto: CIMP.konto, kapital: '', opis: '', kolor: PAL[S.strategie.length % PAL.length] }); } });
+  for (const t of wyb) {
+    const cur = (S.instrumenty.find(i => i.ticker === t.ticker) || {}).waluta || 'PLN';
+    let kurs = t.kurs; if (cur !== 'PLN' && kurs === '') { try { kurs = await nbpRate(cur, t.data); } catch (e) { kurs = ''; } }
+    S.transakcje.push({ id: uid(), data: t.data, strategia: stratOf(t), typ: t.typ, ticker: t.ticker, ilosc: t.ilosc, cena: t.cena, prowizja: t.prowizja, kurs: cur === 'PLN' ? '' : kurs, notatka: t.notatka, zakup: '' });
+  }
+  changed('instrumenty', 'strategie', 'transakcje'); const k = CIMP.konto; CIMP = null; render();
+  toast(`Zaimportowano ${wyb.length} transakcji na ${k}${ni ? ` · nowe instrumenty: ${ni}` : ''}${ns ? ` · nowe strategie: ${ns}` : ''}`);
 }
 function resetAll() { if (!confirm('Usunąć wszystkie dane z tej przeglądarki? (arkusz Google zostaje bez zmian)')) return; S = defaultState(); DIRTY = new Set(); saveLocal(); render(); }
 
@@ -2531,7 +2575,7 @@ function xtbIstnieje(id) {
 }
 
 /* --- widok --- */
-function vImport() {
+function vImportXtb() {
   const konta = S.konta;
   if (!IMP) IMP = { konto: (konta.find(k => /xtb/i.test(k.nazwa)) || konta[0] || {}).nazwa || '' };
   const step1 = `<div class="card"><h3>1. Wybierz konto i plik</h3>

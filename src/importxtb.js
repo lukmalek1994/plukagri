@@ -162,7 +162,7 @@ function xtbIstnieje(id) {
 }
 
 /* --- widok --- */
-function vImport() {
+function vImportXtb() {
   const konta = S.konta;
   if (!IMP) IMP = { konto: (konta.find(k => /xtb/i.test(k.nazwa)) || konta[0] || {}).nazwa || '' };
   const step1 = `<div class="card"><h3>1. Wybierz konto i plik</h3>
