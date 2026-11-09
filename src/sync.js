@@ -17,12 +17,14 @@ const TABLES = {
 };
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-let S = lsGet(LS_DATA, null) || defaultState();
 let CFG = Object.assign({ clientId: '', sheetId: '', sheetUrl: '', strataPrev: {}, kryptoPrev: {} }, lsGet(LS_CFG, {}));
-let DIRTY = new Set(lsGet(LS_DIRTY, []));
+const LS_DEMO = 'portfel_demo_v1';
+const dataKey = () => CFG.demo ? LS_DEMO : LS_DATA, dirtyKey = () => CFG.demo ? 'portfel_demo_dirty_v1' : LS_DIRTY;
+let S = lsGet(dataKey(), null) || defaultState();
+let DIRTY = new Set(lsGet(dirtyKey(), []));
 const SYNC = { token: null, exp: 0, state: 'local', msg: 'Dane tylko w tej przeglądarce', busy: false, timer: null, gisReady: false };
 
-function saveLocal() { lsSet(LS_DATA, S); lsSet(LS_DIRTY, [...DIRTY]); }
+function saveLocal() { lsSet(dataKey(), S); lsSet(dirtyKey(), [...DIRTY]); }
 function saveCfg() { lsSet(LS_CFG, CFG); }
 function changed(...tables) { tables.forEach(t => DIRTY.add(t)); saveLocal(); scheduleSync(); }
 
@@ -143,6 +145,7 @@ async function afterLogin() {
   setTimeout(() => refreshAutoPrices().catch(() => {}), 5000);   // ceny z GOOGLEFINANCE liczą się kilka sekund
 }
 async function pullAll() {
+  if (CFG.demo) return;
   const names = Object.keys(TABLES).filter(n => !DIRTY.has(n));   // lokalne niezapisane zmiany mają pierwszeństwo
   if (!names.length) return;
   const q = names.map(n => 'ranges=' + encodeURIComponent(`'${TABLES[n].sheet}'!A1:Z5000`)).join('&');
@@ -163,6 +166,7 @@ async function pullAll() {
   if (any && typeof render === 'function') render();
 }
 async function pushDirty() {
+  if (CFG.demo) return;
   if (!CFG.sheetId || !DIRTY.size) { setSync('ok', 'Zapisano w Google Sheets ✓'); return; }
   if (SYNC.busy) return; SYNC.busy = true;
   const names = [...DIRTY];
@@ -186,12 +190,14 @@ async function pushDirty() {
   } finally { SYNC.busy = false; }
 }
 function scheduleSync() {
+  if (CFG.demo) { setSync('local', 'Tryb demo – nic nie zapisuje się w arkuszu'); return; }
   if (!CFG.sheetId || !CFG.connected) { setSync('local', DIRTY.size && CFG.sheetId ? `${DIRTY.size} tabel czeka na wysłanie – połącz z Google` : 'Dane tylko w tej przeglądarce'); return; }
   clearTimeout(SYNC.timer);
   setSync('pending', 'Zmiany czekają na zapis…');
   SYNC.timer = setTimeout(async () => { if (await ensureToken()) pushDirty(); else setSync('pending', `Kliknij tutaj, aby zapisać zmiany w Google Sheets`); }, 1500);
 }
 async function syncNow() {
+  if (CFG.demo) { toast('Tryb demo – wyjdź z niego, aby synchronizować z arkuszem'); return; }
   if (!CFG.clientId) { go('ustawienia'); return; }
   if (!SYNC.token || Date.now() > SYNC.exp) { await googleConnect(true); return; }
   try { setSync('busy', 'Synchronizacja…'); await pushDirty(); await pullAll(); await refreshAutoPrices(); setSync('ok', 'Zsynchronizowano ✓'); }
@@ -221,6 +227,7 @@ function summarySig() {
   return JSON.stringify([pairs, S.strategie.map(s => s.nazwa), S.konta.map(k => k.nazwa), S.instrumenty.map(i => i.ticker), S.cele.map(c => [c.konto, c.koszyk, c.tickery, c.cel]), 4]);
 }
 async function buildSummary(force) {
+  if (CFG.demo) throw new Error('W trybie demo arkusz nie jest zmieniany');
   if (!CFG.sheetId || !SYNC.token) return;
   const sig = summarySig(); if (!force && CFG.sumSig && CFG.sumSig[CFG.sheetId] === sig) return;
   const SEP = await detectSep();

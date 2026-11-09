@@ -94,7 +94,7 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 </head>
 <body>
 <div class="app">
-  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 19:43</div></aside>
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 19:49</div></aside>
   <main>
     <div class="top">
       <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
@@ -439,12 +439,14 @@ const TABLES = {
 };
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-let S = lsGet(LS_DATA, null) || defaultState();
 let CFG = Object.assign({ clientId: '', sheetId: '', sheetUrl: '', strataPrev: {}, kryptoPrev: {} }, lsGet(LS_CFG, {}));
-let DIRTY = new Set(lsGet(LS_DIRTY, []));
+const LS_DEMO = 'portfel_demo_v1';
+const dataKey = () => CFG.demo ? LS_DEMO : LS_DATA, dirtyKey = () => CFG.demo ? 'portfel_demo_dirty_v1' : LS_DIRTY;
+let S = lsGet(dataKey(), null) || defaultState();
+let DIRTY = new Set(lsGet(dirtyKey(), []));
 const SYNC = { token: null, exp: 0, state: 'local', msg: 'Dane tylko w tej przeglądarce', busy: false, timer: null, gisReady: false };
 
-function saveLocal() { lsSet(LS_DATA, S); lsSet(LS_DIRTY, [...DIRTY]); }
+function saveLocal() { lsSet(dataKey(), S); lsSet(dirtyKey(), [...DIRTY]); }
 function saveCfg() { lsSet(LS_CFG, CFG); }
 function changed(...tables) { tables.forEach(t => DIRTY.add(t)); saveLocal(); scheduleSync(); }
 
@@ -565,6 +567,7 @@ async function afterLogin() {
   setTimeout(() => refreshAutoPrices().catch(() => {}), 5000);   // ceny z GOOGLEFINANCE liczą się kilka sekund
 }
 async function pullAll() {
+  if (CFG.demo) return;
   const names = Object.keys(TABLES).filter(n => !DIRTY.has(n));   // lokalne niezapisane zmiany mają pierwszeństwo
   if (!names.length) return;
   const q = names.map(n => 'ranges=' + encodeURIComponent(`'${TABLES[n].sheet}'!A1:Z5000`)).join('&');
@@ -585,6 +588,7 @@ async function pullAll() {
   if (any && typeof render === 'function') render();
 }
 async function pushDirty() {
+  if (CFG.demo) return;
   if (!CFG.sheetId || !DIRTY.size) { setSync('ok', 'Zapisano w Google Sheets ✓'); return; }
   if (SYNC.busy) return; SYNC.busy = true;
   const names = [...DIRTY];
@@ -608,12 +612,14 @@ async function pushDirty() {
   } finally { SYNC.busy = false; }
 }
 function scheduleSync() {
+  if (CFG.demo) { setSync('local', 'Tryb demo – nic nie zapisuje się w arkuszu'); return; }
   if (!CFG.sheetId || !CFG.connected) { setSync('local', DIRTY.size && CFG.sheetId ? `${DIRTY.size} tabel czeka na wysłanie – połącz z Google` : 'Dane tylko w tej przeglądarce'); return; }
   clearTimeout(SYNC.timer);
   setSync('pending', 'Zmiany czekają na zapis…');
   SYNC.timer = setTimeout(async () => { if (await ensureToken()) pushDirty(); else setSync('pending', `Kliknij tutaj, aby zapisać zmiany w Google Sheets`); }, 1500);
 }
 async function syncNow() {
+  if (CFG.demo) { toast('Tryb demo – wyjdź z niego, aby synchronizować z arkuszem'); return; }
   if (!CFG.clientId) { go('ustawienia'); return; }
   if (!SYNC.token || Date.now() > SYNC.exp) { await googleConnect(true); return; }
   try { setSync('busy', 'Synchronizacja…'); await pushDirty(); await pullAll(); await refreshAutoPrices(); setSync('ok', 'Zsynchronizowano ✓'); }
@@ -643,6 +649,7 @@ function summarySig() {
   return JSON.stringify([pairs, S.strategie.map(s => s.nazwa), S.konta.map(k => k.nazwa), S.instrumenty.map(i => i.ticker), S.cele.map(c => [c.konto, c.koszyk, c.tickery, c.cel]), 4]);
 }
 async function buildSummary(force) {
+  if (CFG.demo) throw new Error('W trybie demo arkusz nie jest zmieniany');
   if (!CFG.sheetId || !SYNC.token) return;
   const sig = summarySig(); if (!force && CFG.sumSig && CFG.sumSig[CFG.sheetId] === sig) return;
   const SEP = await detectSep();
@@ -884,7 +891,8 @@ let C = null, ROUTE = 'kokpit', PARAM = '', RANGE = 'all', FILT = {};
 function toast(msg) { let t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), 2600); }
 
 /* ---------- historia: dzienny zapis wartości ---------- */
-const LS_INTRA = 'portfel_intraday_v1';
+const LS_INTRA_REAL = 'portfel_intraday_v1';
+let LS_INTRA = CFG.demo ? 'portfel_intraday_demo' : LS_INTRA_REAL;
 function snapshotIntraday() {
   if (!C || C.wartosc <= 0) return;
   const arr = lsGet(LS_INTRA, []), now = new Date(), last = arr[arr.length - 1];
@@ -944,7 +952,7 @@ function render() {
   const [title, sub, body, actions] = V();
   $('#title').innerHTML = `${esc(title)}<small>${sub || ''}</small>`;
   $('#topActions').innerHTML = actions || `<button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`;
-  $('#view').innerHTML = body;
+  $('#view').innerHTML = demoBanner() + body;
 }
 
 /* ---------- elementy ---------- */
@@ -1031,7 +1039,7 @@ function vKokpit() {
     { h: 'Zysk', n: 1, f: p => pl(p.zyskPLN) }, { h: '%', n: 1, f: p => pp(p.kosztPLN ? p.zyskPLN / p.kosztPLN : 0) },
   ], top, { empty: 'Brak otwartych pozycji', click: p => `go('portfel')` });
   const sub = `Stan na ${new Date().toLocaleDateString('pl-PL')}${kursUsd ? ' · USD/PLN ' + kursUsd.toFixed(4).replace('.', ',') : ''}${S.ustawienia.kursyData ? ' (NBP ' + S.ustawienia.kursyData + ')' : ''}`;
-  const intro = !S.transakcje.length ? `<div class="alert info">👋 Zacznij od <a onclick="go('ustawienia')">Ustawień</a> (konta, połączenie z Google), potem dodaj <a onclick="editTransakcja()">pierwszą transakcję</a>. Ceny aktualizujesz w <a onclick="go('instrumenty')">Instrumentach</a>.</div>` : '';
+  const intro = !S.transakcje.length && !CFG.demo ? `<div class="alert info">👋 Chcesz najpierw zobaczyć, jak to wygląda? <a onclick="wejdzDemo()"><b>Wczytaj przykładowy portfel</b></a> (Twoje dane wrócą jednym kliknięciem).<br>Albo zacznij od <a onclick="go('ustawienia')">Ustawień</a> (konta, połączenie z Google), potem dodaj <a onclick="editTransakcja()">pierwszą transakcję</a>. Ceny aktualizujesz w <a onclick="go('instrumenty')">Instrumentach</a>.</div>` : '';
   return ['Kokpit', sub, intro + warningsBox() + kp + `
     <div class="grid g2"><div class="card"><h3>Wartość portfela w czasie<span class="sp"></span>${rangeSeg()}</h3>${line}</div>
       <div class="card"><h3>Struktura – klasy aktywów</h3>${klasy}</div></div>
@@ -1323,7 +1331,10 @@ function vUstawienia() {
     <div class="card" style="margin-top:16px"><h3>Kopia zapasowa</h3>
       <div class="row"><button class="btn ghost" onclick="exportJSON()">⬇ Eksport (plik JSON)</button><button class="btn ghost" onclick="exportCSV()">⬇ Transakcje do Excela (CSV)</button>
       <label class="btn ghost" style="cursor:pointer">⬆ Import z pliku<input type="file" accept=".json" style="display:none" onchange="importJSON(this.files[0])"></label>
-      <span class="sp" style="flex:1"></span><button class="btn danger" onclick="resetAll()">Wyczyść dane w przeglądarce</button></div></div>`, ' '];
+      <span class="sp" style="flex:1"></span><button class="btn danger" onclick="resetAll()">Wyczyść dane w przeglądarce</button></div></div>
+    <div class="card" style="margin-top:16px"><h3>Tryb demonstracyjny</h3>
+      <p class="mut" style="margin-top:0">Wczytaj przykładowy portfel (7 strategii na 6 kontach, transakcje, dywidendy, wpłaty, historia, portfele docelowe dla kilku kont), żeby zobaczyć, jak działa aplikacja. Twoje dane zostają odłożone i wracają jednym kliknięciem. W trybie demo nic nie zapisuje się w arkuszu Google.</p>
+      ${CFG.demo ? '<button class="btn" onclick="wyjdzDemo()">↩ Wróć do moich danych</button>' : '<button class="btn" onclick="wejdzDemo()">🧪 Wczytaj przykładowy portfel</button>'}</div>`, ' '];
 }
 
 /* ===================== FORMULARZE ===================== */
@@ -1587,6 +1598,74 @@ document.addEventListener('drop', e => { const el = dropTarget(e); if (!el) retu
   changed(list); DRAG = null; render(); toast(msg); });
 document.addEventListener('dragend', () => document.querySelectorAll('.drop-into').forEach(x => x.classList.remove('drop-into')));
 
+/* ---------- tryb demonstracyjny ---------- */
+function demoState() {
+  const S2 = defaultState();
+  S2.ustawienia.kursy = { USD: num(S.ustawienia.kursy.USD) || 3.95, EUR: num(S.ustawienia.kursy.EUR) || 4.27, GBP: num(S.ustawienia.kursy.GBP) || 5.05, CHF: num(S.ustawienia.kursy.CHF) || 4.55 };
+  S2.ustawienia.kursyData = S.ustawienia.kursyData || todayStr();
+  S2.inflacja = JSON.parse(JSON.stringify(S.inflacja || []));
+  const P = { CSPX: 735, IWDA: 128, IB01: 121, 'ZŁOTO': 2650, SREBRO: 31, BTC: 91000 };
+  S2.instrumenty.forEach(i => i.cena = P[i.ticker]);
+  S2.instrumenty.push({ id: 'i7', ticker: 'GOOGL', nazwa: 'Alphabet Inc. A', klasa: 'Akcje/ETF', waluta: 'USD', cena: 285, symbol: 'NASDAQ:GOOGL', cenaAuto: '' },
+    { id: 'i8', ticker: 'PKN', nazwa: 'Orlen S.A.', klasa: 'Akcje/ETF', waluta: 'PLN', cena: 78.4, symbol: 'WSE:PKN', cenaAuto: '' },
+    { id: 'i9', ticker: 'EDO1135', nazwa: 'Obligacje 10-letnie EDO', klasa: 'Obligacje', waluta: 'PLN', cena: 104.2, symbol: '', cenaAuto: '' });
+  S2.strategie = [
+    { id: 's1', nazwa: 'Długi termin', konto: 'XTB USD', kapital: '', opis: 'ETF-y na lata, dokupowane co miesiąc', kolor: '#1565C0' },
+    { id: 's2', nazwa: 'Dywidendowa', konto: 'XTB USD', kapital: 1500, opis: 'Spółki wypłacające dywidendy', kolor: '#26A69A' },
+    { id: 's6', nazwa: 'GPW', konto: 'XTB PLN', kapital: '', opis: 'Polskie spółki', kolor: '#8D6E63' },
+    { id: 's3', nazwa: 'IKE', konto: 'XTB IKE', kapital: '', opis: 'ETF na emeryturę', kolor: '#7E57C2' },
+    { id: 's4', nazwa: 'Metale', konto: 'Sejf', kapital: '', opis: 'Kruszce fizyczne', kolor: '#F9A825' },
+    { id: 's7', nazwa: 'Obligacje', konto: 'Obligacje skarbowe', kapital: '', opis: 'EDO', kolor: '#78909C' },
+    { id: 's5', nazwa: 'Krypto', konto: 'Krypto', kapital: '', opis: '', kolor: '#EF5350' }];
+  const T = (d, s, typ, t, q, p, k, f = 0) => ({ id: uid(), data: d, strategia: s, typ, ticker: t, ilosc: q, cena: p, prowizja: f, kurs: k, notatka: '' });
+  S2.transakcje = [T('2025-03-10', 'Długi termin', 'KUPNO', 'CSPX', 6, 560, 4.0), T('2025-06-12', 'Długi termin', 'KUPNO', 'IWDA', 20, 102, 3.75),
+    T('2025-09-15', 'Długi termin', 'KUPNO', 'CSPX', 4, 610, 3.65), T('2026-01-20', 'Długi termin', 'KUPNO', 'IB01', 40, 118, 3.62),
+    T('2026-02-05', 'Dywidendowa', 'KUPNO', 'GOOGL', 3, 190, 3.98), T('2026-06-01', 'Dywidendowa', 'SPRZEDAŻ', 'GOOGL', 1, 260, 3.74),
+    T('2026-03-02', 'GPW', 'KUPNO', 'PKN', 40, 61.5, ''), T('2026-01-02', 'IKE', 'KUPNO', 'IWDA', 8, 110, 4.0), T('2026-05-04', 'IKE', 'KUPNO', 'CSPX', 1, 640, 3.8),
+    T('2024-11-10', 'Metale', 'KUPNO', 'ZŁOTO', 1, 1760, 4.05), T('2024-12-02', 'Metale', 'KUPNO', 'SREBRO', 10, 30, 4.08),
+    T('2026-08-13', 'Obligacje', 'KUPNO', 'EDO1135', 20, 100, ''), T('2026-01-27', 'Krypto', 'KUPNO', 'BTC', 0.012, 95000, 3.55)];
+  S2.dywidendy = [{ id: 'd1', data: '2026-03-16', strategia: 'Dywidendowa', ticker: 'GOOGL', brutto: 0.6, podatek: 0.09, kurs: 3.9, notatka: '' },
+    { id: 'd2', data: '2026-06-16', strategia: 'Dywidendowa', ticker: 'GOOGL', brutto: 0.42, podatek: 0.06, kurs: 3.72, notatka: '' },
+    { id: 'd3', data: '2026-07-10', strategia: 'GPW', ticker: 'PKN', brutto: 168, podatek: 31.92, kurs: '', notatka: 'dywidenda Orlen' }];
+  S2.wplaty = [['2024-11-05', 'Sejf', 7130, ''], ['2024-12-01', 'Sejf', 1224, ''], ['2025-03-05', 'XTB USD', 13500, 3375], ['2025-06-10', 'XTB USD', 7700, 2053],
+    ['2025-09-10', 'XTB USD', 8950, 2452], ['2026-01-02', 'XTB IKE', 3520, ''], ['2026-05-01', 'XTB IKE', 700, ''], ['2026-01-15', 'XTB USD', 17200, 4751],
+    ['2026-01-25', 'Krypto', 4050, 1141], ['2026-02-01', 'XTB USD', 2300, 578], ['2026-03-01', 'XTB PLN', 2500, ''], ['2026-08-12', 'Obligacje skarbowe', 2000, '']]
+    .map(([d, k, v, w], i) => ({ id: 'w' + i, data: d, konto: k, kwotaPLN: v, kwotaWal: w, notatka: '' }));
+  S2.cele = S2.cele.concat([
+    { id: 'c10', konto: 'XTB USD', koszyk: 'CORE', tickery: 'CSPX,IWDA', grupa: 'Wzrost', cel: 75 },
+    { id: 'c11', konto: 'XTB USD', koszyk: 'Obligacje USA', tickery: 'IB01', grupa: 'Stabilizacja', cel: 20 },
+    { id: 'c12', konto: 'XTB USD', koszyk: 'Spółki', tickery: 'GOOGL', grupa: 'Satelita', cel: 5 },
+    { id: 'c13', konto: 'XTB IKE', koszyk: 'Świat', tickery: 'IWDA', grupa: '', cel: 60 },
+    { id: 'c14', konto: 'XTB IKE', koszyk: 'USA', tickery: 'CSPX', grupa: '', cel: 40 },
+    { id: 'c15', konto: 'Sejf', koszyk: 'Złoto', tickery: 'ZŁOTO', grupa: '', cel: 70 },
+    { id: 'c16', konto: 'Sejf', koszyk: 'Srebro', tickery: 'SREBRO', grupa: '', cel: 30 }]);
+  // historia wartości (symulacja)
+  let d = new Date('2024-11-10'), v = 7130, k = 7130; const dep = {}; S2.wplaty.forEach(w => dep[w.data] = (dep[w.data] || 0) + w.kwotaPLN);
+  S2.historia = [];
+  while (d < new Date(todayStr())) { const ds = d.toISOString().slice(0, 10); if (dep[ds] && ds !== '2024-11-05') { v += dep[ds]; k += dep[ds]; }
+    v *= 1 + (Math.sin(d.getTime() / 9e8) * 0.004 + 0.0007); S2.historia.push({ data: ds, wartosc: Math.round(v), kapital: k }); d.setDate(d.getDate() + 1); }
+  const teraz = calc(S2).wartosc, n = S2.historia.length, last = n ? S2.historia[n - 1].wartosc : 0;
+  if (n && last && teraz) S2.historia.forEach((h, i) => { h.wartosc = Math.round(h.wartosc * Math.pow(teraz / last, (i + 1) / n)); });
+  return S2;
+}
+function wejdzDemo() {
+  if (!confirm('Wczytać przykładowy portfel?\n\nTwoje dane zostaną odłożone i wrócą po kliknięciu „Wróć do moich danych”. W trybie demo nic nie zapisuje się w arkuszu Google.')) return;
+  saveLocal(); lsSet('portfel_real_backup_v1', S);
+  CFG.demo = true; saveCfg(); LS_INTRA = 'portfel_intraday_demo';
+  S = demoState(); DIRTY = new Set(); saveLocal();
+  const now = Date.now(), base = calc(S).wartosc, pts = [];
+  for (let i = 30; i >= 0; i--) pts.push({ t: new Date(now - i * 45 * 60000).toISOString(), w: Math.round(base * (1 + Math.sin(i / 4) * 0.004 - i * 0.0001)), k: calc(S).kapital });
+  lsSet(LS_INTRA, pts);
+  setSync('local', 'Tryb demo – nic nie zapisuje się w arkuszu'); go('kokpit'); render(); toast('Wczytano przykładowy portfel');
+}
+function wyjdzDemo() {
+  CFG.demo = false; saveCfg(); LS_INTRA = LS_INTRA_REAL;
+  S = lsGet(LS_DATA, null) || defaultState(); DIRTY = new Set(lsGet(LS_DIRTY, []));
+  try { localStorage.removeItem(LS_DEMO); localStorage.removeItem('portfel_intraday_demo'); } catch (e) {}
+  migrateCele(); go('kokpit'); render(); scheduleSync(); toast('Przywrócono Twoje dane');
+}
+function demoBanner() { return CFG.demo ? `<div class="alert info" style="display:flex;align-items:center;gap:12px"><span style="flex:1">🧪 <b>Tryb demonstracyjny</b> – oglądasz przykładowy portfel. Możesz klikać i dodawać dane do woli, nic nie trafia do Twojego arkusza.</span><button class="btn sm" onclick="wyjdzDemo()">↩ Wróć do moich danych</button></div>` : ''; }
+
 /* ---------- start ---------- */
 setInterval(() => { if (document.visibilityState === 'visible') { C = calc(S); snapshotIntraday(); if (ROUTE === 'kokpit' && RANGE === '1d') render(); } }, 15 * 60000);
 function boot() {
@@ -1594,7 +1673,8 @@ function boot() {
   let mig = false; S.instrumenty.forEach(i => { if (MIG[i.symbol]) { i.symbol = MIG[i.symbol]; mig = true; } }); if (mig) changed('instrumenty');
   migrateCele();
   readHash(); render(); snapshot();
-  if (CFG.clientId && CFG.connected) setSync('pending', 'Kliknij tutaj, aby połączyć z Google Sheets');
+  if (CFG.demo) setSync('local', 'Tryb demo – nic nie zapisuje się w arkuszu');
+  else if (CFG.clientId && CFG.connected) setSync('pending', 'Kliknij tutaj, aby połączyć z Google Sheets');
   else setSync('local', CFG.sheetId ? 'Kliknij, aby połączyć z Google Sheets' : 'Dane tylko w tej przeglądarce');
   if (CFG.inflDay !== todayStr() || CFG.inflSrc !== 'fred') pobierzInflacje(true).then(r => { if (r) { render(); snapshot(); } }).catch(() => {});
   const kd = S.ustawienia.kursyData; if (!kd || kd < todayStr().slice(0, 10) && navigator.onLine) nbpCurrent().then(() => { render(); snapshot(); }).catch(() => {});

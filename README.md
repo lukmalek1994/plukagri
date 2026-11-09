@@ -79,6 +79,7 @@ Ceny odświeżają się raz dziennie, przy pierwszym otwarciu aplikacji. Inne in
 - **Portfele docelowe:** w Ustawieniach ustawiasz koszyki z celami % dla całego portfela i osobno dla każdego konta. Koszyk może zawierać kilka instrumentów (np. CORE = CSPX + IWDA). Rebalansing widać na kokpicie (wybór portfela z listy) i na stronie każdego konta.
 - **Konta:** każde konto ma w menu własną stronę (pozycje, strategie, gotówka, wpłaty). Nowe dodajesz przez „＋ Dodaj konto”, usuwasz w „Edytuj / usuń konto”.
 - **Zakładka „Podsumowanie” w arkuszu:** aplikacja buduje ją sama (kafelki, strategie, konta, instrumenty z alokacją 2.1, wykresy). Liczy się formułami z danych arkusza, więc działa także bez aplikacji. Przebudowuje się po dodaniu nowej strategii, konta lub instrumentu; ręcznie: Ustawienia → „Odśwież Podsumowanie w arkuszu”.
+- **Tryb demonstracyjny:** Ustawienia → „Wczytaj przykładowy portfel” pokazuje aplikację na danych przykładowych (wbudowanych w aplikację, nie w repozytorium). Twoje dane wracają po kliknięciu „Wróć do moich danych”; w trybie demo nic nie trafia do arkusza.
 - **Kopia zapasowa:** dane są w arkuszu Google (z historią wersji: *Plik → Historia wersji*), w przeglądarce, a dodatkowo możesz je zapisać przyciskiem *Eksport* w Ustawieniach.
 
 ## Bezpieczeństwo
