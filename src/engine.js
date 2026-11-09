@@ -1,5 +1,7 @@
 /* ===================== SILNIK OBLICZEŃ ===================== */
 const EPS = 1e-9;
+// obligacje skarbowe: bez notowań – wpisujesz ilość, wartość zakupu i aktualną wartość z banku
+const isOS = i => !!i && (i.klasa === 'Obligacje skarbowe' || (i.klasa === 'Obligacje' && !String(i.symbol || '').trim() && (i.waluta || 'PLN') === 'PLN'));
 const r2 = x => Math.round((x + Number.EPSILON) * 100) / 100;
 const num = v => { if (v === '' || v === null || v === undefined) return 0; const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : 0; };
 const has = v => v !== '' && v !== null && v !== undefined && !(typeof v === 'number' && isNaN(v));
@@ -130,12 +132,14 @@ function calc(S, opts = {}) {
     const [s, ticker] = key.split('|');
     const i = instr[ticker] || {}; const cur = curOf(ticker);
     const koszt = lots.reduce((a, l) => a + l.q * l.uc, 0), kosztPLN = lots.reduce((a, l) => a + l.q * l.ucPLN, 0), kosztPLNr = lots.reduce((a, l) => a + l.q * l.ucPLNr, 0);
-    const cena = priceOf(ticker), wartosc = qty * cena, wartoscPLN = wartosc * rateNow(cur);
+    const os = isOS(i); let cena = priceOf(ticker); const wgZakupu = os && !cena;   // obligacje bez wpisanej wartości: wyceniane po koszcie
+    if (wgZakupu) cena = koszt / qty;
+    const wartosc = qty * cena, wartoscPLN = wartosc * rateNow(cur);
     pozycje.push({ strategia: s, konto: (strat[s] || {}).konto || '', ticker, nazwa: i.nazwa || '', klasa: i.klasa || 'Inne', koszyk: i.koszyk || '',
-      waluta: cur, ilosc: qty, koszt, kosztPLN, kosztPLNr, sredniaCena: koszt / qty, cena, brakCeny: !cena, wartosc, wartoscPLN,
+      waluta: cur, ilosc: qty, koszt, kosztPLN, kosztPLNr, sredniaCena: koszt / qty, cena, brakCeny: !cena, os, wgZakupu, wartosc, wartoscPLN,
       zysk: wartosc - koszt, zyskPct: koszt ? (wartosc - koszt) / koszt : 0, zyskPLN: wartoscPLN - kosztPLN,
       od: lots.reduce((a, l) => l.data < a ? l.data : a, lots[0].data), kursBrak: lots.some(l => !l.kursOk),
-      loty: lots.map(l => { const w = l.q * cena, k = l.q * l.uc, kP = l.q * l.ucPLN;
+      loty: lots.map(l => { const w = l.q * (wgZakupu ? l.uc : cena), k = l.q * l.uc, kP = l.q * l.ucPLN;
         return { id: l.id, data: l.data, ilosc: l.q, ilosc0: l.q0, cenaZakupu: l.cena, koszt: k, kosztPLN: kP, wartosc: w, wartoscPLN: w * rateNow(cur),
           zysk: w - k, zyskPct: k ? (w - k) / k : 0, zyskPLN: w * rateNow(cur) - kP }; }) });
   }

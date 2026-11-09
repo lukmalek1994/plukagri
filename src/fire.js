@@ -1,6 +1,6 @@
 /* ===================== FIRE: ile brakuje do niezależności finansowej ===================== */
 // oczekiwane realne (po inflacji) roczne stopy zwrotu dla klas aktywów – założenia, można nadpisać własną stopą
-const FIRE_KLASY = { 'Akcje/ETF': 5, 'Obligacje': 1.5, 'Złoto': 1.5, 'Srebro': 1.5, 'Krypto': 5, 'Gotówka': 0, 'Inne': 3 };
+const FIRE_KLASY = { 'Akcje/ETF': 5, 'Obligacje': 1.5, 'Obligacje skarbowe': 1.5, 'Złoto': 1.5, 'Srebro': 1.5, 'Krypto': 5, 'Gotówka': 0, 'Inne': 3 };
 
 function fireDane() {
   const CP = calcPLN(), f = CFG.fire || {};

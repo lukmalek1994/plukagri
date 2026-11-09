@@ -116,10 +116,20 @@ const lotKey = p => 'poz|' + p.strategia + '|' + p.ticker;
 const lotSub = p => p.loty.length > 1 || (p.loty[0] && p.loty[0].ilosc < p.loty[0].ilosc0 - 1e-9) ? p.loty.map(l => ({ ...l, _p: p })) : [];
 const lotOpis = l => `<span class="mut">↳ zakup${l._p && ROUTE === 'portfel' ? ' ' + esc(l.data) : ''}</span>${l.ilosc < l.ilosc0 - 1e-9 ? ` <span class="mut" style="font-size:11px" title="część tego zakupu została już sprzedana">(z ${nfq.format(l.ilosc0)})</span>` : ''}`;
 const lotAkcje = l => `<span class="akcje"><a onclick="zamknijPozycje('${esc(l._p.strategia)}','${esc(l._p.ticker)}',${l.ilosc},'${l.id}')">zamknij</a> · <a onclick="editTransakcja('${l.id}')">edytuj</a></span>`;
+const osKupno = p => `${money(p.koszt, p.waluta)}<br><span class="mut" style="font-size:11px">wartość kupna</span>`;
+const osWartosc = p => `<input class="cell" type="number" step="0.01" style="width:110px" value="${p.wgZakupu ? '' : r2(p.wartosc)}" placeholder="wpisz z banku" title="Aktualna wartość tych obligacji (z banku / obligacjeskarbowe.pl)" onclick="event.stopPropagation()" onchange="setWartoscOS('${esc(p.ticker)}',this.value,${p.ilosc})"><br><span class="mut" style="font-size:11px">${p.wgZakupu ? 'aktualna wartość – na razie = kupno' : 'aktualna wartość'}</span>`;
+const qtyOf = t => C.pozycje.filter(p => p.ticker === t).reduce((a, p) => a + p.ilosc, 0);
+// wartość łączna obligacji -> cena za sztukę (w arkuszu nadal „Cena ręczna” za 1 szt.)
+function setWartoscOS(ticker, v, qty) {
+  const i = S.instrumenty.find(x => x.ticker === ticker); if (!i) return;
+  if (v === '' || v === null) { i.cena = ''; i.dataCeny = ''; }
+  else { const q = qty || qtyOf(ticker); if (!(q > 0)) { toast('Brak tych obligacji w portfelu'); return; } i.cena = num(v) / q; i.dataCeny = todayStr(); }
+  changed('instrumenty'); render(); toast('Zapisano aktualną wartość');
+}
 const pozAkcje = p => `<button class="btn sm ghost akcje" onclick="zamknijPozycje('${esc(p.strategia)}','${esc(p.ticker)}',${p.ilosc},'')">Zamknij</button>`;
 function zamknijPozycje(strategia, ticker, ilosc, zakup) {
   const p = C.pozycje.find(x => x.strategia === strategia && x.ticker === ticker) || {};
-  editTransakcja(null, strategia, { typ: 'SPRZEDAŻ', ticker, ilosc: +ilosc.toFixed(8), cena: p.cena ? +p.cena.toFixed(4) : '', zakup: zakup || '' });
+  editTransakcja(null, strategia, { typ: 'SPRZEDAŻ', ticker, ilosc: +ilosc.toFixed(8), cena: p.cena ? +p.cena.toFixed(4) : '', zakup: zakup || '', wartosc: p.os && p.ilosc ? r2(p.wartosc * ilosc / p.ilosc) : '' });
 }
 function cofnijSprzedaz(id) {
   const t = S.transakcje.find(x => x.id === id); if (!t) return;
@@ -255,15 +265,15 @@ function vPortfel() {
   const cols = [
     { h: 'Instrument', f: p => `<b>${esc(p.ticker)}</b><br><span class="mut" style="font-size:12px">${esc(p.nazwa)}</span>` },
     { h: 'Strategia', f: p => `${esc(p.strategia)}<br><span class="mut" style="font-size:12px">${esc(p.konto)}</span>` },
-    { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) }, { h: 'Śr. cena', n: 1, f: p => money(p.sredniaCena, p.waluta) },
-    { h: 'Cena', n: 1, f: p => p.brakCeny ? '<span class="warn">brak</span>' : money(p.cena, p.waluta) },
+    { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) }, { h: 'Śr. cena', n: 1, f: p => p.os ? osKupno(p) : money(p.sredniaCena, p.waluta) },
+    { h: 'Cena', n: 1, f: p => p.os ? osWartosc(p) : p.brakCeny ? '<span class="warn">brak</span>' : money(p.cena, p.waluta) },
     { h: 'Wartość', n: 1, f: p => `${zl(p.wartoscPLN)}<br><span class="mut" style="font-size:12px">${money(p.wartosc, p.waluta)}</span>` },
     { h: 'Zysk (waluta)', n: 1, f: p => `<span class="${sgn(p.zysk)}">${plus(p.zysk)}${money(p.zysk, p.waluta)}</span><br>${pp(p.zyskPct)}` },
     { h: 'Zysk ' + WL(), n: 1, f: p => pl(p.zyskPLN) }, { h: 'Udział', n: 1, f: p => pct(C.wartosc ? p.wartoscPLN / C.wartosc : 0) }, { h: '', f: pozAkcje },
   ];
   const subCols = [
-    { f: lotOpis }, { f: () => '' }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => money(l.cenaZakupu, l._p.waluta) },
-    { n: 1, f: l => l._p.brakCeny ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => `${zl(l.wartoscPLN)}<br><span class="mut" style="font-size:11.5px">${money(l.wartosc, l._p.waluta)}</span>` },
+    { f: lotOpis }, { f: () => '' }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => l._p.os ? money(l.koszt, l._p.waluta) : money(l.cenaZakupu, l._p.waluta) },
+    { n: 1, f: l => l._p.brakCeny || l._p.os ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => `${zl(l.wartoscPLN)}<br><span class="mut" style="font-size:11.5px">${money(l.wartosc, l._p.waluta)}</span>` },
     { n: 1, f: l => `<span class="${sgn(l.zysk)}">${plus(l.zysk)}${money(l.zysk, l._p.waluta)}</span><br>${pp(l.zyskPct)}` },
     { n: 1, f: l => pl(l.zyskPLN) }, { f: () => '' }, { f: lotAkcje }];
   return ['Portfel – pozycje', `${rows.length} otwartych pozycji`, `
@@ -281,12 +291,12 @@ function vStrategia() {
   const pozTbl = table([
     { h: 'Instrument', f: p => `<b>${esc(p.ticker)}</b> <span class="mut">${esc(p.nazwa)}</span>` },
     { h: 'Od', f: p => esc(p.od) }, { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) },
-    { h: 'Śr. cena', n: 1, f: p => money(p.sredniaCena, p.waluta) }, { h: 'Cena', n: 1, f: p => p.brakCeny ? '<span class="warn">brak</span>' : money(p.cena, p.waluta) },
+    { h: 'Śr. cena', n: 1, f: p => p.os ? osKupno(p) : money(p.sredniaCena, p.waluta) }, { h: 'Cena', n: 1, f: p => p.os ? osWartosc(p) : p.brakCeny ? '<span class="warn">brak</span>' : money(p.cena, p.waluta) },
     { h: 'Wartość ' + WL(), n: 1, f: p => zl(p.wartoscPLN) }, { h: 'Zysk', n: 1, f: p => `<span class="${sgn(p.zysk)}">${plus(p.zysk)}${money(p.zysk, p.waluta)}</span>` },
     { h: '%', n: 1, f: p => pp(p.zyskPct) }, { h: 'Zysk ' + WL(), n: 1, f: p => pl(p.zyskPLN) }, { h: '', f: pozAkcje },
   ], poz, { empty: 'Brak otwartych pozycji – dodaj transakcję kupna', expand: { key: lotKey, sub: lotSub, cols: [
-    { f: lotOpis }, { f: l => esc(l.data) }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => money(l.cenaZakupu, l._p.waluta) },
-    { n: 1, f: l => l._p.brakCeny ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => zl(l.wartoscPLN) },
+    { f: lotOpis }, { f: l => esc(l.data) }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => l._p.os ? money(l.koszt, l._p.waluta) : money(l.cenaZakupu, l._p.waluta) },
+    { n: 1, f: l => l._p.brakCeny || l._p.os ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => zl(l.wartoscPLN) },
     { n: 1, f: l => `<span class="${sgn(l.zysk)}">${plus(l.zysk)}${money(l.zysk, l._p.waluta)}</span>` }, { n: 1, f: l => pp(l.zyskPct) },
     { n: 1, f: l => pl(l.zyskPLN) }, { f: lotAkcje }] } });
   const zamTbl = table([
@@ -487,7 +497,8 @@ function vInstrumenty() {
       { h: 'Ticker', f: i => `<b>${esc(i.ticker)}</b>` }, { h: 'Nazwa', f: i => esc(i.nazwa) }, { h: 'Klasa', f: i => esc(i.klasa) },
       { h: 'Waluta', f: i => esc(i.waluta) }, { h: 'Symbol', f: i => `<span class="mut">${esc(i.symbol)}</span>` },
       { h: 'Cena auto', n: 1, f: i => has(i.cenaAuto) ? nf2.format(num(i.cenaAuto)) : '<span class="mut">–</span>' },
-      { h: 'Cena ręczna', n: 1, f: i => `<input class="cell" type="number" step="any" value="${esc(i.cena)}" onclick="event.stopPropagation()" onchange="setCena('${i.id}',this.value)">` },
+      { h: 'Cena ręczna', n: 1, f: i => isOS(i) ? (() => { const q = qtyOf(i.ticker); return `<input class="cell" type="number" step="0.01" value="${has(i.cena) && q ? r2(num(i.cena) * q) : ''}" placeholder="${q ? 'wpisz z banku' : 'brak w portfelu'}" onclick="event.stopPropagation()" onchange="setWartoscOS('${esc(i.ticker)}',this.value,0)"><br><span class="mut" style="font-size:11px">aktualna wartość łącznie</span>`; })()
+        : `<input class="cell" type="number" step="any" value="${esc(i.cena)}" onclick="event.stopPropagation()" onchange="setCena('${i.id}',this.value)">` },
       { h: 'Data ceny', f: i => esc(i.dataCeny) },
       { h: 'Ilość w portfelu', n: 1, f: i => { const q = C.pozycje.filter(p => p.ticker === i.ticker).reduce((a, p) => a + p.ilosc, 0); return q ? nfq.format(q) : '–'; } },
       { h: '', f: i => `<a onclick="event.stopPropagation();editInstrument('${i.id}')">edytuj</a>` },
@@ -587,16 +598,29 @@ function editTransakcja(id, strategia, preset) {
     { k: 'strategia', l: 'Strategia', t: 'select', o: S.strategie.map(s => s.nazwa) },
     { k: 'ticker', l: 'Instrument', t: 'select', o: S.instrumenty.map(i => [i.ticker, `${i.ticker} – ${i.nazwa} (${i.waluta})`]) },
     { k: 'ilosc', l: 'Ilość', t: 'number' }, { k: 'cena', l: 'Cena za sztukę (waluta instrumentu)', t: 'number' },
+    { k: 'wartosc', l: 'Wartość łącznie (PLN)', t: 'number', help: 'Kupno: ile zapłaciłeś za wszystkie obligacje. Sprzedaż/wykup: ile dostałeś.' },
     { k: 'prowizja', l: 'Prowizja (waluta instrumentu)', t: 'number', ph: '0' }, { k: 'kurs', l: 'Kurs NBP (D-1)', t: 'number', help: 'Pobiera się automatycznie z NBP' },
     { k: 'zakup', l: 'Zamyka zakup (tylko sprzedaż)', t: 'select', o: lotyOpc, full: 1, help: 'Pokazuje w aplikacji, który zakup zamykasz. Podatek PIT-38 i tak liczy się metodą FIFO (wymóg ustawy).' },
     { k: 'notatka', l: 'Notatka', full: 1 },
-  ], t, o => {
+  ], { ...t, wartosc: t.wartosc ?? (id && isOS(S.instrumenty.find(i => i.ticker === t.ticker)) ? r2(num(t.ilosc) * num(t.cena) + num(t.prowizja)) : '') }, o => {
     if (!o.data || !o.ticker || !(o.ilosc > 0)) return 'Uzupełnij datę, instrument i ilość';
     if (o.typ === 'KUPNO') o.zakup = '';
+    const ins = S.instrumenty.find(i => i.ticker === o.ticker);
+    if (isOS(ins)) {
+      if (!(o.wartosc > 0)) return 'Podaj wartość łącznie (PLN)';
+      // nowy zakup przy wpisanej już aktualnej wartości: dokładamy go po cenie zakupu, żeby nie zmienić wyceny starszych obligacji
+      if (o.typ === 'KUPNO' && !id && has(ins.cena)) { const q = qtyOf(o.ticker); ins.cena = (num(ins.cena) * q + o.wartosc) / (q + o.ilosc); changed('instrumenty'); }
+      o.cena = o.wartosc / o.ilosc; o.prowizja = ''; o.kurs = '';
+    }
+    delete o.wartosc;
     if (id) Object.assign(t, o); else S.transakcje.push({ id: uid(), ...o });
     changed('transakcje'); toast('Zapisano transakcję');
   }, id ? () => { S.transakcje = S.transakcje.filter(x => x.id !== id); changed('transakcje'); } : null);
   wireNbp(form, 'data', 'ticker');
+  const showOS = () => { const os = isOS(S.instrumenty.find(i => i.ticker === form.elements.ticker.value));
+    [['cena', !os], ['prowizja', !os], ['kurs', !os], ['wartosc', os]].forEach(([k, on]) => { form.elements[k].closest('label').style.display = on ? '' : 'none'; });
+    form.elements.ilosc.closest('label').firstChild.textContent = os ? 'Ilość obligacji (szt.)' : 'Ilość'; };
+  form.elements.ticker.addEventListener('change', showOS); showOS();
 }
 function editDywidenda(id, strategia) {
   const d = S.dywidendy.find(x => x.id === id) || { data: todayStr(), strategia: strategia || (S.strategie[0] || {}).nazwa, ticker: (S.instrumenty[0] || {}).ticker };
@@ -670,7 +694,7 @@ function editInstrument(id) {
     { k: 'klasa', l: 'Klasa aktywów', t: 'select', o: KLASY },
     { k: 'waluta', l: 'Waluta notowań', t: 'select', o: ['USD', 'PLN', 'EUR', 'GBP', 'CHF'] },
     { k: 'symbol', l: 'Symbol ceny', ph: 'uzupełni się po wyszukaniu – albo wpisz ręcznie' },
-    { k: 'cena', l: 'Cena ręczna (opcjonalnie)', t: 'number' }, { k: 'dataCeny', l: 'Data ceny', t: 'date' },
+    { k: 'cena', l: 'Cena ręczna (opcjonalnie)', t: 'number', help: 'Obligacje skarbowe: wybierz klasę „Obligacje skarbowe” i zostaw puste – aktualną wartość wpisujesz przy pozycji na stronie strategii' }, { k: 'dataCeny', l: 'Data ceny', t: 'date' },
   ], i, o => {
     if (!o.ticker) return 'Podaj ticker';
     if (S.instrumenty.some(x => x.ticker === o.ticker && x.id !== id)) return 'Taki ticker już istnieje';
@@ -681,7 +705,7 @@ function editInstrument(id) {
   }, id ? () => { if (S.transakcje.some(t => t.ticker === old)) { toast('Instrument ma transakcje'); return; } S.instrumenty = S.instrumenty.filter(x => x.id !== id); changed('instrumenty'); } : null, pre);
   wireSearch(form, !!id);
 }
-const KLASY = ['Akcje/ETF', 'Obligacje', 'Gotówka', 'Złoto', 'Srebro', 'Krypto', 'Nieruchomości', 'Inne'];
+const KLASY = ['Akcje/ETF', 'Obligacje', 'Obligacje skarbowe', 'Gotówka', 'Złoto', 'Srebro', 'Krypto', 'Nieruchomości', 'Inne'];
 function guessKlasa(r) {
   const s = r.symbol.toUpperCase(), n = (r.nazwa || '').toLowerCase(), t = r.typ.toUpperCase();
   if (s.startsWith('GC=') || s.startsWith('XAU') || /gold|złot/.test(n)) return 'Złoto';
@@ -816,7 +840,7 @@ function demoState() {
   S2.instrumenty.forEach(i => i.cena = P[i.ticker]);
   S2.instrumenty.push({ id: 'i7', ticker: 'GOOGL', nazwa: 'Alphabet Inc. A', klasa: 'Akcje/ETF', waluta: 'USD', cena: 285, symbol: 'NASDAQ:GOOGL', cenaAuto: '' },
     { id: 'i8', ticker: 'PKN', nazwa: 'Orlen S.A.', klasa: 'Akcje/ETF', waluta: 'PLN', cena: 78.4, symbol: 'WSE:PKN', cenaAuto: '' },
-    { id: 'i9', ticker: 'EDO1135', nazwa: 'Obligacje 10-letnie EDO', klasa: 'Obligacje', waluta: 'PLN', cena: 104.2, symbol: '', cenaAuto: '' });
+    { id: 'i9', ticker: 'EDO1135', nazwa: 'Obligacje 10-letnie EDO', klasa: 'Obligacje skarbowe', waluta: 'PLN', cena: 104.2, symbol: '', cenaAuto: '' });
   S2.strategie = [
     { id: 's1', nazwa: 'Długi termin', konto: 'XTB USD', kapital: '', opis: 'ETF-y na lata, dokupowane co miesiąc', kolor: '#1565C0' },
     { id: 's2', nazwa: 'Dywidendowa', konto: 'XTB USD', kapital: 1500, opis: 'Spółki wypłacające dywidendy', kolor: '#26A69A' },
@@ -892,7 +916,8 @@ function demoBanner() { return CFG.demo ? `<div class="alert info" style="displa
 setInterval(() => { if (document.visibilityState === 'visible') { C = calc(S, calcOpts()); snapshotIntraday(); if (ROUTE === 'kokpit' && RANGE === '1d') render(); } }, 15 * 60000);
 function boot() {
   const MIG = { 'CURRENCY:XAUUSD': 'YAHOO:GC=F', 'CURRENCY:XAGUSD': 'YAHOO:SI=F', 'CURRENCY:BTCUSD': 'YAHOO:BTC-USD' };
-  let mig = false; S.instrumenty.forEach(i => { if (MIG[i.symbol]) { i.symbol = MIG[i.symbol]; mig = true; } }); if (mig) changed('instrumenty');
+  let mig = false; S.instrumenty.forEach(i => { if (MIG[i.symbol]) { i.symbol = MIG[i.symbol]; mig = true; }
+    if (i.klasa === 'Obligacje' && isOS(i)) { i.klasa = 'Obligacje skarbowe'; mig = true; } }); if (mig) changed('instrumenty');
   migrateCele(); if (!S.alerty) S.alerty = [];
   readHash(); render(); snapshot();
   if (CFG.demo) setSync('local', 'Tryb demo – nic nie zapisuje się w arkuszu');
