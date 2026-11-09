@@ -138,15 +138,9 @@ function vKokpit() {
     { h: 'Udział', f: s => `<div class="bar"><i style="width:${(s.udzial * 100).toFixed(1)}%;background:${esc(s.kolor)}"></i></div>` },
     { h: 'Wynik', n: 1, f: s => pl(s.wynik) }, { h: '%', n: 1, f: s => pp(s.koszt ? s.wynik / s.koszt : 0) },
   ], strat, { empty: 'Brak pozycji w strategiach', click: s => `go('strategia','${s.id}')` });
-  const nowa = num(CFG.nowaWplata);
-  const rozd = C.rozdziel(nowa);
-  const model = table([
-    { h: 'Koszyk', f: m => `<b>${esc(m.koszyk)}</b> <span class="mut">${esc(m.grupa || '')}</span>` },
-    { h: 'Cel', n: 1, f: m => pct(m.celPct) }, { h: 'Teraz', n: 1, f: m => pct(m.udzial) },
-    { h: '', f: m => `<div class="bar" style="position:relative"><i style="width:${Math.min(100, m.udzial * 100).toFixed(1)}%;background:#1565c0"></i><b style="position:absolute;top:-3px;left:${Math.min(99, m.celPct * 100)}%;width:2px;height:12px;background:#0f172a"></b></div>` },
-    { h: 'Różnica', n: 1, f: m => Math.abs(m.roznica) < 1 ? '<span class="mut">–</span>' : `<span class="${m.roznica > 0 ? 'pos' : 'neg'}">${m.roznica > 0 ? 'dokup ' : 'nadwyżka '}${zl(Math.abs(m.roznica), 0)}</span>` },
-    { h: 'Z nowej wpłaty', n: 1, f: (m) => nowa ? zl(rozd[C.model.indexOf(m)], 0) : '–' },
-  ], C.model, { empty: 'Ustaw alokację docelową w Ustawieniach' });
+  const modele = [['', 'Cały portfel'], ...S.konta.filter(k => S.cele.some(c => c.konto === k.nazwa)).map(k => [k.nazwa, k.nazwa])];
+  if (!modele.some(m => m[0] === (FILT.model || ''))) FILT.model = '';
+  const modelSel = modele.length > 1 ? `<select style="padding:4px 8px;font-size:12.5px" onchange="FILT.model=this.value;render()">${modele.map(([v, l]) => `<option value="${esc(v)}" ${v === (FILT.model || '') ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : '';
   const months = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
   const dm = months.map((_, i) => dywRok.filter(d => +d.data.slice(5, 7) === i + 1).reduce((a, d) => a + d.nettoPLN, 0));
   const top = C.pozycje.slice().sort((a, b) => b.wartoscPLN - a.wartoscPLN).slice(0, 8);
@@ -169,8 +163,7 @@ function vKokpit() {
       { h: 'Wpłacono', n: 1, f: k => zl(k.kapital, 0) }, { h: 'Zysk', n: 1, f: k => k.zysk === null ? '–' : pl(k.zysk) }, { h: '%', n: 1, f: k => k.zyskPct === null ? '–' : pp(k.zyskPct) },
     ], C.konta, { click: k => `go('konto','${k.id}')` })}</div>
     <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Strategie<span class="sp"></span><small>kliknij, aby otworzyć</small></h3>${stratTbl}</div>
-      <div class="card"><h3>Portfel 2.1 – rebalansing<span class="sp"></span><small>nowa wpłata</small><input class="cell" type="number" value="${nowa || ''}" placeholder="0 zł" onchange="CFG.nowaWplata=this.value;saveCfg();render()"></h3>${model}
-        ${C.poza ? `<div class="mut" style="font-size:12.5px;margin-top:8px">Poza modelem: ${zl(C.poza, 0)} · gotówka: ${zl(C.gotowkaPLN, 0)}</div>` : ''}</div></div>
+      <div class="card"><h3>Portfel docelowy<span class="sp"></span>${modelSel}</h3>${modelCard(FILT.model || '')}</div></div>
     <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Dywidendy i odsetki ${rok} <small>netto PLN</small></h3>${barChart(months, [{ name: 'Netto', values: dm, color: '#26A69A' }], { empty: 'Brak dywidend w tym roku', h: 200 })}</div>
       <div class="card"><h3>Największe pozycje</h3>${topTbl}</div></div>`];
 }
@@ -249,6 +242,7 @@ function vKonto() {
       { h: 'Wartość', n: 1, f: s => zl(s.wartosc, 0) }, { h: 'Wynik', n: 1, f: s => pl(s.wynik) }, { h: '%', n: 1, f: s => pp(s.koszt ? s.wynik / s.koszt : 0) },
     ], strat, { empty: 'Żadna strategia nie jest przypisana do tego konta', click: s => `go('strategia','${s.id}')` })}</div>
       <div class="card"><h3>Struktura konta</h3>${struktura}</div></div>
+    <div class="card" style="margin-top:16px"><h3>Portfel docelowy konta</h3>${modelCard(k.nazwa)}</div>
     <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Pozycje</h3>${table([
       { h: 'Instrument', f: p => `<b>${esc(p.ticker)}</b> <span class="mut">${esc(p.strategia)}</span>` }, { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) },
       { h: 'Wartość PLN', n: 1, f: p => zl(p.wartoscPLN) }, { h: 'Zysk PLN', n: 1, f: p => pl(p.zyskPLN) },
@@ -267,6 +261,21 @@ function korektaGotowki(id) {
   if (v === null) return; setGotowka(id, String(v).replace(',', '.'));
 }
 function editStrategiaNaKoncie(konto) { editStrategia(null, konto); }
+
+function modelCard(konto) {
+  const M = C.modelFor(konto), key = 'nowa_' + (konto || '_'), nowa = num(CFG[key]), rozd = M.rozdziel(nowa);
+  if (!M.rows.length) return `<div class="empty">Brak portfela docelowego${konto ? ' dla tego konta' : ''}.<br><a onclick="FILT.celeKonto='${esc(konto)}';go('ustawienia')">Ustaw koszyki i cele →</a></div>`;
+  const tbl = table([
+    { h: 'Koszyk', f: m => `<b>${esc(m.koszyk)}</b> <span class="mut">${esc(m.grupa || '')}</span>${m.lista.length > 1 || m.lista[0] !== m.koszyk ? `<br><span class="mut" style="font-size:11.5px">${esc(m.lista.join(' + '))}</span>` : ''}` },
+    { h: 'Cel', n: 1, f: m => pct(m.celPct) }, { h: 'Teraz', n: 1, f: m => pct(m.udzial) },
+    { h: '', f: m => `<div class="bar" style="position:relative"><i style="width:${Math.min(100, m.udzial * 100).toFixed(1)}%;background:#1565c0"></i><b style="position:absolute;top:-3px;left:${Math.min(99, m.celPct * 100)}%;width:2px;height:12px;background:#0f172a"></b></div>` },
+    { h: 'Różnica', n: 1, f: m => Math.abs(m.roznica) < 1 ? '<span class="mut">–</span>' : `<span class="${m.roznica > 0 ? 'pos' : 'neg'}">${m.roznica > 0 ? 'dokup ' : 'nadwyżka '}${zl(Math.abs(m.roznica), 0)}</span>` },
+    { h: 'Z nowej wpłaty', n: 1, f: m => nowa ? zl(rozd[M.rows.indexOf(m)], 0) : '–' },
+  ], M.rows);
+  return `<div class="row" style="margin-bottom:8px;font-size:12.5px"><span class="mut">Nowa wpłata do rozdzielenia:</span><input class="cell" type="number" value="${nowa || ''}" placeholder="0 zł" onchange="CFG['${key}']=this.value;saveCfg();render()">
+    <span class="sp" style="flex:1"></span><a onclick="FILT.celeKonto='${esc(konto)}';go('ustawienia')">edytuj cele</a></div>${tbl}
+    <div class="mut" style="font-size:12.5px;margin-top:8px">${M.sumaCel !== 100 ? `<span class="warn">⚠ Suma celów: ${M.sumaCel}% (powinno być 100%)</span> · ` : ''}Poza portfelem docelowym: ${zl(M.poza, 0)} · gotówka: ${zl(M.gotowka, 0)}</div>`;
+}
 
 function txCols() {
   return [
@@ -383,7 +392,7 @@ function vInstrumenty() {
   return ['Instrumenty i ceny', 'Cena ręczna ma pierwszeństwo przed ceną automatyczną z Google Finance', `
     <div class="alert info">💡 Po połączeniu z Google Sheets ceny liczą się same w arkuszu. Symbol: <b>LON:CSPX</b>, NASDAQ:AAPL, WSE:PKN (Google Finance) albo <b>YAHOO:GC=F</b> złoto, YAHOO:SI=F srebro, YAHOO:BTC-USD, YAHOO:CSPX.L (Yahoo – wymaga skryptu Portfel_Ceny.gs w arkuszu). Wpisz cenę ręcznie, gdy symbol nie działa – zostaw puste, aby używać automatycznej.</div>
     <div class="card">${table([
-      { h: 'Ticker', f: i => `<b>${esc(i.ticker)}</b>` }, { h: 'Nazwa', f: i => esc(i.nazwa) }, { h: 'Klasa', f: i => esc(i.klasa) }, { h: 'Koszyk 2.1', f: i => esc(i.koszyk) },
+      { h: 'Ticker', f: i => `<b>${esc(i.ticker)}</b>` }, { h: 'Nazwa', f: i => esc(i.nazwa) }, { h: 'Klasa', f: i => esc(i.klasa) },
       { h: 'Waluta', f: i => esc(i.waluta) }, { h: 'Symbol', f: i => `<span class="mut">${esc(i.symbol)}</span>` },
       { h: 'Cena auto', n: 1, f: i => has(i.cenaAuto) ? nf2.format(num(i.cenaAuto)) : '<span class="mut">–</span>' },
       { h: 'Cena ręczna', n: 1, f: i => `<input class="cell" type="number" step="any" value="${esc(i.cena)}" onclick="event.stopPropagation()" onchange="setCena('${i.id}',this.value)">` },
@@ -400,12 +409,15 @@ function vUstawienia() {
   const g = CFG.sheetId ? `<p>Arkusz: <a href="${esc(CFG.sheetUrl || ('https://docs.google.com/spreadsheets/d/' + CFG.sheetId))}" target="_blank">otwórz „Portfel – dane” ↗</a></p>` : '';
   const kontaTbl = table([
     { h: 'Konto', f: k => `<b>${esc(k.nazwa)}</b>` }, { h: 'Typ podatkowy', f: k => esc(k.typ) }, { h: 'Waluta', f: k => esc(k.waluta) },
-    { h: 'Gotówka', n: 1, f: k => { const c = C.konta.find(x => x.id === k.id); return money(c.gotowkaKwota, k.waluta) + (c.gotowkaAuto ? '' : ' <span class="warn">(ręcznie)</span>'); } }, { h: 'Model 2.1', f: k => esc(k.model) },
+    { h: 'Gotówka', n: 1, f: k => { const c = C.konta.find(x => x.id === k.id); return money(c.gotowkaKwota, k.waluta) + (c.gotowkaAuto ? '' : ' <span class="warn">(ręcznie)</span>'); } }, { h: 'W „Całym portfelu”', f: k => esc(k.model) },
     { h: 'Wartość', n: 1, f: k => zl(C.konta.find(x => x.id === k.id)?.razem || 0, 0) },
   ], S.konta, { click: k => `editKonto('${k.id}')`, drag: 'konta' });
+  const ck = FILT.celeKonto || ''; const celeRows = S.cele.filter(c => (c.konto || '') === ck);
+  const celeSel = `<select onchange="FILT.celeKonto=this.value;render()"><option value="">Cały portfel</option>${S.konta.map(k => `<option ${k.nazwa === ck ? 'selected' : ''}>${esc(k.nazwa)}</option>`).join('')}</select>`;
   const celeTbl = table([
-    { h: 'Koszyk', f: c => `<b>${esc(c.koszyk)}</b>` }, { h: 'Grupa', f: c => esc(c.grupa) }, { h: 'Cel', n: 1, f: c => num(c.cel) + '%' },
-  ], S.cele, { click: c => `editCel('${c.id}')`, foot: ['Suma', '', S.cele.reduce((a, c) => a + num(c.cel), 0) + '%'] });
+    { h: 'Koszyk', f: c => `<b>${esc(c.koszyk)}</b>` }, { h: 'Instrumenty', f: c => esc(String(c.tickery || c.koszyk).split(',').join(', ')) },
+    { h: 'Grupa', f: c => esc(c.grupa) }, { h: 'Cel', n: 1, f: c => num(c.cel) + '%' },
+  ], celeRows, { click: c => `editCel('${c.id}')`, empty: 'Brak koszyków – kliknij „＋ Koszyk”', foot: celeRows.length ? ['Suma', '', '', celeRows.reduce((a, c) => a + num(c.cel), 0) + '%'] : null });
   return ['Ustawienia', 'Konta, kursy walut, alokacja docelowa, połączenie z Google Sheets i kopia zapasowa', `
     <div class="grid g2e">
       <div class="card"><h3>Google Sheets</h3>
@@ -423,8 +435,9 @@ function vUstawienia() {
     <div class="grid g2e" style="margin-top:16px">
       <div class="card"><h3>Konta<span class="sp"></span><button class="btn sm" onclick="editKonto()">＋ Konto</button></h3>${kontaTbl}
         <div class="mut" style="font-size:12px;margin-top:8px">„Opodatkowane” wchodzi do PIT-38. IKE/IKZE i „Poza PIT-38” są pomijane. Gotówka liczy się sama z wpłat i transakcji (możesz ją nadpisać ręcznie).</div></div>
-      <div class="card"><h3>Portfel 2.1 – alokacja docelowa<span class="sp"></span><button class="btn sm" onclick="editCel()">＋ Koszyk</button></h3>${celeTbl}
-        <div class="mut" style="font-size:12px;margin-top:8px">Koszyk przypisujesz instrumentowi w „Instrumenty i ceny”.</div></div>
+      <div class="card"><h3>Portfel docelowy<span class="sp"></span>${celeSel}<button class="btn sm" onclick="editCel()">＋ Koszyk</button></h3>${celeTbl}
+        <div class="mut" style="font-size:12px;margin-top:8px">Każde konto może mieć własny portfel docelowy, a „Cały portfel” liczy wszystkie konta z „W modelu” = TAK. Koszyk może zawierać kilka instrumentów (np. CORE = CSPX + IWDA).</div>
+        ${ck ? '' : `<div class="row" style="margin-top:8px"><span class="mut" style="font-size:12px">Skopiuj ten portfel do konta:</span><select id="cpyTo">${S.konta.map(k => `<option>${esc(k.nazwa)}</option>`).join('')}</select><button class="btn sm ghost" onclick="kopiujCele('',$('#cpyTo').value)">Kopiuj</button></div>`}</div>
     </div>
     <div class="card" style="margin-top:16px"><h3>Kopia zapasowa</h3>
       <div class="row"><button class="btn ghost" onclick="exportJSON()">⬇ Eksport (plik JSON)</button><button class="btn ghost" onclick="exportCSV()">⬇ Transakcje do Excela (CSV)</button>
@@ -534,10 +547,10 @@ function editKonto(id) {
   modal(id ? 'Edytuj konto' : 'Nowe konto', [
     { k: 'nazwa', l: 'Nazwa', full: 1 }, { k: 'typ', l: 'Typ podatkowy', t: 'select', o: ['Opodatkowane', 'IKE', 'IKZE', 'Poza PIT-38'] },
     { k: 'waluta', l: 'Waluta', t: 'select', o: ['PLN', 'USD', 'EUR', 'GBP', 'CHF'] }, { k: 'gotowka', l: 'Gotówka – tylko gdy chcesz wpisać ręcznie (puste = liczona automatycznie)', t: 'number', full: 1 },
-    { k: 'model', l: 'Wliczaj do modelu 2.1', t: 'select', o: ['TAK', 'NIE'] },
+    { k: 'model', l: 'Wliczaj do portfela docelowego „Cały portfel”', t: 'select', o: ['TAK', 'NIE'] },
   ], k, o => {
     if (!o.nazwa) return 'Podaj nazwę';
-    if (id) { Object.assign(k, o); if (old !== o.nazwa) { S.strategie.forEach(s => { if (s.konto === old) s.konto = o.nazwa; }); S.wplaty.forEach(w => { if (w.konto === old) w.konto = o.nazwa; }); changed('strategie', 'wplaty'); } }
+    if (id) { Object.assign(k, o); if (old !== o.nazwa) { S.strategie.forEach(s => { if (s.konto === old) s.konto = o.nazwa; }); S.wplaty.forEach(w => { if (w.konto === old) w.konto = o.nazwa; }); S.cele.forEach(c => { if (c.konto === old) c.konto = o.nazwa; }); changed('strategie', 'wplaty', 'cele'); } }
     else { if (S.konta.some(x => x.nazwa === o.nazwa)) return 'Konto o tej nazwie już istnieje'; const n = { id: uid(), ...o }; S.konta.push(n); setTimeout(() => go('konto', n.id), 0); }
     changed('konta');
   }, id ? () => {
@@ -545,24 +558,24 @@ function editKonto(id) {
     if (uzywa.length) { toast('Najpierw przypisz inne konto strategiom: ' + uzywa.join(', ')); return; }
     const w = S.wplaty.filter(x => x.konto === old).length;
     if (w && !confirm(`Na tym koncie jest ${w} wpłat – zostaną usunięte razem z kontem. Kontynuować?`)) return;
-    S.wplaty = S.wplaty.filter(x => x.konto !== old); S.konta = S.konta.filter(x => x.id !== id); changed('konta', 'wplaty'); go('kokpit');
+    S.wplaty = S.wplaty.filter(x => x.konto !== old); S.cele = S.cele.filter(c => c.konto !== old); S.konta = S.konta.filter(x => x.id !== id); changed('konta', 'wplaty', 'cele'); go('kokpit');
   } : null);
 }
 function editInstrument(id) {
-  const i = S.instrumenty.find(x => x.id === id) || { klasa: 'Akcje/ETF', waluta: 'USD', koszyk: 'POZA MODELEM' }; const old = i.ticker;
+  const i = S.instrumenty.find(x => x.id === id) || { klasa: 'Akcje/ETF', waluta: 'USD' }; const old = i.ticker;
   const pre = `<div class="search"><div class="row"><input id="sq" placeholder="Szukaj: nazwa lub ticker, np. cspx, orlen, złoto, bitcoin" style="flex:1">
     <button class="btn" id="sbtn" type="button">Szukaj</button></div><div id="sres" class="sres"></div></div>`;
   const form = modal(id ? 'Edytuj instrument' : 'Nowy instrument', [
     { k: 'ticker', l: 'Ticker' }, { k: 'nazwa', l: 'Nazwa' },
     { k: 'klasa', l: 'Klasa aktywów', t: 'select', o: KLASY },
     { k: 'waluta', l: 'Waluta notowań', t: 'select', o: ['USD', 'PLN', 'EUR', 'GBP', 'CHF'] },
-    { k: 'koszyk', l: 'Koszyk Portfela 2.1', t: 'select', o: [...new Set(['POZA MODELEM', ...S.cele.map(c => c.koszyk), i.koszyk].filter(Boolean))] },
     { k: 'symbol', l: 'Symbol ceny', ph: 'uzupełni się po wyszukaniu – albo wpisz ręcznie' },
     { k: 'cena', l: 'Cena ręczna (opcjonalnie)', t: 'number' }, { k: 'dataCeny', l: 'Data ceny', t: 'date' },
   ], i, o => {
     if (!o.ticker) return 'Podaj ticker';
     if (S.instrumenty.some(x => x.ticker === o.ticker && x.id !== id)) return 'Taki ticker już istnieje';
-    if (id) { Object.assign(i, o); if (old !== o.ticker) { S.transakcje.forEach(t => { if (t.ticker === old) t.ticker = o.ticker; }); S.dywidendy.forEach(d => { if (d.ticker === old) d.ticker = o.ticker; }); changed('transakcje', 'dywidendy'); } }
+    if (id) { Object.assign(i, o); if (old !== o.ticker) { S.transakcje.forEach(t => { if (t.ticker === old) t.ticker = o.ticker; }); S.dywidendy.forEach(d => { if (d.ticker === old) d.ticker = o.ticker; });
+      S.cele.forEach(c => { c.tickery = String(c.tickery || '').split(',').map(t => t.trim() === old ? o.ticker : t.trim()).join(','); }); changed('transakcje', 'dywidendy', 'cele'); } }
     else S.instrumenty.push({ id: uid(), cenaAuto: '', ...o });
     changed('instrumenty');
   }, id ? () => { if (S.transakcje.some(t => t.ticker === old)) { toast('Instrument ma transakcje'); return; } S.instrumenty = S.instrumenty.filter(x => x.id !== id); changed('instrumenty'); } : null, pre);
@@ -599,7 +612,6 @@ function wireSearch(form, editing) {
         E.klasa.value = guessKlasa(r);
         if (['USD', 'PLN', 'EUR', 'GBP', 'CHF'].includes(r.waluta)) E.waluta.value = r.waluta;
         E.symbol.value = 'YAHOO:' + r.symbol;
-        const kosz = [...E.koszyk.options].map(o => o.value).find(v => v === E.ticker.value); if (kosz) E.koszyk.value = kosz;
         toast('Uzupełniono dane – sprawdź i kliknij Zapisz');
       });
     } catch (e) { out.innerHTML = `<div class="warn">${esc(e.message)}. Możesz wpisać dane ręcznie.</div>`; }
@@ -609,11 +621,32 @@ function wireSearch(form, editing) {
   if (!SYNC.token) out.innerHTML = '<div class="mut">Wyszukiwanie działa po połączeniu z Google Sheets (plakietka u góry). Bez tego wpisz dane ręcznie.</div>';
 }
 function editCel(id) {
-  const c = S.cele.find(x => x.id === id) || {};
-  modal(id ? 'Edytuj koszyk' : 'Nowy koszyk', [{ k: 'koszyk', l: 'Koszyk' }, { k: 'grupa', l: 'Grupa (np. CORE)' }, { k: 'cel', l: 'Cel %', t: 'number' }], c, o => {
+  const c = S.cele.find(x => x.id === id) || { konto: FILT.celeKonto || '' };
+  const sel = new Set(String(c.tickery || c.koszyk || '').split(',').map(s => s.trim()).filter(Boolean));
+  const pre = `<div class="mut" style="font-size:12.5px;margin-bottom:10px">Portfel: <b>${esc(c.konto || 'Cały portfel')}</b></div>`;
+  const form = modal(id ? 'Edytuj koszyk' : 'Nowy koszyk', [
+    { k: 'koszyk', l: 'Nazwa koszyka (np. CORE, CSPX, ZŁOTO)' }, { k: 'grupa', l: 'Grupa (opcjonalnie)' }, { k: 'cel', l: 'Cel %', t: 'number' },
+  ], c, o => {
+    const ts = [...form.closest('.modal').querySelectorAll('.chk input:checked')].map(x => x.value);
     if (!o.koszyk) return 'Podaj nazwę koszyka';
+    if (!ts.length) return 'Zaznacz co najmniej jeden instrument';
+    const inny = S.cele.find(x => x.id !== id && (x.konto || '') === (c.konto || '') && String(x.tickery || x.koszyk).split(',').some(t => ts.includes(t.trim())));
+    if (inny) return `Instrument jest już w koszyku „${inny.koszyk}” tego portfela`;
+    o.tickery = ts.join(','); o.konto = c.konto || '';
     if (id) Object.assign(c, o); else S.cele.push({ id: uid(), ...o }); changed('cele');
-  }, id ? () => { S.cele = S.cele.filter(x => x.id !== id); changed('cele'); } : null);
+  }, id ? () => { S.cele = S.cele.filter(x => x.id !== id); changed('cele'); } : null,
+  pre + `<div class="chk"><div class="mut" style="font-size:12.5px;margin-bottom:6px">Instrumenty w koszyku:</div>${S.instrumenty.map(i => `<label><input type="checkbox" value="${esc(i.ticker)}" ${sel.has(i.ticker) ? 'checked' : ''}> <b>${esc(i.ticker)}</b> <span class="mut">${esc(i.nazwa)}</span></label>`).join('')}</div>`);
+}
+function kopiujCele(from, to) {
+  if (S.cele.some(c => c.konto === to) && !confirm(`Konto ${to} ma już portfel docelowy – zastąpić?`)) return;
+  S.cele = S.cele.filter(c => c.konto !== to).concat(S.cele.filter(c => (c.konto || '') === from).map(c => ({ ...c, id: uid(), konto: to })));
+  changed('cele'); FILT.celeKonto = to; render(); toast('Skopiowano portfel docelowy do ' + to);
+}
+function migrateCele() {
+  let ch = false;
+  S.cele.forEach(c => { if (c.konto === undefined) { c.konto = ''; ch = true; }
+    if (!c.tickery) { const ts = S.instrumenty.filter(i => i.koszyk && i.koszyk === c.koszyk).map(i => i.ticker); c.tickery = ts.length ? ts.join(',') : c.koszyk; ch = true; } });
+  if (ch) changed('cele');
 }
 function setCena(id, v) { const i = S.instrumenty.find(x => x.id === id); i.cena = v === '' ? '' : num(v); i.dataCeny = v === '' ? '' : todayStr(); changed('instrumenty'); render(); }
 function addInflacja() {
@@ -662,6 +695,7 @@ setInterval(() => { if (document.visibilityState === 'visible') { C = calc(S); s
 function boot() {
   const MIG = { 'CURRENCY:XAUUSD': 'YAHOO:GC=F', 'CURRENCY:XAGUSD': 'YAHOO:SI=F', 'CURRENCY:BTCUSD': 'YAHOO:BTC-USD' };
   let mig = false; S.instrumenty.forEach(i => { if (MIG[i.symbol]) { i.symbol = MIG[i.symbol]; mig = true; } }); if (mig) changed('instrumenty');
+  migrateCele();
   readHash(); render(); snapshot();
   if (CFG.clientId && CFG.connected) setSync('pending', 'Kliknij tutaj, aby połączyć z Google Sheets');
   else setSync('local', CFG.sheetId ? 'Kliknij, aby połączyć z Google Sheets' : 'Dane tylko w tej przeglądarce');

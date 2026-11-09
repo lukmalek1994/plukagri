@@ -76,6 +76,7 @@ Ceny odświeżają się raz dziennie, przy pierwszym otwarciu aplikacji. Inne in
 - **Kursy walut:** pobierają się z NBP przy otwarciu aplikacji. Kurs NBP z dnia poprzedzającego transakcję (do PIT-38) uzupełnia się sam w formularzu.
 - **Historia wartości:** aplikacja zapisuje wartość portfela raz dziennie, przy pierwszym otwarciu danego dnia.
 - **Inflacja:** pobiera się automatycznie raz dziennie (Polska: Eurostat HICP, USA: BLS CPI-U, z bazy FRED). Na jej podstawie kokpit pokazuje zysk realny.
+- **Portfele docelowe:** w Ustawieniach ustawiasz koszyki z celami % dla całego portfela i osobno dla każdego konta. Koszyk może zawierać kilka instrumentów (np. CORE = CSPX + IWDA). Rebalansing widać na kokpicie (wybór portfela z listy) i na stronie każdego konta.
 - **Konta:** każde konto ma w menu własną stronę (pozycje, strategie, gotówka, wpłaty). Nowe dodajesz przez „＋ Dodaj konto”, usuwasz w „Edytuj / usuń konto”.
 - **Zakładka „Podsumowanie” w arkuszu:** aplikacja buduje ją sama (kafelki, strategie, konta, instrumenty z alokacją 2.1, wykresy). Liczy się formułami z danych arkusza, więc działa także bez aplikacji. Przebudowuje się po dodaniu nowej strategii, konta lub instrumentu; ręcznie: Ustawienia → „Odśwież Podsumowanie w arkuszu”.
 - **Kopia zapasowa:** dane są w arkuszu Google (z historią wersji: *Plik → Historia wersji*), w przeglądarce, a dodatkowo możesz je zapisać przyciskiem *Eksport* w Ustawieniach.

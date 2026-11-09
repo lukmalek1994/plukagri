@@ -9,10 +9,10 @@ const TABLES = {
   wplaty: { sheet: 'Wpłaty', cols: [['id', 'ID'], ['data', 'Data'], ['konto', 'Konto'], ['kwotaPLN', 'Kwota PLN'], ['kwotaWal', 'Kwota w walucie konta'], ['notatka', 'Notatka']] },
   strategie: { sheet: 'Strategie', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['konto', 'Konto'], ['kapital', 'Kapitał przeznaczony'], ['opis', 'Opis'], ['kolor', 'Kolor']] },
   konta: { sheet: 'Konta', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['typ', 'Typ podatkowy'], ['waluta', 'Waluta'], ['gotowka', 'Gotówka'], ['model', 'W modelu 2.1']] },
-  instrumenty: { sheet: 'Instrumenty', cols: [['id', 'ID'], ['ticker', 'Ticker'], ['nazwa', 'Nazwa'], ['klasa', 'Klasa'], ['koszyk', 'Koszyk 2.1'], ['waluta', 'Waluta'], ['cena', 'Cena ręczna'], ['dataCeny', 'Data ceny'], ['symbol', 'Symbol Google Finance'], ['cenaAuto', 'Cena auto (Google)']] },
+  instrumenty: { sheet: 'Instrumenty', cols: [['id', 'ID'], ['ticker', 'Ticker'], ['nazwa', 'Nazwa'], ['klasa', 'Klasa'], ['waluta', 'Waluta'], ['cena', 'Cena ręczna'], ['dataCeny', 'Data ceny'], ['symbol', 'Symbol Google Finance'], ['cenaAuto', 'Cena auto (Google)']] },
   inflacja: { sheet: 'Inflacja', cols: [['miesiac', 'Miesiąc'], ['mm', 'Inflacja PL m/m %'], ['mmUS', 'Inflacja USA m/m %']] },
   historia: { sheet: 'Historia', cols: [['data', 'Data'], ['wartosc', 'Wartość PLN'], ['kapital', 'Wpłacony kapitał PLN']] },
-  cele: { sheet: 'Cele 2.1', cols: [['id', 'ID'], ['koszyk', 'Koszyk'], ['grupa', 'Grupa'], ['cel', 'Cel %']] },
+  cele: { sheet: 'Cele 2.1', cols: [['id', 'ID'], ['konto', 'Konto (puste = cały portfel)'], ['koszyk', 'Koszyk'], ['tickery', 'Instrumenty'], ['grupa', 'Grupa'], ['cel', 'Cel %']] },
   ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
 };
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -156,6 +156,7 @@ async function pullAll() {
     else if (name === 'instrumenty') {
       S.instrumenty = data.map(o => { const c = String(o.cenaAuto); o.cenaAuto = typeof o.cenaAuto === 'number' ? o.cenaAuto : ''; return o; });
     } else S[name] = data;
+    if (name === 'cele') S.cele.forEach(c => { if (c.konto === undefined || c.konto === null) c.konto = ''; if (!c.tickery) c.tickery = c.koszyk; });
     any = true;
   });
   saveLocal();
@@ -217,7 +218,7 @@ async function detectSep() {
 }
 function summarySig() {
   const pairs = [...new Set(S.transakcje.map(t => t.strategia + '|' + t.ticker))].sort();
-  return JSON.stringify([pairs, S.strategie.map(s => s.nazwa), S.konta.map(k => k.nazwa), S.instrumenty.map(i => i.ticker), 3]);
+  return JSON.stringify([pairs, S.strategie.map(s => s.nazwa), S.konta.map(k => k.nazwa), S.instrumenty.map(i => i.ticker), S.cele.map(c => [c.konto, c.koszyk, c.tickery, c.cel]), 4]);
 }
 async function buildSummary(force) {
   if (!CFG.sheetId || !SYNC.token) return;
@@ -235,9 +236,9 @@ async function buildSummary(force) {
   pairs.forEach(([st, tk], i) => { const r = H0 + i, m = `MATCH($U${r}§Instrumenty!$B:$B§0)`;
     help.push([st, tk,
       f(`=SUMIFS(Transakcje!$F:$F§Transakcje!$C:$C§$T${r}§Transakcje!$E:$E§$U${r}§Transakcje!$D:$D§"KUPNO")-SUMIFS(Transakcje!$F:$F§Transakcje!$C:$C§$T${r}§Transakcje!$E:$E§$U${r}§Transakcje!$D:$D§"SPRZEDAŻ")`),
-      f(`=IFERROR(IF(INDEX(Instrumenty!$G:$G§${m})<>""§INDEX(Instrumenty!$G:$G§${m})§INDEX(Instrumenty!$J:$J§${m}))§0)`),
+      f(`=IFERROR(IF(INDEX(Instrumenty!$F:$F§${m})<>""§INDEX(Instrumenty!$F:$F§${m})§INDEX(Instrumenty!$I:$I§${m}))§0)`),
       f('=' + kursF(`$Y${r}`)),
-      f(`=IFERROR(INDEX(Instrumenty!$F:$F§${m})§"PLN")`),
+      f(`=IFERROR(INDEX(Instrumenty!$E:$E§${m})§"PLN")`),
       f(`=IFERROR($V${r}*$W${r}*$X${r}§0)`),
       f(`=IFERROR(IF(SUMIFS(Transakcje!$F:$F§Transakcje!$C:$C§$T${r}§Transakcje!$E:$E§$U${r}§Transakcje!$D:$D§"KUPNO")=0§0§SUMPRODUCT((${T('C')}=$T${r})*(${T('E')}=$U${r})*(${T('D')}="KUPNO")*(${T('F')}*${T('G')}+${T('H')})*IF($Y${r}="PLN"§1§${T('I')}+(${T('I')}="")*$X${r}))*$V${r}/SUMIFS(Transakcje!$F:$F§Transakcje!$C:$C§$T${r}§Transakcje!$E:$E§$U${r}§Transakcje!$D:$D§"KUPNO"))§0)`),
       f(`=IFERROR(INDEX(Strategie!$C:$C§MATCH($T${r}§Strategie!$B:$B§0))§"")`),
@@ -273,16 +274,25 @@ async function buildSummary(force) {
   put(sKT, 2, 'RAZEM'); ['D', 'E', 'F', 'G'].forEach((c, k) => put(sKT, 4 + k, `=SUM(${c}${sK0}:${c}${sKL})`));
   put(sKT, 8, f(`=IF(G${sKT}=0§""§F${sKT}-G${sKT})`)); put(sKT, 9, f(`=IF(G${sKT}=0§""§H${sKT}/G${sKT})`));
   // instrumenty
-  put(sI0 - 2, 2, 'INSTRUMENTY I ALOKACJA (PORTFEL 2.1)');
-  ['Ticker', 'Nazwa', 'Ilość', 'Cena', 'Wartość PLN', 'Udział', 'Cel 2.1', 'Odchylenie'].forEach((h, k) => put(sI0 - 1, 2 + k, h));
+  put(sI0 - 2, 2, 'INSTRUMENTY');
+  ['Ticker', 'Nazwa', 'Ilość', 'Cena', 'Wartość PLN', 'Udział'].forEach((h, k) => put(sI0 - 1, 2 + k, h));
   instr.forEach((it, i) => { const r = sI0 + i, m = `MATCH(B${r}§Instrumenty!$B:$B§0)`;
     put(r, 2, it.ticker); put(r, 3, f(`=IFERROR(INDEX(Instrumenty!$C:$C§${m})§"")`));
     put(r, 4, f(`=SUMIF(${HR('U')}§B${r}§${HR('V')})`));
-    put(r, 5, f(`=IFERROR(IF(INDEX(Instrumenty!$G:$G§${m})<>""§INDEX(Instrumenty!$G:$G§${m})§INDEX(Instrumenty!$J:$J§${m}))§"")`));
-    put(r, 6, f(`=SUMIF(${HR('U')}§B${r}§${HR('Z')})`)); put(r, 7, f(`=IF(${VAL}=0§""§F${r}/${VAL})`));
-    put(r, 8, f(`=IFERROR(INDEX('Cele 2.1'!$D:$D§MATCH(INDEX(Instrumenty!$E:$E§${m})§'Cele 2.1'!$B:$B§0))/100§"")`));
-    put(r, 9, f(`=IF(OR(H${r}=""§G${r}="")§""§G${r}-H${r})`)); });
-  put(sIL + 2, 2, f(`="Ostatnia przebudowa przez aplikację: ${new Date().toLocaleString('pl-PL')}"`));
+    put(r, 5, f(`=IFERROR(IF(INDEX(Instrumenty!$F:$F§${m})<>""§INDEX(Instrumenty!$F:$F§${m})§INDEX(Instrumenty!$I:$I§${m}))§"")`));
+    put(r, 6, f(`=SUMIF(${HR('U')}§B${r}§${HR('Z')})`)); put(r, 7, f(`=IF(${VAL}=0§""§F${r}/${VAL})`)); });
+  // portfel docelowy – cały portfel
+  const cele0 = S.cele.filter(c => !(c.konto || '') && (c.koszyk || c.tickery));
+  const sM0 = sIL + 4, sML = sM0 + Math.max(cele0.length, 1) - 1;
+  put(sM0 - 2, 2, 'PORTFEL DOCELOWY – CAŁY PORTFEL');
+  ['Koszyk', 'Instrumenty', 'Cel', 'Wartość PLN', 'Udział', 'Odchylenie', 'Różnica do celu PLN'].forEach((h, k) => put(sM0 - 1, 2 + k, h));
+  cele0.forEach((c, i) => { const r = sM0 + i, lista = String(c.tickery || c.koszyk).split(',').map(x => x.trim()).filter(Boolean);
+    put(r, 2, c.koszyk); put(r, 3, lista.join(', ')); put(r, 4, num(c.cel) / 100);
+    put(r, 5, f('=' + (lista.map(t => `SUMIF(${HR('U')}§${q(t)}§${HR('Z')})`).join('+') || '0')));
+    put(r, 6, f(`=IF(SUM($E$${sM0}:$E$${sML})=0§""§E${r}/SUM($E$${sM0}:$E$${sML}))`));
+    put(r, 7, f(`=IF(F${r}=""§""§F${r}-D${r})`)); put(r, 8, `=D${r}*SUM($E$${sM0}:$E$${sML})-E${r}`); });
+  const sEnd = sML;
+  put(sEnd + 2, 2, f(`="Ostatnia przebudowa przez aplikację: ${new Date().toLocaleString('pl-PL')}"`));
 
   // --- arkusz: usuń stary, utwórz nowy ---
   const meta = await gapi('GET', `${SHEETS}/${CFG.sheetId}?fields=sheets.properties(sheetId,title)`);
@@ -290,7 +300,7 @@ async function buildSummary(force) {
   const hist = meta.sheets.find(x => x.properties.title === 'Historia');
   const reqs = [];
   if (old) reqs.push({ deleteSheet: { sheetId: old.properties.sheetId } });
-  reqs.push({ addSheet: { properties: { title: 'Podsumowanie', index: 0, tabColor: { red: .08, green: .4, blue: .75 }, gridProperties: { rowCount: Math.max(200, HL + 10), columnCount: 30, hideGridlines: true, frozenRowCount: 0 } } } });
+  reqs.push({ addSheet: { properties: { title: 'Podsumowanie', index: 0, tabColor: { red: .08, green: .4, blue: .75 }, gridProperties: { rowCount: Math.max(220, HL + 10, sEnd + 20), columnCount: 30, hideGridlines: true, frozenRowCount: 0 } } } });
   const add = await gapi('POST', `${SHEETS}/${CFG.sheetId}:batchUpdate`, { requests: reqs });
   const sid = add.replies[add.replies.length - 1].addSheet.properties.sheetId;
   await gapi('POST', `${SHEETS}/${CFG.sheetId}/values:batchUpdate`, { valueInputOption: 'USER_ENTERED', data: [
@@ -318,10 +328,12 @@ async function buildSummary(force) {
     sect(8), head(9, 2, 8), fmt(C(10, 9 + strat.length, 4, 6), money, 'numberFormat'), fmt(C(10, 9 + strat.length, 7, 8), pctF, 'numberFormat'),
     sect(sK0 - 2), head(sK0 - 1, 2, 9), fmt(C(sK0, sKT, 4, 8), money, 'numberFormat'), fmt(C(sK0, sKT, 9, 9), pctF, 'numberFormat'),
     fmt(C(sKT, sKT, 2, 9), { textFormat: { bold: true }, borders: { top: { style: 'SOLID', color: rgb('0B3D91') } } }, 'textFormat,borders'),
-    sect(sI0 - 2), head(sI0 - 1, 2, 9), fmt(C(sI0, sIL, 4, 4), { numberFormat: { type: 'NUMBER', pattern: '#,##0.######' } }, 'numberFormat'),
+    sect(sI0 - 2), head(sI0 - 1, 2, 7), fmt(C(sI0, sIL, 4, 4), { numberFormat: { type: 'NUMBER', pattern: '#,##0.######' } }, 'numberFormat'),
     fmt(C(sI0, sIL, 5, 5), { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' } }, 'numberFormat'), fmt(C(sI0, sIL, 6, 6), money, 'numberFormat'),
-    fmt(C(sI0, sIL, 7, 9), pctF, 'numberFormat'),
-    fmt(C(sIL + 2, sIL + 2, 2, 2), { textFormat: { italic: true, fontSize: 8, foregroundColor: rgb('9CA3AF') } }, 'textFormat'),
+    fmt(C(sI0, sIL, 7, 7), pctF, 'numberFormat'),
+    sect(sM0 - 2), head(sM0 - 1, 2, 8), fmt(C(sM0, sML, 4, 4), pctF, 'numberFormat'), fmt(C(sM0, sML, 5, 5), money, 'numberFormat'),
+    fmt(C(sM0, sML, 6, 7), pctF, 'numberFormat'), fmt(C(sM0, sML, 8, 8), money, 'numberFormat'),
+    fmt(C(sEnd + 2, sEnd + 2, 2, 2), { textFormat: { italic: true, fontSize: 8, foregroundColor: rgb('9CA3AF') } }, 'textFormat'),
     { updateDimensionProperties: { range: { sheetId: sid, dimension: 'COLUMNS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 18 }, fields: 'pixelSize' } },
     { updateDimensionProperties: { range: { sheetId: sid, dimension: 'COLUMNS', startIndex: 1, endIndex: 9 }, properties: { pixelSize: 125 }, fields: 'pixelSize' } },
     { updateDimensionProperties: { range: { sheetId: sid, dimension: 'COLUMNS', startIndex: 9, endIndex: 10 }, properties: { pixelSize: 24 }, fields: 'pixelSize' } },
@@ -331,7 +343,7 @@ async function buildSummary(force) {
     ...[2, 4, 6, 8].map(c => ({ mergeCells: { range: C(5, 5, c, c + 1), mergeType: 'MERGE_ALL' } })),
   ];
   // pasy w tabelach
-  [[10, 9 + strat.length, 8], [sK0, sKL, 9], [sI0, sIL, 9]].forEach(([a, b, c]) => { if (b >= a) R.push({ addBanding: { bandedRange: { range: C(a, b, 2, c), rowProperties: { firstBandColor: rgb('FFFFFF'), secondBandColor: rgb('F5F8FC') } } } }); });
+  [[10, 9 + strat.length, 8], [sK0, sKL, 9], [sI0, sIL, 7], [sM0, sML, 8]].forEach(([a, b, c]) => { if (b >= a) R.push({ addBanding: { bandedRange: { range: C(a, b, 2, c), rowProperties: { firstBandColor: rgb('FFFFFF'), secondBandColor: rgb('F5F8FC') } } } }); });
   // wykresy
   const src = (r0, r1, c) => ({ sourceRange: { sources: [C(r0, r1, c, c)] } });
   const pie = (title, r0, r1, labCol, valCol, anchorRow) => ({ addChart: { chart: { spec: { title, titleTextFormat: { bold: true, fontFamily: 'Arial' }, fontName: 'Arial',

@@ -82,6 +82,8 @@ input.cell{padding:5px 7px;width:100px;text-align:right}
 [data-drag]{cursor:grab}.dragging{opacity:.4}
 .nav a.drop-before{box-shadow:inset 0 2px 0 #7fb0ff}.nav a.drop-after{box-shadow:inset 0 -2px 0 #7fb0ff}
 tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:inset 0 -2px 0 #1565c0}
+.chk{background:#f6f8fc;border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:14px;max-height:220px;overflow:auto}
+.chk label{display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:13px;cursor:pointer}.chk input{width:auto}
 </style>
 </head>
 <body>
@@ -134,9 +136,9 @@ function defaultState() {
     ],
     transakcje: [], dywidendy: [], wplaty: [], inflacja: [], historia: [],
     cele: [
-      { id: 'c1', koszyk: 'CSPX', grupa: 'CORE', cel: 39 }, { id: 'c2', koszyk: 'IWDA', grupa: 'CORE', cel: 26 },
-      { id: 'c3', koszyk: 'IB01', grupa: 'STABILIZATORY', cel: 17 }, { id: 'c4', koszyk: 'ZŁOTO', grupa: 'STABILIZATORY', cel: 6 },
-      { id: 'c5', koszyk: 'SREBRO', grupa: 'STABILIZATORY', cel: 4 }, { id: 'c6', koszyk: 'BTC', grupa: 'ASYMETRIA', cel: 8 },
+      { id: 'c1', konto: '', koszyk: 'CSPX', tickery: 'CSPX', grupa: 'CORE', cel: 39 }, { id: 'c2', konto: '', koszyk: 'IWDA', tickery: 'IWDA', grupa: 'CORE', cel: 26 },
+      { id: 'c3', konto: '', koszyk: 'IB01', tickery: 'IB01', grupa: 'STABILIZATORY', cel: 17 }, { id: 'c4', konto: '', koszyk: 'ZŁOTO', tickery: 'ZŁOTO', grupa: 'STABILIZATORY', cel: 6 },
+      { id: 'c5', konto: '', koszyk: 'SREBRO', tickery: 'SREBRO', grupa: 'STABILIZATORY', cel: 4 }, { id: 'c6', konto: '', koszyk: 'BTC', tickery: 'BTC', grupa: 'ASYMETRIA', cel: 8 },
     ],
     ustawienia: { kursy: { USD: '', EUR: '', GBP: '', CHF: '' }, kursyData: '', stawka: 19 },
   };
@@ -280,19 +282,24 @@ function calc(S) {
   const klasy = groupBy(pozycje, p => p.klasa, p => p.wartoscPLN); if (gotowkaPLN) klasy['Gotówka'] = (klasy['Gotówka'] || 0) + gotowkaPLN;
   const waluty = groupBy(pozycje, p => p.waluta, p => p.wartoscPLN); gotowka.forEach(g => { if (g.pln) waluty[g.waluta] = (waluty[g.waluta] || 0) + g.pln; });
 
-  // model 2.1
+  // portfele docelowe: '' = cały portfel, inaczej nazwa konta. Koszyk = nazwa + lista instrumentów + cel %
   const wModelu = p => ((konto[p.konto] || {}).model || 'TAK') !== 'NIE';
-  const koszyki = groupBy(pozycje.filter(wModelu), p => p.koszyk || 'POZA MODELEM', p => p.wartoscPLN);
-  const cele = S.cele.filter(c => c.koszyk);
-  const totModel = cele.reduce((a, c) => a + (koszyki[c.koszyk] || 0), 0);
-  const model = cele.map(c => { const v = koszyki[c.koszyk] || 0, cel = num(c.cel) / 100;
-    return { ...c, celPct: cel, wartosc: v, udzial: totModel ? v / totModel : 0, roznica: cel * totModel - v,
-      odchylenie: totModel ? (v / totModel - cel) * 100 : 0 }; });
-  const poza = Object.entries(koszyki).filter(([k]) => !cele.some(c => c.koszyk === k)).reduce((a, [, v]) => a + v, 0);
-  function rozdziel(kwota) {
-    const T2 = totModel + kwota; const def = model.map(m => Math.max(0, m.celPct * T2 - m.wartosc)); const sd = def.reduce((a, b) => a + b, 0);
-    return model.map((m, i) => sd ? kwota * def[i] / sd : 0);
+  const tickOf = c => String(c.tickery || c.koszyk || '').split(',').map(s => s.trim()).filter(Boolean);
+  function modelFor(kontoNazwa = '') {
+    const rows = S.cele.filter(c => (c.koszyk || c.tickery) && (c.konto || '') === kontoNazwa);
+    const poz = kontoNazwa ? pozycje.filter(p => p.konto === kontoNazwa) : pozycje.filter(wModelu);
+    const val = t => poz.filter(p => p.ticker === t).reduce((a, p) => a + p.wartoscPLN, 0);
+    const used = new Set(rows.flatMap(tickOf));
+    const raw = rows.map(c => ({ ...c, lista: tickOf(c), celPct: num(c.cel) / 100, wartosc: tickOf(c).reduce((a, t) => a + val(t), 0) }));
+    const tot = raw.reduce((a, m) => a + m.wartosc, 0);
+    const out = raw.map(m => ({ ...m, udzial: tot ? m.wartosc / tot : 0, roznica: m.celPct * tot - m.wartosc, odchylenie: tot ? (m.wartosc / tot - m.celPct) * 100 : 0 }));
+    const poza = poz.filter(p => !used.has(p.ticker)).reduce((a, p) => a + p.wartoscPLN, 0);
+    const got = kontoNazwa ? ((gotowka.find(g => g.konto === kontoNazwa) || {}).pln || 0) : gotowkaPLN;
+    const rozdziel = kwota => { const T2 = tot + kwota, def = out.map(m => Math.max(0, m.celPct * T2 - m.wartosc)), sd = def.reduce((a, b) => a + b, 0); return out.map((m, i) => sd ? kwota * def[i] / sd : 0); };
+    return { rows: out, tot, poza, gotowka: got, rozdziel, sumaCel: raw.reduce((a, m) => a + num(m.cel), 0) };
   }
+  const M0 = modelFor('');
+  const model = M0.rows, poza = M0.poza, rozdziel = M0.rozdziel;
 
   // podatki
   const typKonta = s => (konto[(strat[s] || {}).konto] || {}).typ || 'Opodatkowane';
@@ -319,7 +326,7 @@ function calc(S) {
   const dywNetto = sumPLN(dyw, d => d.nettoPLN);
   const lata = [...new Set([...T.realized.map(r => r.rok), ...dyw.map(d => d.rok), new Date().getFullYear()])].sort((a, b) => b - a);
 
-  return { rateNow, pozycje, zamkniete: P.realized, dyw, strategie, konta, klasy, waluty, model, poza, rozdziel, podatki, lata,
+  return { rateNow, pozycje, zamkniete: P.realized, dyw, strategie, konta, klasy, waluty, model, poza, rozdziel, modelFor, podatki, lata,
     wartosc, wartoscPozycji, gotowkaPLN, kapital, kapitalRealny, kapitalRealnyNa, inflNow: II.now, inflLast: II.lastMonth,
     zysk: wartosc - kapital, zyskPct: kapital ? (wartosc - kapital) / kapital : 0,
     zyskRealny: wartosc - kapitalRealny, zyskRealnyPct: kapitalRealny ? (wartosc - kapitalRealny) / kapitalRealny : 0,
@@ -418,10 +425,10 @@ const TABLES = {
   wplaty: { sheet: 'Wpłaty', cols: [['id', 'ID'], ['data', 'Data'], ['konto', 'Konto'], ['kwotaPLN', 'Kwota PLN'], ['kwotaWal', 'Kwota w walucie konta'], ['notatka', 'Notatka']] },
   strategie: { sheet: 'Strategie', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['konto', 'Konto'], ['kapital', 'Kapitał przeznaczony'], ['opis', 'Opis'], ['kolor', 'Kolor']] },
   konta: { sheet: 'Konta', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['typ', 'Typ podatkowy'], ['waluta', 'Waluta'], ['gotowka', 'Gotówka'], ['model', 'W modelu 2.1']] },
-  instrumenty: { sheet: 'Instrumenty', cols: [['id', 'ID'], ['ticker', 'Ticker'], ['nazwa', 'Nazwa'], ['klasa', 'Klasa'], ['koszyk', 'Koszyk 2.1'], ['waluta', 'Waluta'], ['cena', 'Cena ręczna'], ['dataCeny', 'Data ceny'], ['symbol', 'Symbol Google Finance'], ['cenaAuto', 'Cena auto (Google)']] },
+  instrumenty: { sheet: 'Instrumenty', cols: [['id', 'ID'], ['ticker', 'Ticker'], ['nazwa', 'Nazwa'], ['klasa', 'Klasa'], ['waluta', 'Waluta'], ['cena', 'Cena ręczna'], ['dataCeny', 'Data ceny'], ['symbol', 'Symbol Google Finance'], ['cenaAuto', 'Cena auto (Google)']] },
   inflacja: { sheet: 'Inflacja', cols: [['miesiac', 'Miesiąc'], ['mm', 'Inflacja PL m/m %'], ['mmUS', 'Inflacja USA m/m %']] },
   historia: { sheet: 'Historia', cols: [['data', 'Data'], ['wartosc', 'Wartość PLN'], ['kapital', 'Wpłacony kapitał PLN']] },
-  cele: { sheet: 'Cele 2.1', cols: [['id', 'ID'], ['koszyk', 'Koszyk'], ['grupa', 'Grupa'], ['cel', 'Cel %']] },
+  cele: { sheet: 'Cele 2.1', cols: [['id', 'ID'], ['konto', 'Konto (puste = cały portfel)'], ['koszyk', 'Koszyk'], ['tickery', 'Instrumenty'], ['grupa', 'Grupa'], ['cel', 'Cel %']] },
   ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
 };
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -565,6 +572,7 @@ async function pullAll() {
     else if (name === 'instrumenty') {
       S.instrumenty = data.map(o => { const c = String(o.cenaAuto); o.cenaAuto = typeof o.cenaAuto === 'number' ? o.cenaAuto : ''; return o; });
     } else S[name] = data;
+    if (name === 'cele') S.cele.forEach(c => { if (c.konto === undefined || c.konto === null) c.konto = ''; if (!c.tickery) c.tickery = c.koszyk; });
     any = true;
   });
   saveLocal();
@@ -626,7 +634,7 @@ async function detectSep() {
 }
 function summarySig() {
   const pairs = [...new Set(S.transakcje.map(t => t.strategia + '|' + t.ticker))].sort();
-  return JSON.stringify([pairs, S.strategie.map(s => s.nazwa), S.konta.map(k => k.nazwa), S.instrumenty.map(i => i.ticker), 3]);
+  return JSON.stringify([pairs, S.strategie.map(s => s.nazwa), S.konta.map(k => k.nazwa), S.instrumenty.map(i => i.ticker), S.cele.map(c => [c.konto, c.koszyk, c.tickery, c.cel]), 4]);
 }
 async function buildSummary(force) {
   if (!CFG.sheetId || !SYNC.token) return;
@@ -644,9 +652,9 @@ async function buildSummary(force) {
   pairs.forEach(([st, tk], i) => { const r = H0 + i, m = `MATCH($U${r}§Instrumenty!$B:$B§0)`;
     help.push([st, tk,
       f(`=SUMIFS(Transakcje!$F:$F§Transakcje!$C:$C§$T${r}§Transakcje!$E:$E§$U${r}§Transakcje!$D:$D§"KUPNO")-SUMIFS(Transakcje!$F:$F§Transakcje!$C:$C§$T${r}§Transakcje!$E:$E§$U${r}§Transakcje!$D:$D§"SPRZEDAŻ")`),
-      f(`=IFERROR(IF(INDEX(Instrumenty!$G:$G§${m})<>""§INDEX(Instrumenty!$G:$G§${m})§INDEX(Instrumenty!$J:$J§${m}))§0)`),
+      f(`=IFERROR(IF(INDEX(Instrumenty!$F:$F§${m})<>""§INDEX(Instrumenty!$F:$F§${m})§INDEX(Instrumenty!$I:$I§${m}))§0)`),
       f('=' + kursF(`$Y${r}`)),
-      f(`=IFERROR(INDEX(Instrumenty!$F:$F§${m})§"PLN")`),
+      f(`=IFERROR(INDEX(Instrumenty!$E:$E§${m})§"PLN")`),
       f(`=IFERROR($V${r}*$W${r}*$X${r}§0)`),
       f(`=IFERROR(IF(SUMIFS(Transakcje!$F:$F§Transakcje!$C:$C§$T${r}§Transakcje!$E:$E§$U${r}§Transakcje!$D:$D§"KUPNO")=0§0§SUMPRODUCT((${T('C')}=$T${r})*(${T('E')}=$U${r})*(${T('D')}="KUPNO")*(${T('F')}*${T('G')}+${T('H')})*IF($Y${r}="PLN"§1§${T('I')}+(${T('I')}="")*$X${r}))*$V${r}/SUMIFS(Transakcje!$F:$F§Transakcje!$C:$C§$T${r}§Transakcje!$E:$E§$U${r}§Transakcje!$D:$D§"KUPNO"))§0)`),
       f(`=IFERROR(INDEX(Strategie!$C:$C§MATCH($T${r}§Strategie!$B:$B§0))§"")`),
@@ -682,16 +690,25 @@ async function buildSummary(force) {
   put(sKT, 2, 'RAZEM'); ['D', 'E', 'F', 'G'].forEach((c, k) => put(sKT, 4 + k, `=SUM(${c}${sK0}:${c}${sKL})`));
   put(sKT, 8, f(`=IF(G${sKT}=0§""§F${sKT}-G${sKT})`)); put(sKT, 9, f(`=IF(G${sKT}=0§""§H${sKT}/G${sKT})`));
   // instrumenty
-  put(sI0 - 2, 2, 'INSTRUMENTY I ALOKACJA (PORTFEL 2.1)');
-  ['Ticker', 'Nazwa', 'Ilość', 'Cena', 'Wartość PLN', 'Udział', 'Cel 2.1', 'Odchylenie'].forEach((h, k) => put(sI0 - 1, 2 + k, h));
+  put(sI0 - 2, 2, 'INSTRUMENTY');
+  ['Ticker', 'Nazwa', 'Ilość', 'Cena', 'Wartość PLN', 'Udział'].forEach((h, k) => put(sI0 - 1, 2 + k, h));
   instr.forEach((it, i) => { const r = sI0 + i, m = `MATCH(B${r}§Instrumenty!$B:$B§0)`;
     put(r, 2, it.ticker); put(r, 3, f(`=IFERROR(INDEX(Instrumenty!$C:$C§${m})§"")`));
     put(r, 4, f(`=SUMIF(${HR('U')}§B${r}§${HR('V')})`));
-    put(r, 5, f(`=IFERROR(IF(INDEX(Instrumenty!$G:$G§${m})<>""§INDEX(Instrumenty!$G:$G§${m})§INDEX(Instrumenty!$J:$J§${m}))§"")`));
-    put(r, 6, f(`=SUMIF(${HR('U')}§B${r}§${HR('Z')})`)); put(r, 7, f(`=IF(${VAL}=0§""§F${r}/${VAL})`));
-    put(r, 8, f(`=IFERROR(INDEX('Cele 2.1'!$D:$D§MATCH(INDEX(Instrumenty!$E:$E§${m})§'Cele 2.1'!$B:$B§0))/100§"")`));
-    put(r, 9, f(`=IF(OR(H${r}=""§G${r}="")§""§G${r}-H${r})`)); });
-  put(sIL + 2, 2, f(`="Ostatnia przebudowa przez aplikację: ${new Date().toLocaleString('pl-PL')}"`));
+    put(r, 5, f(`=IFERROR(IF(INDEX(Instrumenty!$F:$F§${m})<>""§INDEX(Instrumenty!$F:$F§${m})§INDEX(Instrumenty!$I:$I§${m}))§"")`));
+    put(r, 6, f(`=SUMIF(${HR('U')}§B${r}§${HR('Z')})`)); put(r, 7, f(`=IF(${VAL}=0§""§F${r}/${VAL})`)); });
+  // portfel docelowy – cały portfel
+  const cele0 = S.cele.filter(c => !(c.konto || '') && (c.koszyk || c.tickery));
+  const sM0 = sIL + 4, sML = sM0 + Math.max(cele0.length, 1) - 1;
+  put(sM0 - 2, 2, 'PORTFEL DOCELOWY – CAŁY PORTFEL');
+  ['Koszyk', 'Instrumenty', 'Cel', 'Wartość PLN', 'Udział', 'Odchylenie', 'Różnica do celu PLN'].forEach((h, k) => put(sM0 - 1, 2 + k, h));
+  cele0.forEach((c, i) => { const r = sM0 + i, lista = String(c.tickery || c.koszyk).split(',').map(x => x.trim()).filter(Boolean);
+    put(r, 2, c.koszyk); put(r, 3, lista.join(', ')); put(r, 4, num(c.cel) / 100);
+    put(r, 5, f('=' + (lista.map(t => `SUMIF(${HR('U')}§${q(t)}§${HR('Z')})`).join('+') || '0')));
+    put(r, 6, f(`=IF(SUM($E$${sM0}:$E$${sML})=0§""§E${r}/SUM($E$${sM0}:$E$${sML}))`));
+    put(r, 7, f(`=IF(F${r}=""§""§F${r}-D${r})`)); put(r, 8, `=D${r}*SUM($E$${sM0}:$E$${sML})-E${r}`); });
+  const sEnd = sML;
+  put(sEnd + 2, 2, f(`="Ostatnia przebudowa przez aplikację: ${new Date().toLocaleString('pl-PL')}"`));
 
   // --- arkusz: usuń stary, utwórz nowy ---
   const meta = await gapi('GET', `${SHEETS}/${CFG.sheetId}?fields=sheets.properties(sheetId,title)`);
@@ -699,7 +716,7 @@ async function buildSummary(force) {
   const hist = meta.sheets.find(x => x.properties.title === 'Historia');
   const reqs = [];
   if (old) reqs.push({ deleteSheet: { sheetId: old.properties.sheetId } });
-  reqs.push({ addSheet: { properties: { title: 'Podsumowanie', index: 0, tabColor: { red: .08, green: .4, blue: .75 }, gridProperties: { rowCount: Math.max(200, HL + 10), columnCount: 30, hideGridlines: true, frozenRowCount: 0 } } } });
+  reqs.push({ addSheet: { properties: { title: 'Podsumowanie', index: 0, tabColor: { red: .08, green: .4, blue: .75 }, gridProperties: { rowCount: Math.max(220, HL + 10, sEnd + 20), columnCount: 30, hideGridlines: true, frozenRowCount: 0 } } } });
   const add = await gapi('POST', `${SHEETS}/${CFG.sheetId}:batchUpdate`, { requests: reqs });
   const sid = add.replies[add.replies.length - 1].addSheet.properties.sheetId;
   await gapi('POST', `${SHEETS}/${CFG.sheetId}/values:batchUpdate`, { valueInputOption: 'USER_ENTERED', data: [
@@ -727,10 +744,12 @@ async function buildSummary(force) {
     sect(8), head(9, 2, 8), fmt(C(10, 9 + strat.length, 4, 6), money, 'numberFormat'), fmt(C(10, 9 + strat.length, 7, 8), pctF, 'numberFormat'),
     sect(sK0 - 2), head(sK0 - 1, 2, 9), fmt(C(sK0, sKT, 4, 8), money, 'numberFormat'), fmt(C(sK0, sKT, 9, 9), pctF, 'numberFormat'),
     fmt(C(sKT, sKT, 2, 9), { textFormat: { bold: true }, borders: { top: { style: 'SOLID', color: rgb('0B3D91') } } }, 'textFormat,borders'),
-    sect(sI0 - 2), head(sI0 - 1, 2, 9), fmt(C(sI0, sIL, 4, 4), { numberFormat: { type: 'NUMBER', pattern: '#,##0.######' } }, 'numberFormat'),
+    sect(sI0 - 2), head(sI0 - 1, 2, 7), fmt(C(sI0, sIL, 4, 4), { numberFormat: { type: 'NUMBER', pattern: '#,##0.######' } }, 'numberFormat'),
     fmt(C(sI0, sIL, 5, 5), { numberFormat: { type: 'NUMBER', pattern: '#,##0.00' } }, 'numberFormat'), fmt(C(sI0, sIL, 6, 6), money, 'numberFormat'),
-    fmt(C(sI0, sIL, 7, 9), pctF, 'numberFormat'),
-    fmt(C(sIL + 2, sIL + 2, 2, 2), { textFormat: { italic: true, fontSize: 8, foregroundColor: rgb('9CA3AF') } }, 'textFormat'),
+    fmt(C(sI0, sIL, 7, 7), pctF, 'numberFormat'),
+    sect(sM0 - 2), head(sM0 - 1, 2, 8), fmt(C(sM0, sML, 4, 4), pctF, 'numberFormat'), fmt(C(sM0, sML, 5, 5), money, 'numberFormat'),
+    fmt(C(sM0, sML, 6, 7), pctF, 'numberFormat'), fmt(C(sM0, sML, 8, 8), money, 'numberFormat'),
+    fmt(C(sEnd + 2, sEnd + 2, 2, 2), { textFormat: { italic: true, fontSize: 8, foregroundColor: rgb('9CA3AF') } }, 'textFormat'),
     { updateDimensionProperties: { range: { sheetId: sid, dimension: 'COLUMNS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 18 }, fields: 'pixelSize' } },
     { updateDimensionProperties: { range: { sheetId: sid, dimension: 'COLUMNS', startIndex: 1, endIndex: 9 }, properties: { pixelSize: 125 }, fields: 'pixelSize' } },
     { updateDimensionProperties: { range: { sheetId: sid, dimension: 'COLUMNS', startIndex: 9, endIndex: 10 }, properties: { pixelSize: 24 }, fields: 'pixelSize' } },
@@ -740,7 +759,7 @@ async function buildSummary(force) {
     ...[2, 4, 6, 8].map(c => ({ mergeCells: { range: C(5, 5, c, c + 1), mergeType: 'MERGE_ALL' } })),
   ];
   // pasy w tabelach
-  [[10, 9 + strat.length, 8], [sK0, sKL, 9], [sI0, sIL, 9]].forEach(([a, b, c]) => { if (b >= a) R.push({ addBanding: { bandedRange: { range: C(a, b, 2, c), rowProperties: { firstBandColor: rgb('FFFFFF'), secondBandColor: rgb('F5F8FC') } } } }); });
+  [[10, 9 + strat.length, 8], [sK0, sKL, 9], [sI0, sIL, 7], [sM0, sML, 8]].forEach(([a, b, c]) => { if (b >= a) R.push({ addBanding: { bandedRange: { range: C(a, b, 2, c), rowProperties: { firstBandColor: rgb('FFFFFF'), secondBandColor: rgb('F5F8FC') } } } }); });
   // wykresy
   const src = (r0, r1, c) => ({ sourceRange: { sources: [C(r0, r1, c, c)] } });
   const pie = (title, r0, r1, labCol, valCol, anchorRow) => ({ addChart: { chart: { spec: { title, titleTextFormat: { bold: true, fontFamily: 'Arial' }, fontName: 'Arial',
@@ -984,15 +1003,9 @@ function vKokpit() {
     { h: 'Udział', f: s => `<div class="bar"><i style="width:${(s.udzial * 100).toFixed(1)}%;background:${esc(s.kolor)}"></i></div>` },
     { h: 'Wynik', n: 1, f: s => pl(s.wynik) }, { h: '%', n: 1, f: s => pp(s.koszt ? s.wynik / s.koszt : 0) },
   ], strat, { empty: 'Brak pozycji w strategiach', click: s => `go('strategia','${s.id}')` });
-  const nowa = num(CFG.nowaWplata);
-  const rozd = C.rozdziel(nowa);
-  const model = table([
-    { h: 'Koszyk', f: m => `<b>${esc(m.koszyk)}</b> <span class="mut">${esc(m.grupa || '')}</span>` },
-    { h: 'Cel', n: 1, f: m => pct(m.celPct) }, { h: 'Teraz', n: 1, f: m => pct(m.udzial) },
-    { h: '', f: m => `<div class="bar" style="position:relative"><i style="width:${Math.min(100, m.udzial * 100).toFixed(1)}%;background:#1565c0"></i><b style="position:absolute;top:-3px;left:${Math.min(99, m.celPct * 100)}%;width:2px;height:12px;background:#0f172a"></b></div>` },
-    { h: 'Różnica', n: 1, f: m => Math.abs(m.roznica) < 1 ? '<span class="mut">–</span>' : `<span class="${m.roznica > 0 ? 'pos' : 'neg'}">${m.roznica > 0 ? 'dokup ' : 'nadwyżka '}${zl(Math.abs(m.roznica), 0)}</span>` },
-    { h: 'Z nowej wpłaty', n: 1, f: (m) => nowa ? zl(rozd[C.model.indexOf(m)], 0) : '–' },
-  ], C.model, { empty: 'Ustaw alokację docelową w Ustawieniach' });
+  const modele = [['', 'Cały portfel'], ...S.konta.filter(k => S.cele.some(c => c.konto === k.nazwa)).map(k => [k.nazwa, k.nazwa])];
+  if (!modele.some(m => m[0] === (FILT.model || ''))) FILT.model = '';
+  const modelSel = modele.length > 1 ? `<select style="padding:4px 8px;font-size:12.5px" onchange="FILT.model=this.value;render()">${modele.map(([v, l]) => `<option value="${esc(v)}" ${v === (FILT.model || '') ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : '';
   const months = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
   const dm = months.map((_, i) => dywRok.filter(d => +d.data.slice(5, 7) === i + 1).reduce((a, d) => a + d.nettoPLN, 0));
   const top = C.pozycje.slice().sort((a, b) => b.wartoscPLN - a.wartoscPLN).slice(0, 8);
@@ -1015,8 +1028,7 @@ function vKokpit() {
       { h: 'Wpłacono', n: 1, f: k => zl(k.kapital, 0) }, { h: 'Zysk', n: 1, f: k => k.zysk === null ? '–' : pl(k.zysk) }, { h: '%', n: 1, f: k => k.zyskPct === null ? '–' : pp(k.zyskPct) },
     ], C.konta, { click: k => `go('konto','${k.id}')` })}</div>
     <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Strategie<span class="sp"></span><small>kliknij, aby otworzyć</small></h3>${stratTbl}</div>
-      <div class="card"><h3>Portfel 2.1 – rebalansing<span class="sp"></span><small>nowa wpłata</small><input class="cell" type="number" value="${nowa || ''}" placeholder="0 zł" onchange="CFG.nowaWplata=this.value;saveCfg();render()"></h3>${model}
-        ${C.poza ? `<div class="mut" style="font-size:12.5px;margin-top:8px">Poza modelem: ${zl(C.poza, 0)} · gotówka: ${zl(C.gotowkaPLN, 0)}</div>` : ''}</div></div>
+      <div class="card"><h3>Portfel docelowy<span class="sp"></span>${modelSel}</h3>${modelCard(FILT.model || '')}</div></div>
     <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Dywidendy i odsetki ${rok} <small>netto PLN</small></h3>${barChart(months, [{ name: 'Netto', values: dm, color: '#26A69A' }], { empty: 'Brak dywidend w tym roku', h: 200 })}</div>
       <div class="card"><h3>Największe pozycje</h3>${topTbl}</div></div>`];
 }
@@ -1095,6 +1107,7 @@ function vKonto() {
       { h: 'Wartość', n: 1, f: s => zl(s.wartosc, 0) }, { h: 'Wynik', n: 1, f: s => pl(s.wynik) }, { h: '%', n: 1, f: s => pp(s.koszt ? s.wynik / s.koszt : 0) },
     ], strat, { empty: 'Żadna strategia nie jest przypisana do tego konta', click: s => `go('strategia','${s.id}')` })}</div>
       <div class="card"><h3>Struktura konta</h3>${struktura}</div></div>
+    <div class="card" style="margin-top:16px"><h3>Portfel docelowy konta</h3>${modelCard(k.nazwa)}</div>
     <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Pozycje</h3>${table([
       { h: 'Instrument', f: p => `<b>${esc(p.ticker)}</b> <span class="mut">${esc(p.strategia)}</span>` }, { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) },
       { h: 'Wartość PLN', n: 1, f: p => zl(p.wartoscPLN) }, { h: 'Zysk PLN', n: 1, f: p => pl(p.zyskPLN) },
@@ -1113,6 +1126,21 @@ function korektaGotowki(id) {
   if (v === null) return; setGotowka(id, String(v).replace(',', '.'));
 }
 function editStrategiaNaKoncie(konto) { editStrategia(null, konto); }
+
+function modelCard(konto) {
+  const M = C.modelFor(konto), key = 'nowa_' + (konto || '_'), nowa = num(CFG[key]), rozd = M.rozdziel(nowa);
+  if (!M.rows.length) return `<div class="empty">Brak portfela docelowego${konto ? ' dla tego konta' : ''}.<br><a onclick="FILT.celeKonto='${esc(konto)}';go('ustawienia')">Ustaw koszyki i cele →</a></div>`;
+  const tbl = table([
+    { h: 'Koszyk', f: m => `<b>${esc(m.koszyk)}</b> <span class="mut">${esc(m.grupa || '')}</span>${m.lista.length > 1 || m.lista[0] !== m.koszyk ? `<br><span class="mut" style="font-size:11.5px">${esc(m.lista.join(' + '))}</span>` : ''}` },
+    { h: 'Cel', n: 1, f: m => pct(m.celPct) }, { h: 'Teraz', n: 1, f: m => pct(m.udzial) },
+    { h: '', f: m => `<div class="bar" style="position:relative"><i style="width:${Math.min(100, m.udzial * 100).toFixed(1)}%;background:#1565c0"></i><b style="position:absolute;top:-3px;left:${Math.min(99, m.celPct * 100)}%;width:2px;height:12px;background:#0f172a"></b></div>` },
+    { h: 'Różnica', n: 1, f: m => Math.abs(m.roznica) < 1 ? '<span class="mut">–</span>' : `<span class="${m.roznica > 0 ? 'pos' : 'neg'}">${m.roznica > 0 ? 'dokup ' : 'nadwyżka '}${zl(Math.abs(m.roznica), 0)}</span>` },
+    { h: 'Z nowej wpłaty', n: 1, f: m => nowa ? zl(rozd[M.rows.indexOf(m)], 0) : '–' },
+  ], M.rows);
+  return `<div class="row" style="margin-bottom:8px;font-size:12.5px"><span class="mut">Nowa wpłata do rozdzielenia:</span><input class="cell" type="number" value="${nowa || ''}" placeholder="0 zł" onchange="CFG['${key}']=this.value;saveCfg();render()">
+    <span class="sp" style="flex:1"></span><a onclick="FILT.celeKonto='${esc(konto)}';go('ustawienia')">edytuj cele</a></div>${tbl}
+    <div class="mut" style="font-size:12.5px;margin-top:8px">${M.sumaCel !== 100 ? `<span class="warn">⚠ Suma celów: ${M.sumaCel}% (powinno być 100%)</span> · ` : ''}Poza portfelem docelowym: ${zl(M.poza, 0)} · gotówka: ${zl(M.gotowka, 0)}</div>`;
+}
 
 function txCols() {
   return [
@@ -1229,7 +1257,7 @@ function vInstrumenty() {
   return ['Instrumenty i ceny', 'Cena ręczna ma pierwszeństwo przed ceną automatyczną z Google Finance', `
     <div class="alert info">💡 Po połączeniu z Google Sheets ceny liczą się same w arkuszu. Symbol: <b>LON:CSPX</b>, NASDAQ:AAPL, WSE:PKN (Google Finance) albo <b>YAHOO:GC=F</b> złoto, YAHOO:SI=F srebro, YAHOO:BTC-USD, YAHOO:CSPX.L (Yahoo – wymaga skryptu Portfel_Ceny.gs w arkuszu). Wpisz cenę ręcznie, gdy symbol nie działa – zostaw puste, aby używać automatycznej.</div>
     <div class="card">${table([
-      { h: 'Ticker', f: i => `<b>${esc(i.ticker)}</b>` }, { h: 'Nazwa', f: i => esc(i.nazwa) }, { h: 'Klasa', f: i => esc(i.klasa) }, { h: 'Koszyk 2.1', f: i => esc(i.koszyk) },
+      { h: 'Ticker', f: i => `<b>${esc(i.ticker)}</b>` }, { h: 'Nazwa', f: i => esc(i.nazwa) }, { h: 'Klasa', f: i => esc(i.klasa) },
       { h: 'Waluta', f: i => esc(i.waluta) }, { h: 'Symbol', f: i => `<span class="mut">${esc(i.symbol)}</span>` },
       { h: 'Cena auto', n: 1, f: i => has(i.cenaAuto) ? nf2.format(num(i.cenaAuto)) : '<span class="mut">–</span>' },
       { h: 'Cena ręczna', n: 1, f: i => `<input class="cell" type="number" step="any" value="${esc(i.cena)}" onclick="event.stopPropagation()" onchange="setCena('${i.id}',this.value)">` },
@@ -1246,12 +1274,15 @@ function vUstawienia() {
   const g = CFG.sheetId ? `<p>Arkusz: <a href="${esc(CFG.sheetUrl || ('https://docs.google.com/spreadsheets/d/' + CFG.sheetId))}" target="_blank">otwórz „Portfel – dane” ↗</a></p>` : '';
   const kontaTbl = table([
     { h: 'Konto', f: k => `<b>${esc(k.nazwa)}</b>` }, { h: 'Typ podatkowy', f: k => esc(k.typ) }, { h: 'Waluta', f: k => esc(k.waluta) },
-    { h: 'Gotówka', n: 1, f: k => { const c = C.konta.find(x => x.id === k.id); return money(c.gotowkaKwota, k.waluta) + (c.gotowkaAuto ? '' : ' <span class="warn">(ręcznie)</span>'); } }, { h: 'Model 2.1', f: k => esc(k.model) },
+    { h: 'Gotówka', n: 1, f: k => { const c = C.konta.find(x => x.id === k.id); return money(c.gotowkaKwota, k.waluta) + (c.gotowkaAuto ? '' : ' <span class="warn">(ręcznie)</span>'); } }, { h: 'W „Całym portfelu”', f: k => esc(k.model) },
     { h: 'Wartość', n: 1, f: k => zl(C.konta.find(x => x.id === k.id)?.razem || 0, 0) },
   ], S.konta, { click: k => `editKonto('${k.id}')`, drag: 'konta' });
+  const ck = FILT.celeKonto || ''; const celeRows = S.cele.filter(c => (c.konto || '') === ck);
+  const celeSel = `<select onchange="FILT.celeKonto=this.value;render()"><option value="">Cały portfel</option>${S.konta.map(k => `<option ${k.nazwa === ck ? 'selected' : ''}>${esc(k.nazwa)}</option>`).join('')}</select>`;
   const celeTbl = table([
-    { h: 'Koszyk', f: c => `<b>${esc(c.koszyk)}</b>` }, { h: 'Grupa', f: c => esc(c.grupa) }, { h: 'Cel', n: 1, f: c => num(c.cel) + '%' },
-  ], S.cele, { click: c => `editCel('${c.id}')`, foot: ['Suma', '', S.cele.reduce((a, c) => a + num(c.cel), 0) + '%'] });
+    { h: 'Koszyk', f: c => `<b>${esc(c.koszyk)}</b>` }, { h: 'Instrumenty', f: c => esc(String(c.tickery || c.koszyk).split(',').join(', ')) },
+    { h: 'Grupa', f: c => esc(c.grupa) }, { h: 'Cel', n: 1, f: c => num(c.cel) + '%' },
+  ], celeRows, { click: c => `editCel('${c.id}')`, empty: 'Brak koszyków – kliknij „＋ Koszyk”', foot: celeRows.length ? ['Suma', '', '', celeRows.reduce((a, c) => a + num(c.cel), 0) + '%'] : null });
   return ['Ustawienia', 'Konta, kursy walut, alokacja docelowa, połączenie z Google Sheets i kopia zapasowa', `
     <div class="grid g2e">
       <div class="card"><h3>Google Sheets</h3>
@@ -1269,8 +1300,9 @@ function vUstawienia() {
     <div class="grid g2e" style="margin-top:16px">
       <div class="card"><h3>Konta<span class="sp"></span><button class="btn sm" onclick="editKonto()">＋ Konto</button></h3>${kontaTbl}
         <div class="mut" style="font-size:12px;margin-top:8px">„Opodatkowane” wchodzi do PIT-38. IKE/IKZE i „Poza PIT-38” są pomijane. Gotówka liczy się sama z wpłat i transakcji (możesz ją nadpisać ręcznie).</div></div>
-      <div class="card"><h3>Portfel 2.1 – alokacja docelowa<span class="sp"></span><button class="btn sm" onclick="editCel()">＋ Koszyk</button></h3>${celeTbl}
-        <div class="mut" style="font-size:12px;margin-top:8px">Koszyk przypisujesz instrumentowi w „Instrumenty i ceny”.</div></div>
+      <div class="card"><h3>Portfel docelowy<span class="sp"></span>${celeSel}<button class="btn sm" onclick="editCel()">＋ Koszyk</button></h3>${celeTbl}
+        <div class="mut" style="font-size:12px;margin-top:8px">Każde konto może mieć własny portfel docelowy, a „Cały portfel” liczy wszystkie konta z „W modelu” = TAK. Koszyk może zawierać kilka instrumentów (np. CORE = CSPX + IWDA).</div>
+        ${ck ? '' : `<div class="row" style="margin-top:8px"><span class="mut" style="font-size:12px">Skopiuj ten portfel do konta:</span><select id="cpyTo">${S.konta.map(k => `<option>${esc(k.nazwa)}</option>`).join('')}</select><button class="btn sm ghost" onclick="kopiujCele('',$('#cpyTo').value)">Kopiuj</button></div>`}</div>
     </div>
     <div class="card" style="margin-top:16px"><h3>Kopia zapasowa</h3>
       <div class="row"><button class="btn ghost" onclick="exportJSON()">⬇ Eksport (plik JSON)</button><button class="btn ghost" onclick="exportCSV()">⬇ Transakcje do Excela (CSV)</button>
@@ -1380,10 +1412,10 @@ function editKonto(id) {
   modal(id ? 'Edytuj konto' : 'Nowe konto', [
     { k: 'nazwa', l: 'Nazwa', full: 1 }, { k: 'typ', l: 'Typ podatkowy', t: 'select', o: ['Opodatkowane', 'IKE', 'IKZE', 'Poza PIT-38'] },
     { k: 'waluta', l: 'Waluta', t: 'select', o: ['PLN', 'USD', 'EUR', 'GBP', 'CHF'] }, { k: 'gotowka', l: 'Gotówka – tylko gdy chcesz wpisać ręcznie (puste = liczona automatycznie)', t: 'number', full: 1 },
-    { k: 'model', l: 'Wliczaj do modelu 2.1', t: 'select', o: ['TAK', 'NIE'] },
+    { k: 'model', l: 'Wliczaj do portfela docelowego „Cały portfel”', t: 'select', o: ['TAK', 'NIE'] },
   ], k, o => {
     if (!o.nazwa) return 'Podaj nazwę';
-    if (id) { Object.assign(k, o); if (old !== o.nazwa) { S.strategie.forEach(s => { if (s.konto === old) s.konto = o.nazwa; }); S.wplaty.forEach(w => { if (w.konto === old) w.konto = o.nazwa; }); changed('strategie', 'wplaty'); } }
+    if (id) { Object.assign(k, o); if (old !== o.nazwa) { S.strategie.forEach(s => { if (s.konto === old) s.konto = o.nazwa; }); S.wplaty.forEach(w => { if (w.konto === old) w.konto = o.nazwa; }); S.cele.forEach(c => { if (c.konto === old) c.konto = o.nazwa; }); changed('strategie', 'wplaty', 'cele'); } }
     else { if (S.konta.some(x => x.nazwa === o.nazwa)) return 'Konto o tej nazwie już istnieje'; const n = { id: uid(), ...o }; S.konta.push(n); setTimeout(() => go('konto', n.id), 0); }
     changed('konta');
   }, id ? () => {
@@ -1391,24 +1423,24 @@ function editKonto(id) {
     if (uzywa.length) { toast('Najpierw przypisz inne konto strategiom: ' + uzywa.join(', ')); return; }
     const w = S.wplaty.filter(x => x.konto === old).length;
     if (w && !confirm(`Na tym koncie jest ${w} wpłat – zostaną usunięte razem z kontem. Kontynuować?`)) return;
-    S.wplaty = S.wplaty.filter(x => x.konto !== old); S.konta = S.konta.filter(x => x.id !== id); changed('konta', 'wplaty'); go('kokpit');
+    S.wplaty = S.wplaty.filter(x => x.konto !== old); S.cele = S.cele.filter(c => c.konto !== old); S.konta = S.konta.filter(x => x.id !== id); changed('konta', 'wplaty', 'cele'); go('kokpit');
   } : null);
 }
 function editInstrument(id) {
-  const i = S.instrumenty.find(x => x.id === id) || { klasa: 'Akcje/ETF', waluta: 'USD', koszyk: 'POZA MODELEM' }; const old = i.ticker;
+  const i = S.instrumenty.find(x => x.id === id) || { klasa: 'Akcje/ETF', waluta: 'USD' }; const old = i.ticker;
   const pre = `<div class="search"><div class="row"><input id="sq" placeholder="Szukaj: nazwa lub ticker, np. cspx, orlen, złoto, bitcoin" style="flex:1">
     <button class="btn" id="sbtn" type="button">Szukaj</button></div><div id="sres" class="sres"></div></div>`;
   const form = modal(id ? 'Edytuj instrument' : 'Nowy instrument', [
     { k: 'ticker', l: 'Ticker' }, { k: 'nazwa', l: 'Nazwa' },
     { k: 'klasa', l: 'Klasa aktywów', t: 'select', o: KLASY },
     { k: 'waluta', l: 'Waluta notowań', t: 'select', o: ['USD', 'PLN', 'EUR', 'GBP', 'CHF'] },
-    { k: 'koszyk', l: 'Koszyk Portfela 2.1', t: 'select', o: [...new Set(['POZA MODELEM', ...S.cele.map(c => c.koszyk), i.koszyk].filter(Boolean))] },
     { k: 'symbol', l: 'Symbol ceny', ph: 'uzupełni się po wyszukaniu – albo wpisz ręcznie' },
     { k: 'cena', l: 'Cena ręczna (opcjonalnie)', t: 'number' }, { k: 'dataCeny', l: 'Data ceny', t: 'date' },
   ], i, o => {
     if (!o.ticker) return 'Podaj ticker';
     if (S.instrumenty.some(x => x.ticker === o.ticker && x.id !== id)) return 'Taki ticker już istnieje';
-    if (id) { Object.assign(i, o); if (old !== o.ticker) { S.transakcje.forEach(t => { if (t.ticker === old) t.ticker = o.ticker; }); S.dywidendy.forEach(d => { if (d.ticker === old) d.ticker = o.ticker; }); changed('transakcje', 'dywidendy'); } }
+    if (id) { Object.assign(i, o); if (old !== o.ticker) { S.transakcje.forEach(t => { if (t.ticker === old) t.ticker = o.ticker; }); S.dywidendy.forEach(d => { if (d.ticker === old) d.ticker = o.ticker; });
+      S.cele.forEach(c => { c.tickery = String(c.tickery || '').split(',').map(t => t.trim() === old ? o.ticker : t.trim()).join(','); }); changed('transakcje', 'dywidendy', 'cele'); } }
     else S.instrumenty.push({ id: uid(), cenaAuto: '', ...o });
     changed('instrumenty');
   }, id ? () => { if (S.transakcje.some(t => t.ticker === old)) { toast('Instrument ma transakcje'); return; } S.instrumenty = S.instrumenty.filter(x => x.id !== id); changed('instrumenty'); } : null, pre);
@@ -1445,7 +1477,6 @@ function wireSearch(form, editing) {
         E.klasa.value = guessKlasa(r);
         if (['USD', 'PLN', 'EUR', 'GBP', 'CHF'].includes(r.waluta)) E.waluta.value = r.waluta;
         E.symbol.value = 'YAHOO:' + r.symbol;
-        const kosz = [...E.koszyk.options].map(o => o.value).find(v => v === E.ticker.value); if (kosz) E.koszyk.value = kosz;
         toast('Uzupełniono dane – sprawdź i kliknij Zapisz');
       });
     } catch (e) { out.innerHTML = `<div class="warn">${esc(e.message)}. Możesz wpisać dane ręcznie.</div>`; }
@@ -1455,11 +1486,32 @@ function wireSearch(form, editing) {
   if (!SYNC.token) out.innerHTML = '<div class="mut">Wyszukiwanie działa po połączeniu z Google Sheets (plakietka u góry). Bez tego wpisz dane ręcznie.</div>';
 }
 function editCel(id) {
-  const c = S.cele.find(x => x.id === id) || {};
-  modal(id ? 'Edytuj koszyk' : 'Nowy koszyk', [{ k: 'koszyk', l: 'Koszyk' }, { k: 'grupa', l: 'Grupa (np. CORE)' }, { k: 'cel', l: 'Cel %', t: 'number' }], c, o => {
+  const c = S.cele.find(x => x.id === id) || { konto: FILT.celeKonto || '' };
+  const sel = new Set(String(c.tickery || c.koszyk || '').split(',').map(s => s.trim()).filter(Boolean));
+  const pre = `<div class="mut" style="font-size:12.5px;margin-bottom:10px">Portfel: <b>${esc(c.konto || 'Cały portfel')}</b></div>`;
+  const form = modal(id ? 'Edytuj koszyk' : 'Nowy koszyk', [
+    { k: 'koszyk', l: 'Nazwa koszyka (np. CORE, CSPX, ZŁOTO)' }, { k: 'grupa', l: 'Grupa (opcjonalnie)' }, { k: 'cel', l: 'Cel %', t: 'number' },
+  ], c, o => {
+    const ts = [...form.closest('.modal').querySelectorAll('.chk input:checked')].map(x => x.value);
     if (!o.koszyk) return 'Podaj nazwę koszyka';
+    if (!ts.length) return 'Zaznacz co najmniej jeden instrument';
+    const inny = S.cele.find(x => x.id !== id && (x.konto || '') === (c.konto || '') && String(x.tickery || x.koszyk).split(',').some(t => ts.includes(t.trim())));
+    if (inny) return `Instrument jest już w koszyku „${inny.koszyk}” tego portfela`;
+    o.tickery = ts.join(','); o.konto = c.konto || '';
     if (id) Object.assign(c, o); else S.cele.push({ id: uid(), ...o }); changed('cele');
-  }, id ? () => { S.cele = S.cele.filter(x => x.id !== id); changed('cele'); } : null);
+  }, id ? () => { S.cele = S.cele.filter(x => x.id !== id); changed('cele'); } : null,
+  pre + `<div class="chk"><div class="mut" style="font-size:12.5px;margin-bottom:6px">Instrumenty w koszyku:</div>${S.instrumenty.map(i => `<label><input type="checkbox" value="${esc(i.ticker)}" ${sel.has(i.ticker) ? 'checked' : ''}> <b>${esc(i.ticker)}</b> <span class="mut">${esc(i.nazwa)}</span></label>`).join('')}</div>`);
+}
+function kopiujCele(from, to) {
+  if (S.cele.some(c => c.konto === to) && !confirm(`Konto ${to} ma już portfel docelowy – zastąpić?`)) return;
+  S.cele = S.cele.filter(c => c.konto !== to).concat(S.cele.filter(c => (c.konto || '') === from).map(c => ({ ...c, id: uid(), konto: to })));
+  changed('cele'); FILT.celeKonto = to; render(); toast('Skopiowano portfel docelowy do ' + to);
+}
+function migrateCele() {
+  let ch = false;
+  S.cele.forEach(c => { if (c.konto === undefined) { c.konto = ''; ch = true; }
+    if (!c.tickery) { const ts = S.instrumenty.filter(i => i.koszyk && i.koszyk === c.koszyk).map(i => i.ticker); c.tickery = ts.length ? ts.join(',') : c.koszyk; ch = true; } });
+  if (ch) changed('cele');
 }
 function setCena(id, v) { const i = S.instrumenty.find(x => x.id === id); i.cena = v === '' ? '' : num(v); i.dataCeny = v === '' ? '' : todayStr(); changed('instrumenty'); render(); }
 function addInflacja() {
@@ -1508,6 +1560,7 @@ setInterval(() => { if (document.visibilityState === 'visible') { C = calc(S); s
 function boot() {
   const MIG = { 'CURRENCY:XAUUSD': 'YAHOO:GC=F', 'CURRENCY:XAGUSD': 'YAHOO:SI=F', 'CURRENCY:BTCUSD': 'YAHOO:BTC-USD' };
   let mig = false; S.instrumenty.forEach(i => { if (MIG[i.symbol]) { i.symbol = MIG[i.symbol]; mig = true; } }); if (mig) changed('instrumenty');
+  migrateCele();
   readHash(); render(); snapshot();
   if (CFG.clientId && CFG.connected) setSync('pending', 'Kliknij tutaj, aby połączyć z Google Sheets');
   else setSync('local', CFG.sheetId ? 'Kliknij, aby połączyć z Google Sheets' : 'Dane tylko w tej przeglądarce');

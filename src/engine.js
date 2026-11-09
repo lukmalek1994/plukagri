@@ -33,9 +33,9 @@ function defaultState() {
     ],
     transakcje: [], dywidendy: [], wplaty: [], inflacja: [], historia: [],
     cele: [
-      { id: 'c1', koszyk: 'CSPX', grupa: 'CORE', cel: 39 }, { id: 'c2', koszyk: 'IWDA', grupa: 'CORE', cel: 26 },
-      { id: 'c3', koszyk: 'IB01', grupa: 'STABILIZATORY', cel: 17 }, { id: 'c4', koszyk: 'ZŁOTO', grupa: 'STABILIZATORY', cel: 6 },
-      { id: 'c5', koszyk: 'SREBRO', grupa: 'STABILIZATORY', cel: 4 }, { id: 'c6', koszyk: 'BTC', grupa: 'ASYMETRIA', cel: 8 },
+      { id: 'c1', konto: '', koszyk: 'CSPX', tickery: 'CSPX', grupa: 'CORE', cel: 39 }, { id: 'c2', konto: '', koszyk: 'IWDA', tickery: 'IWDA', grupa: 'CORE', cel: 26 },
+      { id: 'c3', konto: '', koszyk: 'IB01', tickery: 'IB01', grupa: 'STABILIZATORY', cel: 17 }, { id: 'c4', konto: '', koszyk: 'ZŁOTO', tickery: 'ZŁOTO', grupa: 'STABILIZATORY', cel: 6 },
+      { id: 'c5', konto: '', koszyk: 'SREBRO', tickery: 'SREBRO', grupa: 'STABILIZATORY', cel: 4 }, { id: 'c6', konto: '', koszyk: 'BTC', tickery: 'BTC', grupa: 'ASYMETRIA', cel: 8 },
     ],
     ustawienia: { kursy: { USD: '', EUR: '', GBP: '', CHF: '' }, kursyData: '', stawka: 19 },
   };
@@ -179,19 +179,24 @@ function calc(S) {
   const klasy = groupBy(pozycje, p => p.klasa, p => p.wartoscPLN); if (gotowkaPLN) klasy['Gotówka'] = (klasy['Gotówka'] || 0) + gotowkaPLN;
   const waluty = groupBy(pozycje, p => p.waluta, p => p.wartoscPLN); gotowka.forEach(g => { if (g.pln) waluty[g.waluta] = (waluty[g.waluta] || 0) + g.pln; });
 
-  // model 2.1
+  // portfele docelowe: '' = cały portfel, inaczej nazwa konta. Koszyk = nazwa + lista instrumentów + cel %
   const wModelu = p => ((konto[p.konto] || {}).model || 'TAK') !== 'NIE';
-  const koszyki = groupBy(pozycje.filter(wModelu), p => p.koszyk || 'POZA MODELEM', p => p.wartoscPLN);
-  const cele = S.cele.filter(c => c.koszyk);
-  const totModel = cele.reduce((a, c) => a + (koszyki[c.koszyk] || 0), 0);
-  const model = cele.map(c => { const v = koszyki[c.koszyk] || 0, cel = num(c.cel) / 100;
-    return { ...c, celPct: cel, wartosc: v, udzial: totModel ? v / totModel : 0, roznica: cel * totModel - v,
-      odchylenie: totModel ? (v / totModel - cel) * 100 : 0 }; });
-  const poza = Object.entries(koszyki).filter(([k]) => !cele.some(c => c.koszyk === k)).reduce((a, [, v]) => a + v, 0);
-  function rozdziel(kwota) {
-    const T2 = totModel + kwota; const def = model.map(m => Math.max(0, m.celPct * T2 - m.wartosc)); const sd = def.reduce((a, b) => a + b, 0);
-    return model.map((m, i) => sd ? kwota * def[i] / sd : 0);
+  const tickOf = c => String(c.tickery || c.koszyk || '').split(',').map(s => s.trim()).filter(Boolean);
+  function modelFor(kontoNazwa = '') {
+    const rows = S.cele.filter(c => (c.koszyk || c.tickery) && (c.konto || '') === kontoNazwa);
+    const poz = kontoNazwa ? pozycje.filter(p => p.konto === kontoNazwa) : pozycje.filter(wModelu);
+    const val = t => poz.filter(p => p.ticker === t).reduce((a, p) => a + p.wartoscPLN, 0);
+    const used = new Set(rows.flatMap(tickOf));
+    const raw = rows.map(c => ({ ...c, lista: tickOf(c), celPct: num(c.cel) / 100, wartosc: tickOf(c).reduce((a, t) => a + val(t), 0) }));
+    const tot = raw.reduce((a, m) => a + m.wartosc, 0);
+    const out = raw.map(m => ({ ...m, udzial: tot ? m.wartosc / tot : 0, roznica: m.celPct * tot - m.wartosc, odchylenie: tot ? (m.wartosc / tot - m.celPct) * 100 : 0 }));
+    const poza = poz.filter(p => !used.has(p.ticker)).reduce((a, p) => a + p.wartoscPLN, 0);
+    const got = kontoNazwa ? ((gotowka.find(g => g.konto === kontoNazwa) || {}).pln || 0) : gotowkaPLN;
+    const rozdziel = kwota => { const T2 = tot + kwota, def = out.map(m => Math.max(0, m.celPct * T2 - m.wartosc)), sd = def.reduce((a, b) => a + b, 0); return out.map((m, i) => sd ? kwota * def[i] / sd : 0); };
+    return { rows: out, tot, poza, gotowka: got, rozdziel, sumaCel: raw.reduce((a, m) => a + num(m.cel), 0) };
   }
+  const M0 = modelFor('');
+  const model = M0.rows, poza = M0.poza, rozdziel = M0.rozdziel;
 
   // podatki
   const typKonta = s => (konto[(strat[s] || {}).konto] || {}).typ || 'Opodatkowane';
@@ -218,7 +223,7 @@ function calc(S) {
   const dywNetto = sumPLN(dyw, d => d.nettoPLN);
   const lata = [...new Set([...T.realized.map(r => r.rok), ...dyw.map(d => d.rok), new Date().getFullYear()])].sort((a, b) => b - a);
 
-  return { rateNow, pozycje, zamkniete: P.realized, dyw, strategie, konta, klasy, waluty, model, poza, rozdziel, podatki, lata,
+  return { rateNow, pozycje, zamkniete: P.realized, dyw, strategie, konta, klasy, waluty, model, poza, rozdziel, modelFor, podatki, lata,
     wartosc, wartoscPozycji, gotowkaPLN, kapital, kapitalRealny, kapitalRealnyNa, inflNow: II.now, inflLast: II.lastMonth,
     zysk: wartosc - kapital, zyskPct: kapital ? (wartosc - kapital) / kapital : 0,
     zyskRealny: wartosc - kapitalRealny, zyskRealnyPct: kapitalRealny ? (wartosc - kapitalRealny) / kapitalRealny : 0,
