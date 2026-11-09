@@ -15,7 +15,7 @@ function xirr(flows) {
   return (lo + hi) / 2;
 }
 function xirrPortfel(SV, CV) {
-  const fl = SV.wplaty.filter(w => w.data && has(w.kwotaPLN)).map(w => [w.data, -num(w.kwotaPLN)]);
+  const fl = SV.wplaty.filter(w => w.data && has(w.kwotaPLN)).map(w => [w.data, -(CV.depX ? CV.depX(w) : num(w.kwotaPLN))]);
   fl.push([todayStr(), CV.wartosc]);
   return xirr(fl);
 }
@@ -25,15 +25,17 @@ function xirrStrategia(SV, CV, s) {
   SV.transakcje.filter(t => t.strategia === s.nazwa && t.typ === 'KUPNO' && t.data).forEach(t => {
     const cur = (SV.instrumenty.find(i => i.ticker === t.ticker) || {}).waluta || 'USD';
     const kurs = cur === 'PLN' ? 1 : (has(t.kurs) ? num(t.kurs) : CV.rateNow(cur));
-    fl.push([t.data, -(num(t.ilosc) * num(t.cena) + num(t.prowizja)) * kurs]); });
+    const amt = num(t.ilosc) * num(t.cena) + num(t.prowizja); fl.push([t.data, -(CV.hx ? CV.hx(amt * kurs, t.data, cur, amt) : amt * kurs)]); });
   CV.dyw.filter(d => d.strategia === s.nazwa).forEach(d => fl.push([d.data, d.nettoPLN]));
   if (s.wartosc) fl.push([todayStr(), s.wartosc]);
   return xirr(fl);
 }
 
 /* historia -> stopy okresowe (TWR), indeks bez wpływu wpłat, obsunięcie */
-function histPoints(SV) {
-  return SV.historia.filter(x => x.data && has(x.wartosc)).map(x => ({ d: String(x.data).slice(0, 10), w: num(x.wartosc), k: num(x.kapital) }))
+function histPoints(SV, CV = C) {   // w walucie prezentacji: wartość po kursie z danego dnia, kapitał z wpłat po kursach z dni wpłat
+  const pln = !CV || !CV.waluta || CV.waluta === 'PLN';
+  return SV.historia.filter(x => x.data && has(x.wartosc)).map(x => { const d = String(x.data).slice(0, 10);
+    return { d, w: pln ? num(x.wartosc) : CV.histX(num(x.wartosc), d), k: pln ? num(x.kapital) : CV.kapitalNa(d) }; })
     .sort((a, b) => a.d.localeCompare(b.d));
 }
 function twrIndex(pts) {
@@ -99,7 +101,8 @@ function priceAt(rows, d) {   // ostatnia cena z dnia <= d (lub pierwsza dostęp
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (rows[mid][0] <= d) lo = mid; else hi = mid - 1; }
   return rows[lo][1];
 }
-function benchSeries(SV, dates) {
+function benchSeries(SV, dates, CV = C) {
+  const hx = (v, d) => (CV && CV.waluta && CV.waluta !== 'PLN') ? CV.histX(v, d) : v;
   const wpl = SV.wplaty.filter(w => w.data && has(w.kwotaPLN)).map(w => ({ d: String(w.data).slice(0, 10), v: num(w.kwotaPLN) }));
   if (!wpl.length) return [];
   const fx = (histCache(FX_SYM) || {}).rows;
@@ -117,14 +120,14 @@ function benchSeries(SV, dates) {
       const units = wpl.map(w => ({ d: w.d, u: w.v / pPLN(w.d) }));
       valAt = d => units.filter(x => x.d <= d).reduce((a, x) => a + x.u, 0) * pPLN(d);
     }
-    return { ...b, points: dates.map(d => [d, valAt(d)]), dzis: valAt(todayStr()) };
+    return { ...b, points: dates.map(d => [d, hx(valAt(d), d)]), dzis: hx(valAt(todayStr()), todayStr()) };
   });
 }
 
 /* wpływ waluty: zysk z ceny instrumentu vs z kursu */
 function fxEffect(CV) {
   return CV.pozycje.filter(p => p.waluta !== 'PLN' && p.koszt > 0).map(p => {
-    const avgRate = p.kosztPLN / p.koszt, now = CV.rateNow(p.waluta);
+    const avgRate = (p.kosztPLNr ?? p.kosztPLN) / p.koszt, now = CV.rateNow(p.waluta);
     return { ...p, avgRate, now, efektCena: (p.wartosc - p.koszt) * avgRate, efektKurs: p.wartosc * (now - avgRate) };
   });
 }

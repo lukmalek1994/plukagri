@@ -179,7 +179,7 @@ function vImport() {
     { h: 'Data', f: o => esc(o.data) }, { h: 'Operacja', f: o => `${LBL[o.kind]} <span class="mut" style="font-size:11.5px">${esc(o.type)}</span>` },
     { h: 'Instrument', f: o => o.symbol ? esc((mapa[o.symbol] || {}).ticker || o.symbol) : '–' },
     { h: 'Ilość', n: 1, f: o => o.ilosc === null ? '' : String(o.ilosc).replace('.', ',') }, { h: 'Cena', n: 1, f: o => o.cena === null ? '' : String(o.cena).replace('.', ',') },
-    { h: 'Kwota', n: 1, f: o => pl(o.amount).replace(' zł', ' ' + esc((konta.find(k => k.nazwa === IMP.konto) || {}).waluta || '')) },
+    { h: 'Kwota', n: 1, f: o => plPLN(o.amount).replace(' zł', ' ' + esc((konta.find(k => k.nazwa === IMP.konto) || {}).waluta || '')) },
     { h: 'Status', f: o => xtbIstnieje(o.id) ? '<span class="mut">już zaimportowane</span>' : (['buy', 'sell'].includes(o.kind) && !o.ilosc) ? '<span class="neg">brak ilości w opisie</span>' : '<span class="pos">nowe</span>' },
   ], uzyte.slice().sort((a, b) => b.data.localeCompare(a.data)), { empty: 'W pliku nie znaleziono operacji do zaimportowania' });
   const podatki = ops.filter(o => ['divtax', 'inttax'].includes(o.kind)).length;

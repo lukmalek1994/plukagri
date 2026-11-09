@@ -14,6 +14,8 @@ function emptyChart(msg) { return `<div class="chart-empty">${esc(msg || 'Brak d
 
 /* series: [{name, color, points:[[dateStr, value]]}], opts: {pct, h} */
 function lineChart(series, opts = {}) {
+  const K = (!opts.pct && !opts.fmt && !opts.pln && typeof C !== 'undefined' && C && C.waluta && C.waluta !== 'PLN' && C.kursX) ? C.kursX : 1;   // waluta prezentacji
+  if (K !== 1) series = series.map(s => ({ ...s, points: s.points.map(p => [p[0], p[1] / K]) }));
   const pts = series.flatMap(s => s.points);
   if (pts.length < 2) return emptyChart(opts.empty || 'Wykres pojawi się po kilku dniach zapisów historii');
   const W = 640, H = opts.h || 240, L = 66, R = 14, T = 12, B = 28;
@@ -60,6 +62,8 @@ function donut(data, opts = {}) {
 
 /* bars: labels[], series:[{name,color,values[]}], opts {h, fmt, horizontal} */
 function barChart(labels, series, opts = {}) {
+  const K = (!opts.pct && !opts.fmt && !opts.pln && typeof C !== 'undefined' && C && C.waluta && C.waluta !== 'PLN' && C.kursX) ? C.kursX : 1;
+  if (K !== 1) series = series.map(s => ({ ...s, values: s.values.map(v => v / K) }));
   const all = series.flatMap(s => s.values);
   if (!all.some(v => v)) return emptyChart(opts.empty);
   const W = 640, H = opts.h || 230, L = 58, R = 12, T = 12, B = 30;

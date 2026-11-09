@@ -98,7 +98,7 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 </head>
 <body>
 <div class="app">
-  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 21:19</div></aside>
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 21:43</div></aside>
   <main>
     <div class="top">
       <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
@@ -156,10 +156,10 @@ function defaultState() {
 }
 
 /* indeks inflacji: miesiąc 'YYYY-MM' -> poziom cen na koniec miesiąca (start = 1) */
-function inflIndex(inflacja) {
-  const rows = (inflacja || []).filter(r => r.miesiac && has(r.mm)).sort((a, b) => a.miesiac.localeCompare(b.miesiac));
+function inflIndex(inflacja, pole = 'mm') {
+  const rows = (inflacja || []).filter(r => r.miesiac && has(r[pole])).sort((a, b) => a.miesiac.localeCompare(b.miesiac));
   const idx = []; let lvl = 1;
-  for (const r of rows) { lvl *= 1 + num(r.mm) / 100; idx.push([r.miesiac, lvl]); }
+  for (const r of rows) { lvl *= 1 + num(r[pole]) / 100; idx.push([r.miesiac, lvl]); }
   const at = (ym) => { let v = 1; for (const [m, l] of idx) { if (m <= ym) v = l; else break; } return v; };
   const prevMonth = (d) => { const x = new Date(d + 'T00:00:00'); x.setDate(0); return x.toISOString().slice(0, 7); };
   return {
@@ -170,9 +170,25 @@ function inflIndex(inflacja) {
   };
 }
 
-function calc(S) {
+/* opts.waluta – waluta prezentacji (PLN/USD/EUR); opts.fx – kursy historyczne NBP { USD: [[data, kurs], …] }.
+   Kwoty „PLN” w wynikach prezentacyjnych to równowartość kwoty w walucie prezentacji po dzisiejszym kursie,
+   więc formatowanie dzieli je przez bieżący kurs i dostaje kwotę liczoną po kursach historycznych.
+   Podatki (T, podatki()) zawsze w prawdziwych złotych. */
+const INFL_POLE = { PLN: 'mm', USD: 'mmUS', EUR: 'mmEA' };
+function calc(S, opts = {}) {
   const rates = S.ustawienia.kursy || {};
   const rateNow = cur => (!cur || cur === 'PLN') ? 1 : num(rates[cur]);
+  const X = (opts.waluta && opts.waluta !== 'PLN' && rateNow(opts.waluta)) ? opts.waluta : 'PLN';
+  const fxRows = (opts.fx || {})[X] || [];
+  const fxAt = d => {   // kurs NBP z ostatniego dnia roboczego przed d (jak D-1); brak danych -> kurs bieżący
+    if (X === 'PLN') return 1; if (!fxRows.length || !d) return rateNow(X);
+    d = String(d).slice(0, 10); let lo = 0, hi = fxRows.length - 1;
+    if (fxRows[0][0] >= d) return fxRows[0][1];
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (fxRows[m][0] < d) lo = m; else hi = m - 1; }
+    return fxRows[lo][1];
+  };
+  // kwota w PLN z dnia d -> równowartość w walucie prezentacji (po kursie z d), wyrażona po dzisiejszym kursie
+  const hx = (plnAmt, d, cur, amtCur) => X === 'PLN' ? plnAmt : (cur === X && amtCur !== undefined ? amtCur * rateNow(X) : plnAmt / fxAt(d) * rateNow(X));
   const instr = {}; S.instrumenty.forEach(i => { if (i.ticker) instr[i.ticker] = i; });
   const strat = {}; S.strategie.forEach(s => { strat[s.nazwa] = s; });
   const konto = {}; S.konta.forEach(k => { konto[k.nazwa] = k; });
@@ -185,7 +201,8 @@ function calc(S) {
 
   // wybrany=true: sprzedaż z polem „zakup” zamyka najpierw ten konkretny zakup (widok pozycji);
   // podatek zawsze liczony FIFO – tak wymaga ustawa o PIT
-  function fifo(keyFn, wybrany) {
+  function fifo(keyFn, wybrany, conv = false) {
+    const cv = (pln, d, cur, amt) => conv ? hx(pln, d, cur, amt) : pln;
     const lots = {}, realized = [];
     for (const t of txs) {
       const cur = curOf(t.ticker), q = num(t.ilosc), p = num(t.cena), fee = num(t.prowizja);
@@ -195,7 +212,7 @@ function calc(S) {
       if (!lots[key]) lots[key] = [];
       if (t.typ === 'KUPNO') {
         const cost = q * p + fee;
-        lots[key].push({ q, q0: q, cena: p, uc: cost / q, ucPLN: cost * kurs / q, data: t.data, id: t.id, kursOk });
+        lots[key].push({ q, q0: q, cena: p, uc: cost / q, ucPLN: cv(cost * kurs, t.data, cur, cost) / q, ucPLNr: cost * kurs / q, data: t.data, id: t.id, kursOk });
       } else if (t.typ === 'SPRZEDAŻ') {
         let left = q, cost = 0, costPLN = 0, allOk = kursOk, firstBuy = null; const uzyte = [];
         const bierz = lot => { const take = Math.min(left, lot.q);
@@ -207,15 +224,15 @@ function calc(S) {
         if (left > EPS) warnings.push(`Sprzedaż ${t.ticker} z ${t.data} (${t.strategia}): sprzedano więcej niż kupiono (${r2(left)} szt.).`);
         const proceeds = q * p - fee;
         realized.push({ id: t.id, data: t.data, rok: +t.data.slice(0, 4), ticker: t.ticker, strategia: t.strategia, waluta: cur,
-          ilosc: q, przychod: proceeds, koszt: cost, zysk: proceeds - cost, przychodPLN: proceeds * kurs, kosztPLN: costPLN,
-          zyskPLN: proceeds * kurs - costPLN, kursOk: allOk, kupiono: firstBuy, loty: uzyte, cena: p, zakup: t.zakup || '' });
+          ilosc: q, przychod: proceeds, koszt: cost, zysk: proceeds - cost, przychodPLN: cv(proceeds * kurs, t.data, cur, proceeds), kosztPLN: costPLN,
+          zyskPLN: cv(proceeds * kurs, t.data, cur, proceeds) - costPLN, kursOk: allOk, kupiono: firstBuy, loty: uzyte, cena: p, zakup: t.zakup || '' });
       }
     }
     return { lots, realized };
   }
 
   // pozycje i wynik strategii: FIFO w ramach strategii
-  const P = fifo(t => t.strategia + '|' + t.ticker, true);
+  const P = fifo(t => t.strategia + '|' + t.ticker, true, true);
   // podatek: FIFO w ramach konta (rachunku)
   const T = fifo(t => ((strat[t.strategia] || {}).konto || '?') + '|' + t.ticker);
 
@@ -225,10 +242,10 @@ function calc(S) {
     if (qty <= EPS) continue;
     const [s, ticker] = key.split('|');
     const i = instr[ticker] || {}; const cur = curOf(ticker);
-    const koszt = lots.reduce((a, l) => a + l.q * l.uc, 0), kosztPLN = lots.reduce((a, l) => a + l.q * l.ucPLN, 0);
+    const koszt = lots.reduce((a, l) => a + l.q * l.uc, 0), kosztPLN = lots.reduce((a, l) => a + l.q * l.ucPLN, 0), kosztPLNr = lots.reduce((a, l) => a + l.q * l.ucPLNr, 0);
     const cena = priceOf(ticker), wartosc = qty * cena, wartoscPLN = wartosc * rateNow(cur);
     pozycje.push({ strategia: s, konto: (strat[s] || {}).konto || '', ticker, nazwa: i.nazwa || '', klasa: i.klasa || 'Inne', koszyk: i.koszyk || '',
-      waluta: cur, ilosc: qty, koszt, kosztPLN, sredniaCena: koszt / qty, cena, brakCeny: !cena, wartosc, wartoscPLN,
+      waluta: cur, ilosc: qty, koszt, kosztPLN, kosztPLNr, sredniaCena: koszt / qty, cena, brakCeny: !cena, wartosc, wartoscPLN,
       zysk: wartosc - koszt, zyskPct: koszt ? (wartosc - koszt) / koszt : 0, zyskPLN: wartoscPLN - kosztPLN,
       od: lots.reduce((a, l) => l.data < a ? l.data : a, lots[0].data), kursBrak: lots.some(l => !l.kursOk),
       loty: lots.map(l => { const w = l.q * cena, k = l.q * l.uc, kP = l.q * l.ucPLN;
@@ -243,7 +260,7 @@ function calc(S) {
     const bruttoPLN = num(d.brutto) * kurs, podatekPLN = num(d.podatek) * kurs;
     const doplata = typ === 'Opodatkowane' && cur !== 'PLN' ? Math.max(0, r2(S.ustawienia.stawka / 100 * bruttoPLN) - podatekPLN) : 0;
     return { ...d, waluta: cur, kursOk: cur === 'PLN' || has(d.kurs), netto: num(d.brutto) - num(d.podatek), bruttoPLN, podatekPLN,
-      nettoPLN: bruttoPLN - podatekPLN, doplata, rok: +d.data.slice(0, 4), typ };
+      nettoPLN: hx(bruttoPLN - podatekPLN, d.data, cur, num(d.brutto) - num(d.podatek)), nettoPLNprawdziwe: bruttoPLN - podatekPLN, doplata, rok: +d.data.slice(0, 4), typ };
   });
 
   // gotówka na koncie: liczona automatycznie (wpłaty − zakupy + sprzedaże + dywidendy), chyba że wpisana ręcznie
@@ -267,10 +284,15 @@ function calc(S) {
   const gotowkaPLN = sumPLN(gotowka, g => g.pln);
   const wartosc = wartoscPozycji + gotowkaPLN;
   const wplaty = S.wplaty.filter(w => w.data && has(w.kwotaPLN));
-  const kapital = sumPLN(wplaty, w => num(w.kwotaPLN));
-  const II = inflIndex(S.inflacja);
-  const kapitalRealny = sumPLN(wplaty, w => num(w.kwotaPLN) * II.now / II.before(w.data));
-  const kapitalRealnyNa = (d) => sumPLN(wplaty.filter(w => w.data <= d), w => num(w.kwotaPLN) * II.atDate(d) / II.before(w.data));
+  // wpłata w walucie prezentacji: dokładna kwota, gdy konto jest w tej walucie, inaczej po kursie NBP z dnia wpłaty
+  const depX = w => { const k = konto[w.konto] || {};
+    return X !== 'PLN' && k.waluta === X && has(w.kwotaWal) ? num(w.kwotaWal) * rateNow(X) : hx(num(w.kwotaPLN), w.data, 'PLN'); };
+  const kapital = sumPLN(wplaty, depX);
+  const kapitalNa = d => sumPLN(wplaty.filter(w => w.data <= d), depX);
+  const II = inflIndex(S.inflacja, INFL_POLE[X]);
+  const kapitalRealny = sumPLN(wplaty, w => depX(w) * II.now / II.before(w.data));
+  const kapitalRealnyNa = (d) => sumPLN(wplaty.filter(w => w.data <= d), w => depX(w) * II.atDate(d) / II.before(w.data));
+  const histX = (wPLN, d) => X === 'PLN' ? wPLN : wPLN / fxAt(d) * rateNow(X);   // wartość z historii (PLN z dnia d)
 
   // strategie
   const strategie = S.strategie.map(s => {
@@ -291,7 +313,7 @@ function calc(S) {
   const konta = S.konta.map(k => {
     const w = sumPLN(pozycje.filter(p => p.konto === k.nazwa), p => p.wartoscPLN);
     const gg = gotowka.find(x => x.konto === k.nazwa), g = gg.pln;
-    const kap = sumPLN(wplaty.filter(x => x.konto === k.nazwa), x => num(x.kwotaPLN));
+    const kap = sumPLN(wplaty.filter(x => x.konto === k.nazwa), depX);
     return { ...k, wartoscPozycji: w, gotowkaPLN: g, gotowkaKwota: gg.kwota, gotowkaAuto: gg.auto, gotowkaWyliczona: gg.wyliczona, razem: w + g, kapital: kap, zysk: kap ? w + g - kap : null, zyskPct: kap ? (w + g - kap) / kap : null };
   });
 
@@ -344,7 +366,8 @@ function calc(S) {
   const lata = [...new Set([...T.realized.map(r => r.rok), ...dyw.map(d => d.rok), new Date().getFullYear()])].sort((a, b) => b - a);
 
   return { rateNow, pozycje, zamkniete: P.realized, dyw, strategie, konta, klasy, waluty, model, poza, rozdziel, modelFor, podatki, lata,
-    wartosc, wartoscPozycji, gotowkaPLN, kapital, kapitalRealny, kapitalRealnyNa, inflNow: II.now, inflLast: II.lastMonth,
+    wartosc, wartoscPozycji, gotowkaPLN, kapital, kapitalNa, kapitalRealny, kapitalRealnyNa, inflNow: II.now, inflLast: II.lastMonth,
+    waluta: X, hx, fxAt, histX, depX, kursX: rateNow(X),
     zysk: wartosc - kapital, zyskPct: kapital ? (wartosc - kapital) / kapital : 0,
     zyskRealny: wartosc - kapitalRealny, zyskRealnyPct: kapitalRealny ? (wartosc - kapitalRealny) / kapitalRealny : 0,
     niezreal: wartoscPozycji - sumPLN(pozycje, p => p.kosztPLN), zrealizowany, dywNetto, warnings,
@@ -369,6 +392,8 @@ function emptyChart(msg) { return `<div class="chart-empty">${esc(msg || 'Brak d
 
 /* series: [{name, color, points:[[dateStr, value]]}], opts: {pct, h} */
 function lineChart(series, opts = {}) {
+  const K = (!opts.pct && !opts.fmt && !opts.pln && typeof C !== 'undefined' && C && C.waluta && C.waluta !== 'PLN' && C.kursX) ? C.kursX : 1;   // waluta prezentacji
+  if (K !== 1) series = series.map(s => ({ ...s, points: s.points.map(p => [p[0], p[1] / K]) }));
   const pts = series.flatMap(s => s.points);
   if (pts.length < 2) return emptyChart(opts.empty || 'Wykres pojawi się po kilku dniach zapisów historii');
   const W = 640, H = opts.h || 240, L = 66, R = 14, T = 12, B = 28;
@@ -415,6 +440,8 @@ function donut(data, opts = {}) {
 
 /* bars: labels[], series:[{name,color,values[]}], opts {h, fmt, horizontal} */
 function barChart(labels, series, opts = {}) {
+  const K = (!opts.pct && !opts.fmt && !opts.pln && typeof C !== 'undefined' && C && C.waluta && C.waluta !== 'PLN' && C.kursX) ? C.kursX : 1;
+  if (K !== 1) series = series.map(s => ({ ...s, values: s.values.map(v => v / K) }));
   const all = series.flatMap(s => s.values);
   if (!all.some(v => v)) return emptyChart(opts.empty);
   const W = 640, H = opts.h || 230, L = 58, R = 12, T = 12, B = 30;
@@ -443,7 +470,7 @@ const TABLES = {
   strategie: { sheet: 'Strategie', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['konto', 'Konto'], ['kapital', 'Kapitał przeznaczony'], ['opis', 'Opis'], ['kolor', 'Kolor']] },
   konta: { sheet: 'Konta', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['typ', 'Typ podatkowy'], ['waluta', 'Waluta'], ['gotowka', 'Gotówka'], ['model', 'W modelu 2.1']] },
   instrumenty: { sheet: 'Instrumenty', cols: [['id', 'ID'], ['ticker', 'Ticker'], ['nazwa', 'Nazwa'], ['klasa', 'Klasa'], ['waluta', 'Waluta'], ['cena', 'Cena ręczna'], ['dataCeny', 'Data ceny'], ['symbol', 'Symbol Google Finance'], ['cenaAuto', 'Cena auto (Google)']] },
-  inflacja: { sheet: 'Inflacja', cols: [['miesiac', 'Miesiąc'], ['mm', 'Inflacja PL m/m %'], ['mmUS', 'Inflacja USA m/m %']] },
+  inflacja: { sheet: 'Inflacja', cols: [['miesiac', 'Miesiąc'], ['mm', 'Inflacja PL m/m %'], ['mmUS', 'Inflacja USA m/m %'], ['mmEA', 'Inflacja strefa euro m/m %']] },
   historia: { sheet: 'Historia', cols: [['data', 'Data'], ['wartosc', 'Wartość PLN'], ['kapital', 'Wpłacony kapitał PLN'], ['konta', 'Wartości kont (JSON)'], ['strat', 'Wartości strategii (JSON)']] },
   cele: { sheet: 'Cele 2.1', cols: [['id', 'ID'], ['konto', 'Konto (puste = cały portfel)'], ['koszyk', 'Koszyk'], ['tickery', 'Instrumenty'], ['grupa', 'Grupa'], ['cel', 'Cel %']] },
   alerty: { sheet: 'Alerty', cols: [['id', 'ID'], ['aktywny', 'Aktywny'], ['typ', 'Typ'], ['ticker', 'Instrument'], ['konto', 'Konto'], ['koszyk', 'Koszyk'], ['poziom', 'Poziom'], ['prog', 'Próg blisko'], ['notatka', 'Notatka'],
@@ -903,6 +930,7 @@ async function searchSymbols(q) {
 const INFL_SRC = {
   PL: { fred: 'CP0000PLM086NEST', label: 'Eurostat HICP (Polska)' },
   US: { fred: 'CPIAUCNS', label: 'BLS CPI-U (USA)' },
+  EA: { fred: 'CP0000EZ19M086NEST', label: 'Eurostat HICP (strefa euro)' },
 };
 function mmFromIndex(pts) {   // pts: [['RRRR-MM', indeks]] -> [['RRRR-MM', zmiana m/m %]]
   pts = pts.filter(x => typeof x[1] === 'number' && isFinite(x[1]) && /^\d{4}-\d{2}$/.test(x[0])).sort((a, b) => a[0].localeCompare(b[0]));
@@ -939,6 +967,7 @@ async function pobierzInflacje(quiet) {
   const map = {}; S.inflacja.forEach(r => map[r.miesiac] = r);
   (got.PL || []).forEach(([m, v]) => { (map[m] = map[m] || { miesiac: m, mm: '', mmUS: '' }).mm = v; });
   (got.US || []).forEach(([m, v]) => { (map[m] = map[m] || { miesiac: m, mm: '', mmUS: '' }).mmUS = v; });
+  (got.EA || []).forEach(([m, v]) => { (map[m] = map[m] || { miesiac: m, mm: '', mmUS: '' }).mmEA = v; });
   S.inflacja = Object.values(map).sort((a, b) => a.miesiac.localeCompare(b.miesiac));
   CFG.inflDay = todayStr(); CFG.inflSrc = 'fred'; saveCfg(); changed('inflacja');
   return { pl: (got.PL || []).slice(-1)[0], us: (got.US || []).slice(-1)[0], errs };
@@ -955,6 +984,31 @@ async function nbpRate(cur, dateStr) {
   if (!r.ok) throw new Error('NBP nie zwrócił kursu ' + cur + ' dla ' + dateStr);
   const j = await r.json(); const mid = j.rates[j.rates.length - 1].mid;
   NBP_CACHE[key] = mid; lsSet(LS_NBP, NBP_CACHE); return mid;
+}
+/* kursy historyczne NBP (tabela A) dla waluty prezentacji – pamiętane w przeglądarce */
+const LS_FXH = 'portfel_fxhist_v1';
+let FXH = lsGet(LS_FXH, {});
+function fxStart() {
+  const ds = [...S.wplaty, ...S.transakcje, ...S.dywidendy, ...S.historia].map(x => String(x.data || '').slice(0, 10)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  const d = new Date((ds[0] || todayStr()) + 'T12:00:00'); d.setDate(d.getDate() - 14); return d.toISOString().slice(0, 10);
+}
+async function pobierzFxHist(cur) {
+  if (!cur || cur === 'PLN') return false;
+  const have = FXH[cur] || [], start = fxStart(), today = todayStr();
+  const from = have.length && have[0][0] <= start ? have[have.length - 1][0] : start;
+  if (have.length && have[0][0] <= start && from >= today) return false;
+  const map = {}; have.forEach(([d, v]) => map[d] = v);
+  let a = new Date(from + 'T12:00:00');
+  while (a.toISOString().slice(0, 10) <= today) {
+    const b = new Date(a); b.setDate(b.getDate() + 360);
+    const s = a.toISOString().slice(0, 10), e = (b.toISOString().slice(0, 10) < today ? b.toISOString().slice(0, 10) : today);
+    const r = await fetch(`https://api.nbp.pl/api/exchangerates/rates/a/${cur.toLowerCase()}/${s}/${e}/?format=json`);
+    if (r.ok) (await r.json()).rates.forEach(x => map[x.effectiveDate] = x.mid);
+    else if (r.status !== 404) throw new Error('NBP ' + r.status);
+    a = new Date(e + 'T12:00:00'); a.setDate(a.getDate() + 1);
+  }
+  FXH[cur] = Object.entries(map).sort((x, y) => x[0].localeCompare(y[0]));
+  lsSet(LS_FXH, FXH); return true;
 }
 async function nbpCurrent() {
   const r = await fetch('https://api.nbp.pl/api/exchangerates/tables/a/?format=json');
@@ -982,7 +1036,7 @@ function xirr(flows) {
   return (lo + hi) / 2;
 }
 function xirrPortfel(SV, CV) {
-  const fl = SV.wplaty.filter(w => w.data && has(w.kwotaPLN)).map(w => [w.data, -num(w.kwotaPLN)]);
+  const fl = SV.wplaty.filter(w => w.data && has(w.kwotaPLN)).map(w => [w.data, -(CV.depX ? CV.depX(w) : num(w.kwotaPLN))]);
   fl.push([todayStr(), CV.wartosc]);
   return xirr(fl);
 }
@@ -992,15 +1046,17 @@ function xirrStrategia(SV, CV, s) {
   SV.transakcje.filter(t => t.strategia === s.nazwa && t.typ === 'KUPNO' && t.data).forEach(t => {
     const cur = (SV.instrumenty.find(i => i.ticker === t.ticker) || {}).waluta || 'USD';
     const kurs = cur === 'PLN' ? 1 : (has(t.kurs) ? num(t.kurs) : CV.rateNow(cur));
-    fl.push([t.data, -(num(t.ilosc) * num(t.cena) + num(t.prowizja)) * kurs]); });
+    const amt = num(t.ilosc) * num(t.cena) + num(t.prowizja); fl.push([t.data, -(CV.hx ? CV.hx(amt * kurs, t.data, cur, amt) : amt * kurs)]); });
   CV.dyw.filter(d => d.strategia === s.nazwa).forEach(d => fl.push([d.data, d.nettoPLN]));
   if (s.wartosc) fl.push([todayStr(), s.wartosc]);
   return xirr(fl);
 }
 
 /* historia -> stopy okresowe (TWR), indeks bez wpływu wpłat, obsunięcie */
-function histPoints(SV) {
-  return SV.historia.filter(x => x.data && has(x.wartosc)).map(x => ({ d: String(x.data).slice(0, 10), w: num(x.wartosc), k: num(x.kapital) }))
+function histPoints(SV, CV = C) {   // w walucie prezentacji: wartość po kursie z danego dnia, kapitał z wpłat po kursach z dni wpłat
+  const pln = !CV || !CV.waluta || CV.waluta === 'PLN';
+  return SV.historia.filter(x => x.data && has(x.wartosc)).map(x => { const d = String(x.data).slice(0, 10);
+    return { d, w: pln ? num(x.wartosc) : CV.histX(num(x.wartosc), d), k: pln ? num(x.kapital) : CV.kapitalNa(d) }; })
     .sort((a, b) => a.d.localeCompare(b.d));
 }
 function twrIndex(pts) {
@@ -1066,7 +1122,8 @@ function priceAt(rows, d) {   // ostatnia cena z dnia <= d (lub pierwsza dostęp
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (rows[mid][0] <= d) lo = mid; else hi = mid - 1; }
   return rows[lo][1];
 }
-function benchSeries(SV, dates) {
+function benchSeries(SV, dates, CV = C) {
+  const hx = (v, d) => (CV && CV.waluta && CV.waluta !== 'PLN') ? CV.histX(v, d) : v;
   const wpl = SV.wplaty.filter(w => w.data && has(w.kwotaPLN)).map(w => ({ d: String(w.data).slice(0, 10), v: num(w.kwotaPLN) }));
   if (!wpl.length) return [];
   const fx = (histCache(FX_SYM) || {}).rows;
@@ -1084,14 +1141,14 @@ function benchSeries(SV, dates) {
       const units = wpl.map(w => ({ d: w.d, u: w.v / pPLN(w.d) }));
       valAt = d => units.filter(x => x.d <= d).reduce((a, x) => a + x.u, 0) * pPLN(d);
     }
-    return { ...b, points: dates.map(d => [d, valAt(d)]), dzis: valAt(todayStr()) };
+    return { ...b, points: dates.map(d => [d, hx(valAt(d), d)]), dzis: hx(valAt(todayStr()), todayStr()) };
   });
 }
 
 /* wpływ waluty: zysk z ceny instrumentu vs z kursu */
 function fxEffect(CV) {
   return CV.pozycje.filter(p => p.waluta !== 'PLN' && p.koszt > 0).map(p => {
-    const avgRate = p.kosztPLN / p.koszt, now = CV.rateNow(p.waluta);
+    const avgRate = (p.kosztPLNr ?? p.kosztPLN) / p.koszt, now = CV.rateNow(p.waluta);
     return { ...p, avgRate, now, efektCena: (p.wartosc - p.koszt) * avgRate, efektKurs: p.wartosc * (now - avgRate) };
   });
 }
@@ -1167,7 +1224,19 @@ const $ = s => document.querySelector(s);
 const nf2 = new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const nf0 = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 0 });
 const nfq = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 6 });
-const zl = (v, d = 2) => (v === null || v === undefined || isNaN(v)) ? '–' : (d ? nf2 : nf0).format(v) + ' zł';
+/* waluta prezentacji: kwoty z silnika są w PLN po dzisiejszym kursie -> dzielimy przez bieżący kurs */
+const WAL = () => (C && C.waluta) || 'PLN';
+const WSYM = { PLN: 'zł', USD: 'USD', EUR: 'EUR' };
+const WL = () => WAL() === 'PLN' ? 'PLN' : WAL();
+const zlPLN = (v, d = 2) => (v === null || v === undefined || isNaN(v)) ? '–' : (d ? nf2 : nf0).format(v) + ' zł';
+const zl = (v, d = 2) => { if (v === null || v === undefined || isNaN(v)) return '–'; const w = WAL(); if (w === 'PLN' || !C.kursX) return zlPLN(v, d); return (d ? nf2 : nf0).format(v / C.kursX) + ' ' + WSYM[w]; };
+const calcOpts = () => ({ waluta: CFG.waluta || 'PLN', fx: typeof FXH !== 'undefined' ? FXH : {} });
+const calcPLN = () => (C && C.waluta === 'PLN') ? C : calc(S);
+function ustawWalute(w) {
+  CFG.waluta = w; saveCfg(); render();
+  if (w !== 'PLN') pobierzFxHist(w).then(ch => { if (ch) render(); }).catch(e => toast('Nie udało się pobrać kursów historycznych NBP – liczę po bieżącym kursie'));
+}
+const walutaSeg = () => `<div class="seg wal" title="Waluta prezentacji – kwoty liczone po kursach NBP z dnia operacji, inflacja kraju waluty">${['PLN', 'USD', 'EUR'].map(w => `<button class="${(CFG.waluta || 'PLN') === w ? 'on' : ''}" onclick="ustawWalute('${w}')">${w}</button>`).join('')}</div>`;
 const money = (v, cur) => (v === null || isNaN(v)) ? '–' : nf2.format(v) + ' ' + (cur || '');
 const pct = v => (v === null || v === undefined || !isFinite(v)) ? '–' : (v * 100).toFixed(2).replace('.', ',') + '%';
 const sgn = v => v > 0.0049 ? 'pos' : v < -0.0049 ? 'neg' : '';
@@ -1180,20 +1249,20 @@ function toast(msg) { let t = $('#toast'); t.textContent = msg; t.classList.add(
 const LS_INTRA_REAL = 'portfel_intraday_v1';
 let LS_INTRA = CFG.demo ? 'portfel_intraday_demo' : LS_INTRA_REAL;
 function snapshotIntraday() {
-  if (!C || C.wartosc <= 0) return;
+  if (!C) return; const CP = calcPLN(); if (CP.wartosc <= 0) return;
   const arr = lsGet(LS_INTRA, []), now = new Date(), last = arr[arr.length - 1];
-  const w = Math.round(C.wartosc * 100) / 100, k = Math.round(C.kapital * 100) / 100, kk = kontaMap();
+  const w = Math.round(CP.wartosc * 100) / 100, k = Math.round(CP.kapital * 100) / 100, kk = kontaMap(CP);
   if (last && now - new Date(last.t) < 10 * 60000) { if (last.w === w && last.k === k) return; last.w = w; last.k = k; last.kk = kk; last.t = now.toISOString(); }
   else arr.push({ t: now.toISOString(), w, k, kk });
   const cut = Date.now() - 3 * 864e5; lsSet(LS_INTRA, arr.filter(p => new Date(p.t).getTime() > cut));
 }
-function kontaMap() { const m = {}; C.konta.forEach(k => { if (k.razem) m[k.nazwa] = Math.round(k.razem * 100) / 100; }); return m; }
-function stratMap() { const m = {}; C.strategie.forEach(s => { if (s.wartosc) m[s.nazwa] = Math.round(s.wartosc * 100) / 100; }); return m; }
+function kontaMap(CV = calcPLN()) { const m = {}; CV.konta.forEach(k => { if (k.razem) m[k.nazwa] = Math.round(k.razem * 100) / 100; }); return m; }
+function stratMap(CV = calcPLN()) { const m = {}; CV.strategie.forEach(s => { if (s.wartosc) m[s.nazwa] = Math.round(s.wartosc * 100) / 100; }); return m; }
 function snapshot() {
   snapshotIntraday();
-  if (!C || C.wartosc <= 0) return;
+  if (!C) return; const CP = calcPLN(); if (CP.wartosc <= 0) return;
   const d = todayStr(), last = S.historia[S.historia.length - 1];
-  const rec = { data: d, wartosc: Math.round(C.wartosc * 100) / 100, kapital: Math.round(C.kapital * 100) / 100, konta: JSON.stringify(kontaMap()), strat: JSON.stringify(stratMap()) };
+  const rec = { data: d, wartosc: Math.round(CP.wartosc * 100) / 100, kapital: Math.round(CP.kapital * 100) / 100, konta: JSON.stringify(kontaMap(CP)), strat: JSON.stringify(stratMap(CP)) };
   if (last && last.data === d) { if (Math.abs(num(last.wartosc) - rec.wartosc) < 0.01 && Math.abs(num(last.kapital) - rec.kapital) < 0.01 && last.konta === rec.konta && last.strat === rec.strat) return; Object.assign(last, rec); }
   else S.historia.push(rec);
   S.historia.sort((a, b) => String(a.data).localeCompare(String(b.data)));
@@ -1234,13 +1303,13 @@ function renderSyncBadge() {
 }
 
 function render() {
-  C = calc(S);
+  C = calc(S, calcOpts());
   renderNav(); renderSyncBadge();
   const V = { kokpit: vKokpit, portfel: vPortfel, strategia: vStrategia, konto: vKonto, transakcje: vTransakcje, dywidendy: vDywidendy, wplaty: vWplaty,
     podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, mapa: vMapa, import: vImport, alerty: vAlerty, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
   const [title, sub, body, actions] = V();
   $('#title').innerHTML = `${esc(title)}<small>${sub || ''}</small>`;
-  $('#topActions').innerHTML = actions || `<button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`;
+  $('#topActions').innerHTML = walutaSeg() + (actions || `<button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`);
   $('#view').innerHTML = demoBanner() + body;
   alertyPowiadom();
 }
@@ -1261,6 +1330,7 @@ function table(cols, rows, opts = {}) {
   return `<div class="tbl"><table><thead><tr>${th}</tr></thead><tbody>${tr}${foot}</tbody></table></div>`;
 }
 const pl = v => `<span class="${sgn(v)}">${plus(v)}${zl(v)}</span>`;
+const plPLN = v => `<span class="${sgn(v)}">${plus(v)}${zlPLN(v)}</span>`;
 const ROZW = new Set();
 function toggleRozw(k) { ROZW.has(k) ? ROZW.delete(k) : ROZW.add(k); render(); }
 const lotKey = p => 'poz|' + p.strategia + '|' + p.ticker;
@@ -1296,11 +1366,11 @@ function histSeries(SV = S, konto = '') {
   if (RANGE === '1d') {
     const from = Date.now() - 864e5;
     let h = lsGet(LS_INTRA, []).filter(p => new Date(p.t).getTime() >= from && (!konto || (p.kk && p.kk[konto] !== undefined)))
-      .map(p => ({ d: localIso(p.t), w: konto ? p.kk[konto] : p.w, k: konto ? (SV.historia.slice(-1)[0] || {}).kapital || 0 : p.k }));
-    if (h.length < 2) { const d = SV.historia.filter(x => x.data && has(x.wartosc)).slice(-2).map(x => ({ d: String(x.data).slice(0, 10), w: num(x.wartosc), k: num(x.kapital) })); if (d.length === 2) h = d; }
+      .map(p => ({ d: localIso(p.t), w: C.histX(konto ? p.kk[konto] : p.w, todayStr()), k: C.kapital }));
+    if (h.length < 2) { const d = histPoints(SV).slice(-2); if (d.length === 2) h = d; }
     return h;
   }
-  let h = SV.historia.filter(x => x.data && has(x.wartosc)).map(x => ({ d: String(x.data).slice(0, 10), w: num(x.wartosc), k: num(x.kapital) }));
+  let h = histPoints(SV);
   if (RANGE !== 'all' && h.length) { const days = { '1w': 7, '1m': 31, '3m': 92, '1r': 366, 'ytd': 0 }[RANGE];
     const from = RANGE === 'ytd' ? new Date().getFullYear() + '-01-01' : new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
     h = h.filter(x => x.d >= from); }
@@ -1327,7 +1397,7 @@ function subsetState(kn) {
 function vKokpit() {
   let KK = FILT.kokpitKonto || ''; if (KK && !S.konta.some(k => k.nazwa === KK)) KK = FILT.kokpitKonto = '';
   const Cfull = C, SV = KK ? subsetState(KK) : S; CFULL_W = Cfull.wartosc;
-  if (KK) C = calc(SV);
+  if (KK) C = calc(SV, calcOpts());
   try { return vKokpitInner(SV, KK); } finally { C = Cfull; }
 }
 function vKokpitInner(SV, KK) {
@@ -1335,13 +1405,13 @@ function vKokpitInner(SV, KK) {
   const dywRok = C.dyw.filter(d => d.rok === rok);
   const dywRokNetto = dywRok.reduce((a, d) => a + d.nettoPLN, 0);
   const prev = SV.historia.filter(h => String(h.data) < todayStr()).slice(-1)[0];
-  const zmiana = prev ? C.wartosc - num(prev.wartosc) - (C.kapital - num(prev.kapital)) : null;
+  const zmiana = prev ? C.wartosc - C.histX(num(prev.wartosc), String(prev.data).slice(0, 10)) - (C.kapital - C.kapitalNa(String(prev.data).slice(0, 10))) : null;
   const h = histSeries(SV, KK);
   const kursUsd = C.rateNow('USD');
   const kp = `<div class="kpis">
-    ${kpi(KK ? 'Wartość konta' : 'Wartość portfela', zl(C.wartosc, 0), (C.usd ? `≈ ${nf0.format(C.usd)} USD` : '') + (KK && Cfull_wartosc() ? ` · ${pct(C.wartosc / Cfull_wartosc())} całości` : ''), 'main')}
+    ${kpi(KK ? 'Wartość konta' : 'Wartość portfela', zl(C.wartosc, 0), (WAL() !== 'PLN' ? `≈ ${zlPLN(C.wartosc, 0)}` : C.usd ? `≈ ${nf0.format(C.usd)} USD` : '') + (KK && Cfull_wartosc() ? ` · ${pct(C.wartosc / Cfull_wartosc())} całości` : ''), 'main')}
     ${kpi('Zysk / strata', pl(C.zysk), pp(C.zyskPct) + ' od wpłat')}
-    ${kpi('Zysk realny (po inflacji)', pl(C.zyskRealny), pp(C.zyskRealnyPct) + (C.inflLast ? ` · inflacja PL do ${C.inflLast}` : ' · pobieram inflację…'))}
+    ${kpi('Zysk realny (po inflacji)', pl(C.zyskRealny), pp(C.zyskRealnyPct) + (C.inflLast ? ` · inflacja ${{ PLN: 'PL', USD: 'USA', EUR: 'strefy euro' }[WAL()]} do ${C.inflLast}` : (WAL() === 'EUR' ? ' · pobieram inflację strefy euro…' : ' · pobieram inflację…')))}
     ${kpi('Wpłacony kapitał', zl(C.kapital, 0), `po inflacji: ${zl(C.kapitalRealny, 0)}`)}
     ${kpi('Dywidendy ' + rok, zl(dywRokNetto), 'netto, ' + dywRok.length + ' wypłat')}
     ${kpi('Zmiana od ostatniego zapisu', zmiana === null ? '–' : pl(zmiana), prev ? 'vs ' + prev.data + ' (bez wpłat)' : 'historia zapisuje się codziennie')}
@@ -1356,7 +1426,7 @@ function vKokpitInner(SV, KK) {
     { name: 'Stopa zwrotu', points: h.filter(x => x.k).map(x => [x.d, (x.w - x.k) / x.k]) },
     { name: 'Realna (po inflacji)', points: h.filter(x => x.k).map(x => { const kr = C.kapitalRealnyNa(x.d.slice(0, 10)); return [x.d, kr ? (x.w - kr) / kr : 0]; }), color: '#7E57C2' },
   ], { pct: true, h: 200, empty: emptyMsg() });
-  const klasy = donut(Object.entries(C.klasy), { center: [nf0.format(C.wartosc / 1000) + ' tys.', 'PLN'], empty: 'Dodaj pierwszą transakcję' });
+  const klasy = donut(Object.entries(C.klasy), { center: [nf0.format(C.wartosc / (C.kursX || 1) / 1000) + ' tys.', WL()], empty: 'Dodaj pierwszą transakcję' });
   const waluty = donut(Object.entries(C.waluty), { empty: 'Brak pozycji' });
   const strat = C.strategie.filter(s => s.wartosc || s.zrealizowany || s.dywidendyNetto);
   const stratTbl = table([
@@ -1394,7 +1464,7 @@ function vKokpitInner(SV, KK) {
     ], C.konta, { click: k => `go('konto','${k.id}')` })}</div>
     <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Strategie<span class="sp"></span><small>kliknij, aby otworzyć</small></h3>${stratTbl}</div>
       <div class="card"><h3>Portfel docelowy<span class="sp"></span>${modelSel}</h3>${KK ? modelCard('', KK) : modelCard(FILT.model || '')}</div></div>
-    <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Dywidendy i odsetki ${rok} <small>netto PLN</small></h3>${barChart(months, [{ name: 'Netto', values: dm, color: '#26A69A' }], { empty: 'Brak dywidend w tym roku', h: 200 })}</div>
+    <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Dywidendy i odsetki ${rok} <small>netto ${WL()}</small></h3>${barChart(months, [{ name: 'Netto', values: dm, color: '#26A69A' }], { empty: 'Brak dywidend w tym roku', h: 200 })}</div>
       <div class="card"><h3>Największe pozycje</h3>${topTbl}</div></div>`, `${widok}<button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`];
 }
 
@@ -1410,7 +1480,7 @@ function vPortfel() {
     { h: 'Cena', n: 1, f: p => p.brakCeny ? '<span class="warn">brak</span>' : money(p.cena, p.waluta) },
     { h: 'Wartość', n: 1, f: p => `${zl(p.wartoscPLN)}<br><span class="mut" style="font-size:12px">${money(p.wartosc, p.waluta)}</span>` },
     { h: 'Zysk (waluta)', n: 1, f: p => `<span class="${sgn(p.zysk)}">${plus(p.zysk)}${money(p.zysk, p.waluta)}</span><br>${pp(p.zyskPct)}` },
-    { h: 'Zysk PLN', n: 1, f: p => pl(p.zyskPLN) }, { h: 'Udział', n: 1, f: p => pct(C.wartosc ? p.wartoscPLN / C.wartosc : 0) }, { h: '', f: pozAkcje },
+    { h: 'Zysk ' + WL(), n: 1, f: p => pl(p.zyskPLN) }, { h: 'Udział', n: 1, f: p => pct(C.wartosc ? p.wartoscPLN / C.wartosc : 0) }, { h: '', f: pozAkcje },
   ];
   const subCols = [
     { f: lotOpis }, { f: () => '' }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => money(l.cenaZakupu, l._p.waluta) },
@@ -1426,15 +1496,15 @@ function vPortfel() {
 function vStrategia() {
   const s = C.strategie.find(x => x.id === PARAM); if (!s) return ['Strategia', '', '<div class="empty">Nie znaleziono strategii</div>'];
   const poz = s.pozycje.slice().sort((a, b) => b.wartoscPLN - a.wartoscPLN);
-  const struktura = donut(poz.map(p => [p.ticker, p.wartoscPLN]), { empty: 'Brak otwartych pozycji', center: [nf0.format(s.wartosc / 1000) + ' tys.', 'PLN'] });
+  const struktura = donut(poz.map(p => [p.ticker, p.wartoscPLN]), { empty: 'Brak otwartych pozycji', center: [nf0.format(s.wartosc / (C.kursX || 1) / 1000) + ' tys.', WL()] });
   const txs = S.transakcje.filter(t => t.strategia === s.nazwa).sort((a, b) => String(b.data).localeCompare(String(a.data)));
   const wynikPct = s.koszt ? s.wynik / s.koszt : 0;
   const pozTbl = table([
     { h: 'Instrument', f: p => `<b>${esc(p.ticker)}</b> <span class="mut">${esc(p.nazwa)}</span>` },
     { h: 'Od', f: p => esc(p.od) }, { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) },
     { h: 'Śr. cena', n: 1, f: p => money(p.sredniaCena, p.waluta) }, { h: 'Cena', n: 1, f: p => p.brakCeny ? '<span class="warn">brak</span>' : money(p.cena, p.waluta) },
-    { h: 'Wartość PLN', n: 1, f: p => zl(p.wartoscPLN) }, { h: 'Zysk', n: 1, f: p => `<span class="${sgn(p.zysk)}">${plus(p.zysk)}${money(p.zysk, p.waluta)}</span>` },
-    { h: '%', n: 1, f: p => pp(p.zyskPct) }, { h: 'Zysk PLN', n: 1, f: p => pl(p.zyskPLN) }, { h: '', f: pozAkcje },
+    { h: 'Wartość ' + WL(), n: 1, f: p => zl(p.wartoscPLN) }, { h: 'Zysk', n: 1, f: p => `<span class="${sgn(p.zysk)}">${plus(p.zysk)}${money(p.zysk, p.waluta)}</span>` },
+    { h: '%', n: 1, f: p => pp(p.zyskPct) }, { h: 'Zysk ' + WL(), n: 1, f: p => pl(p.zyskPLN) }, { h: '', f: pozAkcje },
   ], poz, { empty: 'Brak otwartych pozycji – dodaj transakcję kupna', expand: { key: lotKey, sub: lotSub, cols: [
     { f: lotOpis }, { f: l => esc(l.data) }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => money(l.cenaZakupu, l._p.waluta) },
     { n: 1, f: l => l._p.brakCeny ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => zl(l.wartoscPLN) },
@@ -1444,11 +1514,11 @@ function vStrategia() {
     { h: 'Sprzedaż', f: r => esc(r.data) }, { h: 'Instrument', f: r => `<b>${esc(r.ticker)}</b>` }, { h: 'Ilość', n: 1, f: r => nfq.format(r.ilosc) },
     { h: 'Koszt', n: 1, f: r => money(r.koszt, r.waluta) }, { h: 'Przychód', n: 1, f: r => money(r.przychod, r.waluta) },
     { h: 'Zysk', n: 1, f: r => `<span class="${sgn(r.zysk)}">${plus(r.zysk)}${money(r.zysk, r.waluta)}</span>` },
-    { h: 'Zysk PLN', n: 1, f: r => pl(r.zyskPLN) }, { h: '', f: r => `<span class="akcje"><button class="btn sm ghost" onclick="cofnijSprzedaz('${r.id}')">↶ Cofnij</button> <a onclick="editTransakcja('${r.id}')">edytuj</a></span>` },
+    { h: 'Zysk ' + WL(), n: 1, f: r => pl(r.zyskPLN) }, { h: '', f: r => `<span class="akcje"><button class="btn sm ghost" onclick="cofnijSprzedaz('${r.id}')">↶ Cofnij</button> <a onclick="editTransakcja('${r.id}')">edytuj</a></span>` },
   ], s.zamkniete.slice().reverse(), { empty: 'Brak zamkniętych pozycji', expand: { key: zamKey, sub: zamSub, cols: zamSubCols(8) } });
   const dywTbl = table([
     { h: 'Data', f: d => esc(d.data) }, { h: 'Ticker', f: d => esc(d.ticker) }, { h: 'Brutto', n: 1, f: d => money(num(d.brutto), d.waluta) },
-    { h: 'Netto PLN', n: 1, f: d => zl(d.nettoPLN) }, { h: '', f: d => `<a onclick="editDywidenda('${d.id}')">edytuj</a>` },
+    { h: 'Netto ' + WL(), n: 1, f: d => zl(d.nettoPLN) }, { h: '', f: d => `<a onclick="editDywidenda('${d.id}')">edytuj</a>` },
   ], s.dywidendy.slice().reverse(), { empty: 'Brak dywidend' });
   const txTbl = table(txCols(), txs.slice(0, 50), { empty: 'Brak transakcji' });
   return [s.nazwa, `${esc(s.konto)} · ${esc(s.typ)}${s.opis ? ' · ' + esc(s.opis) : ''}`, `
@@ -1468,11 +1538,11 @@ function vKonto() {
   const poz = C.pozycje.filter(p => p.konto === k.nazwa).sort((a, b) => b.wartoscPLN - a.wartoscPLN);
   const wpl = S.wplaty.filter(w => w.konto === k.nazwa).sort((a, b) => String(b.data).localeCompare(String(a.data)));
   const opis = { 'Opodatkowane': 'wchodzi do PIT-38', 'IKE': 'bez podatku Belki (IKE)', 'IKZE': 'bez podatku Belki (IKZE)', 'Poza PIT-38': 'nie wchodzi do PIT-38' }[k.typ] || '';
-  const struktura = donut(poz.map(p => [p.ticker, p.wartoscPLN]).concat(k.gotowkaPLN ? [['Gotówka', k.gotowkaPLN]] : []), { empty: 'Brak pozycji na tym koncie', center: [nf0.format(k.razem / 1000) + ' tys.', 'PLN'] });
+  const struktura = donut(poz.map(p => [p.ticker, p.wartoscPLN]).concat(k.gotowkaPLN ? [['Gotówka', k.gotowkaPLN]] : []), { empty: 'Brak pozycji na tym koncie', center: [nf0.format(k.razem / (C.kursX || 1) / 1000) + ' tys.', WL()] });
   return [k.nazwa, `${esc(k.typ)} · ${esc(opis)} · waluta ${esc(k.waluta)}`, `
     <div class="kpis">${kpi('Wartość konta', zl(k.razem, 0), C.wartosc ? pct(k.razem / C.wartosc) + ' portfela' : '', 'main')}
       ${kpi('Pozycje', zl(k.wartoscPozycji, 0), poz.length + ' otwartych')}
-      ${kpi('Gotówka na koncie', `${money(k.gotowkaKwota, k.waluta)}`, (k.gotowkaAuto ? 'liczona: wpłaty − zakupy + sprzedaże + dywidendy' : '<span class="warn">wpisana ręcznie</span>') + (k.waluta !== 'PLN' ? ' · ≈ ' + zl(k.gotowkaPLN, 0) : '') +
+      ${kpi('Gotówka na koncie', `${money(k.gotowkaKwota, k.waluta)}`, (k.gotowkaAuto ? 'liczona: wpłaty − zakupy + sprzedaże + dywidendy' : '<span class="warn">wpisana ręcznie</span>') + (k.waluta !== WAL() ? ' · ≈ ' + zl(k.gotowkaPLN, 0) : '') +
         `<br><a onclick="korektaGotowki('${k.id}')">${k.gotowkaAuto ? 'wpisz saldo ręcznie' : 'wróć do liczenia automatycznego'}</a>`)}
       ${kpi('Wpłacony kapitał', zl(k.kapital, 0), wpl.length + ' wpłat')}
       ${kpi('Zysk / strata', k.zysk === null ? '–' : pl(k.zysk), k.zyskPct === null ? 'dodaj wpłaty, aby policzyć' : pp(k.zyskPct))}</div>
@@ -1482,12 +1552,14 @@ function vKonto() {
     ], strat, { empty: 'Żadna strategia nie jest przypisana do tego konta', click: s => `go('strategia','${s.id}')` })}</div>
       <div class="card"><h3>Struktura konta</h3>${struktura}</div></div>
     <div class="card" style="margin-top:16px"><h3>Portfel docelowy konta</h3>${modelCard(k.nazwa)}</div>
-    <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Pozycje</h3>${table([
+    <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Pozycje <small>kliknij, aby rozwinąć zakupy</small></h3>${table([
       { h: 'Instrument', f: p => `<b>${esc(p.ticker)}</b> <span class="mut">${esc(p.strategia)}</span>` }, { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) },
-      { h: 'Wartość PLN', n: 1, f: p => zl(p.wartoscPLN) }, { h: 'Zysk PLN', n: 1, f: p => pl(p.zyskPLN) },
-    ], poz, { empty: 'Brak otwartych pozycji' })}</div>
+      { h: 'Wartość ' + WL(), n: 1, f: p => zl(p.wartoscPLN) }, { h: 'Zysk ' + WL(), n: 1, f: p => `${pl(p.zyskPLN)}<br>${pp(p.kosztPLN ? p.zyskPLN / p.kosztPLN : 0)}` }, { h: '', f: pozAkcje },
+    ], poz, { empty: 'Brak otwartych pozycji', expand: { key: lotKey, sub: lotSub, cols: [
+      { f: l => `${lotOpis(l)} <span class="mut">${esc(l.data)}</span>` }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => zl(l.wartoscPLN) },
+      { n: 1, f: l => `${pl(l.zyskPLN)}<br>${pp(l.kosztPLN ? l.zyskPLN / l.kosztPLN : 0)}` }, { f: lotAkcje }] } })}</div>
       <div class="card"><h3>Wpłaty i wypłaty<span class="sp"></span><button class="btn sm ghost" onclick="editWplata(null,'${esc(k.nazwa)}')">＋ Wpłata</button></h3>${table([
-      { h: 'Data', f: w => esc(w.data) }, { h: 'Kwota PLN', n: 1, f: w => pl(num(w.kwotaPLN)) },
+      { h: 'Data', f: w => esc(w.data) }, { h: 'Kwota PLN', n: 1, f: w => plPLN(num(w.kwotaPLN)) },
       { h: 'W walucie konta', n: 1, f: w => has(w.kwotaWal) ? nf2.format(num(w.kwotaWal)) : '–' }, { h: 'Notatka', f: w => esc(w.notatka) },
     ], wpl, { empty: 'Brak wpłat na to konto', click: w => `editWplata('${w.id}')` })}</div></div>`,
     `<button class="btn ghost" onclick="editKonto('${k.id}')">Edytuj / usuń konto</button><button class="btn" onclick="editWplata(null,'${esc(k.nazwa)}')">＋ Wpłata</button>`];
@@ -1543,13 +1615,13 @@ function vDywidendy() {
   const byYear = {}; C.dyw.forEach(d => byYear[d.rok] = (byYear[d.rok] || 0) + d.nettoPLN);
   const years = Object.keys(byYear).sort();
   return ['Dywidendy i odsetki', 'Kwoty w walucie instrumentu, przeliczone kursem NBP z dnia przed wypłatą', `
-    <div class="grid g2e"><div class="card"><h3>Netto PLN wg lat</h3>${barChart(years, [{ name: 'Netto', values: years.map(y => byYear[y]), color: '#26A69A' }], { empty: 'Brak dywidend', h: 190 })}</div>
+    <div class="grid g2e"><div class="card"><h3>Netto ${WL()} wg lat</h3>${barChart(years, [{ name: 'Netto', values: years.map(y => byYear[y]), color: '#26A69A' }], { empty: 'Brak dywidend', h: 190 })}</div>
     <div class="kpis" style="align-content:start">${kpi('Łącznie netto', zl(C.dywNetto))}${kpi('Liczba wypłat', rows.length)}${kpi('Do dopłaty w PL (' + new Date().getFullYear() + ')', zl(C.dyw.filter(d => d.rok === new Date().getFullYear()).reduce((a, d) => a + d.doplata, 0)))}</div></div>
     <div class="card" style="margin-top:16px">${table([
       { h: 'Data', f: d => esc(d.data) }, { h: 'Strategia', f: d => esc(d.strategia) }, { h: 'Ticker', f: d => `<b>${esc(d.ticker)}</b>` },
       { h: 'Brutto', n: 1, f: d => money(num(d.brutto), d.waluta) }, { h: 'Podatek u źródła', n: 1, f: d => money(num(d.podatek), d.waluta) },
       { h: 'Kurs', n: 1, f: d => d.waluta === 'PLN' ? '–' : (has(d.kurs) ? num(d.kurs).toFixed(4) : '<span class="warn">brak</span>') },
-      { h: 'Netto PLN', n: 1, f: d => zl(d.nettoPLN) }, { h: 'Dopłata PL', n: 1, f: d => d.doplata ? zl(d.doplata) : '–' },
+      { h: 'Netto ' + WL(), n: 1, f: d => zl(d.nettoPLN) }, { h: 'Dopłata PL', n: 1, f: d => d.doplata ? zlPLN(d.doplata) : '–' },
     ], rows, { empty: 'Brak dywidend – kliknij „＋ Dywidenda”', click: d => `editDywidenda('${d.id}')` })}</div>`,
     `<button class="btn" onclick="editDywidenda()">＋ Dywidenda</button>`];
 }
@@ -1558,10 +1630,10 @@ function vWplaty() {
   const rows = S.wplaty.slice().sort((a, b) => String(b.data).localeCompare(String(a.data)));
   let acc = 0; const cum = S.wplaty.slice().filter(w => w.data).sort((a, b) => String(a.data).localeCompare(String(b.data))).map(w => [String(w.data), acc += num(w.kwotaPLN)]);
   return ['Wpłaty i wypłaty', 'Wypłatę wpisz jako kwotę ujemną', `
-    <div class="grid g2"><div class="card"><h3>Wpłacony kapitał narastająco</h3>${lineChart([{ name: 'Kapitał', points: cum }], { area: true, empty: 'Dodaj co najmniej dwie wpłaty' })}</div>
-    <div class="kpis" style="align-content:start;grid-template-columns:1fr">${kpi('Wpłacony kapitał', zl(C.kapital))}${kpi('W dzisiejszych złotych (po inflacji)', zl(C.kapitalRealny))}</div></div>
+    <div class="grid g2"><div class="card"><h3>Wpłacony kapitał narastająco</h3>${lineChart([{ name: 'Kapitał', points: cum }], { area: true, pln: true, empty: 'Dodaj co najmniej dwie wpłaty' })}</div>
+    <div class="kpis" style="align-content:start;grid-template-columns:1fr">${kpi('Wpłacony kapitał', zlPLN(C.kapital))}${kpi('W dzisiejszych złotych (po inflacji)', zlPLN(C.kapitalRealny))}</div></div>
     <div class="card" style="margin-top:16px">${table([
-      { h: 'Data', f: w => esc(w.data) }, { h: 'Konto', f: w => esc(w.konto) }, { h: 'Kwota PLN', n: 1, f: w => pl(num(w.kwotaPLN)) },
+      { h: 'Data', f: w => esc(w.data) }, { h: 'Konto', f: w => esc(w.konto) }, { h: 'Kwota PLN', n: 1, f: w => plPLN(num(w.kwotaPLN)) },
       { h: 'Kwota w walucie konta', n: 1, f: w => has(w.kwotaWal) ? nf2.format(num(w.kwotaWal)) : '–' }, { h: 'Notatka', f: w => esc(w.notatka) },
     ], rows, { empty: 'Brak wpłat', click: w => `editWplata('${w.id}')` })}</div>`,
     `<button class="btn" onclick="editWplata()">＋ Wpłata</button>`];
@@ -1575,22 +1647,22 @@ function vPodatki() {
   return ['Podatki – PIT-38', 'Konta „Opodatkowane”; FIFO w ramach rachunku; kursy NBP z dnia przed transakcją', `
     <div class="filters"><select onchange="FILT.rok=this.value;render()">${opts}</select></div>
     ${P.brakKursow ? '<div class="alert">⚠ Część transakcji nie ma kursu NBP – użyto bieżącego kursu. Uzupełnij kursy, aby wynik był zgodny z PIT-38.</div>' : ''}
-    <div class="kpis">${kpi('Podatek do zapłaty', zl(P.razem, 0), 'za rok ' + rok, 'main')}${kpi('Dochód z papierów', pl(P.dochod))}${kpi('Dopłata od dywidend', zl(P.dywDoplata, 0))}${kpi('Podatek od krypto', zl(P.kPodatek, 0))}</div>
+    <div class="kpis">${kpi('Podatek do zapłaty', zlPLN(P.razem, 0), 'za rok ' + rok, 'main')}${kpi('Dochód z papierów', plPLN(P.dochod))}${kpi('Dopłata od dywidend', zlPLN(P.dywDoplata, 0))}${kpi('Podatek od krypto', zlPLN(P.kPodatek, 0))}</div>
     <div class="grid g3">
-      <div class="card"><h3>Papiery wartościowe</h3><table>${line('Przychód', zl(P.przychod))}${line('Koszty uzyskania', zl(P.koszty))}${line('Dochód / strata', zl(P.dochod))}
+      <div class="card"><h3>Papiery wartościowe</h3><table>${line('Przychód', zlPLN(P.przychod))}${line('Koszty uzyskania', zlPLN(P.koszty))}${line('Dochód / strata', zlPLN(P.dochod))}
         <tr><td>Strata z lat ubiegłych</td><td class="n"><input class="cell" type="number" value="${CFG.strataPrev[rok] || ''}" onchange="CFG.strataPrev[${rok}]=this.value;saveCfg();render()"></td></tr>
-        ${line('Podstawa opodatkowania', zl(P.podstawa, 0))}${line('Podatek ' + S.ustawienia.stawka + '%', zl(P.podatekPap, 0), 1)}</table></div>
-      <div class="card"><h3>Dywidendy zagraniczne</h3><table>${line('Przychód brutto', zl(P.dywBrutto))}${line('Podatek pobrany za granicą', zl(P.dywPobrany))}${line('Do dopłaty w Polsce', zl(P.dywDoplata, 0), 1)}</table>
+        ${line('Podstawa opodatkowania', zlPLN(P.podstawa, 0))}${line('Podatek ' + S.ustawienia.stawka + '%', zlPLN(P.podatekPap, 0), 1)}</table></div>
+      <div class="card"><h3>Dywidendy zagraniczne</h3><table>${line('Przychód brutto', zlPLN(P.dywBrutto))}${line('Podatek pobrany za granicą', zlPLN(P.dywPobrany))}${line('Do dopłaty w Polsce', zlPLN(P.dywDoplata, 0), 1)}</table>
         <div class="mut" style="font-size:12px;margin-top:8px">USA z W-8BEN: 15% pobrane → dopłacasz 4%.</div></div>
-      <div class="card"><h3>Kryptowaluty</h3><table>${line('Przychód', zl(P.kPrzych))}${line('Koszty zakupu w roku', zl(P.kKoszt))}
+      <div class="card"><h3>Kryptowaluty</h3><table>${line('Przychód', zlPLN(P.kPrzych))}${line('Koszty zakupu w roku', zlPLN(P.kKoszt))}
         <tr><td>Nadwyżka kosztów z lat ubiegłych</td><td class="n"><input class="cell" type="number" value="${CFG.kryptoPrev[rok] || ''}" onchange="CFG.kryptoPrev[${rok}]=this.value;saveCfg();render()"></td></tr>
-        ${line('Dochód', zl(P.kDochod))}${line('Nadwyżka na kolejny rok', zl(P.kNadwyzka))}${line('Podatek', zl(P.kPodatek, 0), 1)}</table></div>
+        ${line('Dochód', zlPLN(P.kDochod))}${line('Nadwyżka na kolejny rok', zlPLN(P.kNadwyzka))}${line('Podatek', zlPLN(P.kPodatek, 0), 1)}</table></div>
     </div>
     <div class="card" style="margin-top:16px"><h3>Sprzedaże w ${rok} (FIFO)</h3>${table([
       { h: 'Data', f: r => esc(r.data) }, { h: 'Instrument', f: r => `<b>${esc(r.ticker)}</b>` }, { h: 'Strategia', f: r => esc(r.strategia) },
-      { h: 'Ilość', n: 1, f: r => nfq.format(r.ilosc) }, { h: 'Przychód PLN', n: 1, f: r => zl(r.przychodPLN) }, { h: 'Koszt PLN', n: 1, f: r => zl(r.kosztPLN) },
-      { h: 'Dochód PLN', n: 1, f: r => pl(r.zyskPLN) }, { h: '', f: r => r.kursOk ? '' : '<span class="warn">brak kursu</span>' },
-    ], P.sprzedaze, { empty: 'Brak sprzedaży w tym roku', foot: ['Razem', '', '', '', zl(P.przychod), zl(P.koszty), zl(P.dochod), ''] })}</div>
+      { h: 'Ilość', n: 1, f: r => nfq.format(r.ilosc) }, { h: 'Przychód PLN', n: 1, f: r => zlPLN(r.przychodPLN) }, { h: 'Koszt ' + WL(), n: 1, f: r => zlPLN(r.kosztPLN) },
+      { h: 'Dochód PLN', n: 1, f: r => plPLN(r.zyskPLN) }, { h: '', f: r => r.kursOk ? '' : '<span class="warn">brak kursu</span>' },
+    ], P.sprzedaze, { empty: 'Brak sprzedaży w tym roku', foot: ['Razem', '', '', '', zlPLN(P.przychod), zlPLN(P.koszty), zlPLN(P.dochod), ''] })}</div>
     <div class="mut" style="font-size:12px;margin-top:10px">Porównaj z PIT-8C od brokera. To pomoc w rozliczeniu, nie doradztwo podatkowe.</div>`, ' '];
 }
 
@@ -1599,16 +1671,18 @@ function vInflacja() {
   const asc = rows.slice().reverse();
   const yoy = key => asc.map((r, i) => { if (i < 11) return null; const w = asc.slice(i - 11, i + 1); if (w.some(x => !has(x[key]))) return null;
     return [r.miesiac + '-01', w.reduce((a, x) => a * (1 + num(x[key]) / 100), 1) - 1]; }).filter(Boolean);
-  const yPL = yoy('mm'), yUS = yoy('mmUS');
-  const lastPL = yPL[yPL.length - 1], lastUS = yUS[yUS.length - 1];
+  const yPL = yoy('mm'), yUS = yoy('mmUS'), yEA = yoy('mmEA');
+  const lastPL = yPL[yPL.length - 1], lastUS = yUS[yUS.length - 1], lastEA = yEA[yEA.length - 1];
+  const KRAJ = { PLN: 'PL', USD: 'USA', EUR: 'strefy euro' }[WAL()];
   const yoyMap = (arr) => Object.fromEntries(arr.map(([d, v]) => [d.slice(0, 7), v]));
   const mPL = yoyMap(yPL), mUS = yoyMap(yUS);
-  return ['Inflacja', `Pobierana automatycznie raz dziennie z FRED · Polska: Eurostat HICP · USA: BLS CPI-U${CFG.inflDay ? ' · aktualizacja ' + esc(CFG.inflDay) : ''}`, `
+  return ['Inflacja', `Pobierana automatycznie raz dziennie z FRED · Polska: Eurostat HICP · USA: BLS CPI-U · strefa euro: Eurostat HICP${CFG.inflDay ? ' · aktualizacja ' + esc(CFG.inflDay) : ''}`, `
     <div class="kpis">${kpi('Inflacja r/r – Polska', lastPL ? pct(lastPL[1]) : '–', lastPL ? lastPL[0].slice(0, 7) : 'brak danych', 'main')}
       ${kpi('Inflacja r/r – USA', lastUS ? pct(lastUS[1]) : '–', lastUS ? lastUS[0].slice(0, 7) : 'brak danych')}
-      ${kpi('Wzrost cen w PL od 2015', pct(C.inflNow - 1), C.inflLast ? 'do ' + C.inflLast : '')}
-      ${kpi('Zysk realny portfela', pl(C.zyskRealny), pp(C.zyskRealnyPct) + ' ponad inflację PL')}</div>
-    <div class="card"><h3>Inflacja r/r: Polska vs USA</h3>${lineChart([{ name: 'Polska', points: yPL, color: '#EF5350' }, { name: 'USA', points: yUS, color: '#1565C0' }], { pct: true, empty: 'Kliknij „Pobierz dane teraz”' })}</div>
+      ${kpi('Inflacja r/r – strefa euro', lastEA ? pct(lastEA[1]) : '–', lastEA ? lastEA[0].slice(0, 7) : 'brak danych')}
+      ${kpi(`Wzrost cen (${KRAJ}) od 2015`, pct(C.inflNow - 1), C.inflLast ? 'do ' + C.inflLast : '')}
+      ${kpi('Zysk realny portfela', pl(C.zyskRealny), pp(C.zyskRealnyPct) + ` ponad inflację ${KRAJ} (widok w ${WAL()})`)}</div>
+    <div class="card"><h3>Inflacja r/r: Polska, USA, strefa euro</h3>${lineChart([{ name: 'Polska', points: yPL, color: '#EF5350' }, { name: 'USA', points: yUS, color: '#1565C0' }, ...(yEA.length ? [{ name: 'Strefa euro', points: yEA, color: '#F9A825' }] : [])], { pct: true, empty: 'Kliknij „Pobierz dane teraz”' })}</div>
     <div style="margin-top:16px"><button class="btn ghost" onclick="FILT.inflTab=!FILT.inflTab;render()">${FILT.inflTab ? '▲ Ukryj dane miesięczne' : '▼ Pokaż dane miesięczne'}</button></div>
     ${!FILT.inflTab ? '' : `<div class="card" style="margin-top:12px"><h3>Dane miesięczne<span class="sp"></span><small>możesz poprawić wartość ręcznie</small></h3>${table([
       { h: 'Miesiąc', f: r => esc(r.miesiac) },
@@ -1617,7 +1691,7 @@ function vInflacja() {
       { h: 'USA m/m %', n: 1, f: r => `<input class="cell" type="number" step="0.01" value="${esc(r.mmUS ?? '')}" onchange="setInfl('${esc(r.miesiac)}',this.value,'mmUS')">` },
       { h: 'USA r/r', n: 1, f: r => mUS[r.miesiac] !== undefined ? pct(mUS[r.miesiac]) : '–' },
     ], rows.slice(0, 120), { empty: 'Brak danych – kliknij „Pobierz dane teraz”' })}</div>`}
-    <div class="mut" style="font-size:12px;margin-top:10px">Zysk realny liczony jest inflacją polską (portfel wyceniany w PLN). Dla Polski używany jest zharmonizowany wskaźnik HICP z Eurostatu – zwykle różni się od CPI GUS o kilka dziesiątych punktu procentowego. Dane pobierane z FRED (Federal Reserve Bank of St. Louis). Statystyki publikowane są z opóźnieniem ok. 2–6 tygodni, więc ostatni miesiąc zwykle jeszcze nie jest dostępny.</div>`,
+    <div class="mut" style="font-size:12px;margin-top:10px">Zysk realny liczony jest inflacją kraju wybranej waluty (przełącznik PLN / USD / EUR u góry): PLN – Polska, USD – USA, EUR – strefa euro. Dla Polski używany jest zharmonizowany wskaźnik HICP z Eurostatu – zwykle różni się od CPI GUS o kilka dziesiątych punktu procentowego. Dane pobierane z FRED (Federal Reserve Bank of St. Louis). Statystyki publikowane są z opóźnieniem ok. 2–6 tygodni, więc ostatni miesiąc zwykle jeszcze nie jest dostępny.</div>`,
     `<button class="btn" onclick="pobierzInflacjeTeraz()">↻ Pobierz dane teraz</button>`];
 }
 async function pobierzInflacjeTeraz() {
@@ -2036,7 +2110,7 @@ function wyjdzDemo() {
 function demoBanner() { return CFG.demo ? `<div class="alert info" style="display:flex;align-items:center;gap:12px"><span style="flex:1">🧪 <b>Tryb demonstracyjny</b> – oglądasz przykładowy portfel. Możesz klikać i dodawać dane do woli, nic nie trafia do Twojego arkusza.</span><button class="btn sm" onclick="wyjdzDemo()">↩ Wróć do moich danych</button></div>` : ''; }
 
 /* ---------- start ---------- */
-setInterval(() => { if (document.visibilityState === 'visible') { C = calc(S); snapshotIntraday(); if (ROUTE === 'kokpit' && RANGE === '1d') render(); } }, 15 * 60000);
+setInterval(() => { if (document.visibilityState === 'visible') { C = calc(S, calcOpts()); snapshotIntraday(); if (ROUTE === 'kokpit' && RANGE === '1d') render(); } }, 15 * 60000);
 function boot() {
   const MIG = { 'CURRENCY:XAUUSD': 'YAHOO:GC=F', 'CURRENCY:XAGUSD': 'YAHOO:SI=F', 'CURRENCY:BTCUSD': 'YAHOO:BTC-USD' };
   let mig = false; S.instrumenty.forEach(i => { if (MIG[i.symbol]) { i.symbol = MIG[i.symbol]; mig = true; } }); if (mig) changed('instrumenty');
@@ -2045,7 +2119,8 @@ function boot() {
   if (CFG.demo) setSync('local', 'Tryb demo – nic nie zapisuje się w arkuszu');
   else if (CFG.clientId && CFG.connected) setSync('pending', 'Kliknij tutaj, aby połączyć z Google Sheets');
   else setSync('local', CFG.sheetId ? 'Kliknij, aby połączyć z Google Sheets' : 'Dane tylko w tej przeglądarce');
-  if (CFG.inflDay !== todayStr() || CFG.inflSrc !== 'fred') pobierzInflacje(true).then(r => { if (r) { render(); snapshot(); } }).catch(() => {});
+  if (CFG.waluta && CFG.waluta !== 'PLN') pobierzFxHist(CFG.waluta).then(ch => { if (ch) render(); }).catch(() => {});
+  if (CFG.inflDay !== todayStr() || CFG.inflSrc !== 'fred' || !S.inflacja.some(r => has(r.mmEA))) pobierzInflacje(true).then(r => { if (r) { render(); snapshot(); } }).catch(() => {});
   const kd = S.ustawienia.kursyData; if (!kd || kd < todayStr().slice(0, 10) && navigator.onLine) nbpCurrent().then(() => { render(); snapshot(); }).catch(() => {});
 }
 
@@ -2095,25 +2170,25 @@ function vWaluta() {
   const R = fxEffect(C), sum = R.reduce((a, r) => ({ c: a.c + r.efektCena, k: a.k + r.efektKurs }), { c: 0, k: 0 });
   const byCur = {}; R.forEach(r => { byCur[r.waluta] = byCur[r.waluta] || { c: 0, k: 0, w: 0 }; byCur[r.waluta].c += r.efektCena; byCur[r.waluta].k += r.efektKurs; byCur[r.waluta].w += r.wartoscPLN; });
   return ['Wpływ waluty', 'Ile zarobiłeś na samych instrumentach, a ile na zmianie kursu walut (otwarte pozycje w walutach obcych)', `
-    <div class="kpis">${kpi('Zysk z ceny instrumentów', pl(sum.c), 'przy kursie z dnia zakupu', 'main')}${kpi('Zysk / strata z kursu walut', pl(sum.k), 'zmiana kursu od zakupu do dziś')}${kpi('Razem', pl(sum.c + sum.k), 'zysk niezrealizowany w PLN')}</div>
-    <div class="grid g2e"><div class="card"><h3>Podział zysku wg pozycji</h3>${barChart(R.map(r => r.ticker), [{ name: 'Cena instrumentu', values: R.map(r => r.efektCena), color: '#1565C0' }, { name: 'Kurs waluty', values: R.map(r => r.efektKurs), color: '#F9A825' }], { empty: 'Brak pozycji w walutach obcych' })}</div>
+    <div class="kpis">${kpi('Zysk z ceny instrumentów', plPLN(sum.c), 'przy kursie z dnia zakupu', 'main')}${kpi('Zysk / strata z kursu walut', plPLN(sum.k), 'zmiana kursu od zakupu do dziś')}${kpi('Razem', plPLN(sum.c + sum.k), 'zysk niezrealizowany w PLN')}</div>
+    <div class="grid g2e"><div class="card"><h3>Podział zysku wg pozycji <small>względem złotego</small></h3>${barChart(R.map(r => r.ticker), [{ name: 'Cena instrumentu', values: R.map(r => r.efektCena), color: '#1565C0' }, { name: 'Kurs waluty', values: R.map(r => r.efektKurs), color: '#F9A825' }], { pln: true, empty: 'Brak pozycji w walutach obcych' })}</div>
       <div class="card"><h3>Wg waluty</h3>${table([
-        { h: 'Waluta', f: x => `<b>${esc(x[0])}</b>` }, { h: 'Wartość PLN', n: 1, f: x => zl(x[1].w, 0) }, { h: 'Z ceny', n: 1, f: x => pl(x[1].c) }, { h: 'Z kursu', n: 1, f: x => pl(x[1].k) },
+        { h: 'Waluta', f: x => `<b>${esc(x[0])}</b>` }, { h: 'Wartość ' + WL(), n: 1, f: x => zlPLN(x[1].w, 0) }, { h: 'Z ceny', n: 1, f: x => plPLN(x[1].c) }, { h: 'Z kursu', n: 1, f: x => plPLN(x[1].k) },
         { h: 'Kurs dziś', n: 1, f: x => C.rateNow(x[0]).toFixed(4) }], Object.entries(byCur), { empty: 'Brak' })}</div></div>
     <div class="card" style="margin-top:16px">${table([
       { h: 'Pozycja', f: r => `<b>${esc(r.ticker)}</b> <span class="mut">${esc(r.strategia)}</span>` }, { h: 'Śr. kurs zakupu', n: 1, f: r => r.avgRate.toFixed(4) }, { h: 'Kurs dziś', n: 1, f: r => r.now.toFixed(4) },
-      { h: 'Zmiana kursu', n: 1, f: r => pp(r.now / r.avgRate - 1) }, { h: 'Zysk z ceny', n: 1, f: r => pl(r.efektCena) }, { h: 'Zysk z kursu', n: 1, f: r => pl(r.efektKurs) }, { h: 'Razem PLN', n: 1, f: r => pl(r.zyskPLN) },
-    ], R, { empty: 'Brak pozycji w walutach obcych' })}</div>`, ' '];
+      { h: 'Zmiana kursu', n: 1, f: r => pp(r.now / r.avgRate - 1) }, { h: 'Zysk z ceny', n: 1, f: r => plPLN(r.efektCena) }, { h: 'Zysk z kursu', n: 1, f: r => plPLN(r.efektKurs) }, { h: 'Razem PLN', n: 1, f: r => plPLN(r.zyskPLN) },
+    ], R, { pln: true, empty: 'Brak pozycji w walutach obcych' })}</div>`, ' '];
 }
 
 function vPorownanie() {
   const rows = C.strategie.filter(s => s.wartosc || s.zrealizowany || s.dywidendyNetto).map(s => ({ ...s, xirr: xirrStrategia(S, C, s), pct: s.koszt ? s.wynik / s.koszt : null }));
   // historia strategii (zapisywana od teraz)
   const series = rows.map(s => ({ name: s.nazwa, color: s.kolor, points: S.historia.map(h => { let m = h.strat; try { if (typeof m === 'string') m = m ? JSON.parse(m) : null; } catch (e) { m = null; }
-    return m && m[s.nazwa] !== undefined ? [String(h.data).slice(0, 10), m[s.nazwa]] : null; }).filter(Boolean) })).filter(s => s.points.length);
+    return m && m[s.nazwa] !== undefined ? [String(h.data).slice(0, 10), C.histX(num(m[s.nazwa]), String(h.data).slice(0, 10))] : null; }).filter(Boolean) })).filter(s => s.points.length);
   return ['Porównanie strategii', 'Która strategia zarabia najlepiej – wynik, roczna stopa zwrotu (XIRR) i wartość w czasie', `
     <div class="grid g2e"><div class="card"><h3>Roczna stopa zwrotu (XIRR)</h3>${barChart(rows.map(s => s.nazwa), [{ name: 'XIRR', values: rows.map(s => s.xirr || 0) }], { signColors: true, fmt: v => (v * 100).toFixed(0) + '%', empty: 'Brak danych' })}</div>
-      <div class="card"><h3>Wynik łączny (PLN)</h3>${barChart(rows.map(s => s.nazwa), [{ name: 'Niezrealizowany', values: rows.map(s => s.niezreal), color: '#1565C0' }, { name: 'Zrealizowany', values: rows.map(s => s.zrealizowany), color: '#26A69A' }, { name: 'Dywidendy', values: rows.map(s => s.dywidendyNetto), color: '#F9A825' }], { empty: 'Brak danych' })}</div></div>
+      <div class="card"><h3>Wynik łączny (${WL()})</h3>${barChart(rows.map(s => s.nazwa), [{ name: 'Niezrealizowany', values: rows.map(s => s.niezreal), color: '#1565C0' }, { name: 'Zrealizowany', values: rows.map(s => s.zrealizowany), color: '#26A69A' }, { name: 'Dywidendy', values: rows.map(s => s.dywidendyNetto), color: '#F9A825' }], { empty: 'Brak danych' })}</div></div>
     <div class="card" style="margin-top:16px"><h3>Wartość strategii w czasie</h3>${series.length ? lineChart(series, {}) : emptyChart('Historia strategii zapisuje się od teraz (raz dziennie) – wykres zapełni się w kolejnych dniach')}</div>
     <div class="card" style="margin-top:16px">${table([
       { h: 'Strategia', f: s => `<span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${esc(s.kolor)};margin-right:7px"></span><b>${esc(s.nazwa)}</b> <span class="mut">${esc(s.konto)}</span>` },
@@ -2127,8 +2202,8 @@ function vKoszty() {
   const tot = years.reduce((a, y) => ({ p: a.p + by[y].prowizje, z: a.z + by[y].zrodlo, t: a.t + by[y].pit }), { p: 0, z: 0, t: 0 });
   const all = tot.p + tot.z + tot.t, zyskBrutto = C.zysk + all;
   return ['Koszty i podatki', 'Ile kosztowały prowizje i podatki oraz jaką część zysku zabrały', `
-    <div class="kpis">${kpi('Koszty łącznie', zl(all), zyskBrutto > 0 ? pct(all / zyskBrutto) + ' zysku przed kosztami' : '', 'main')}${kpi('Prowizje', zl(tot.p))}${kpi('Podatek od dywidend', zl(tot.z), 'u źródła + dopłata w PL')}${kpi('Podatek PIT-38', zl(tot.t), 'od sprzedaży (szacunek)')}</div>
-    <div class="grid g2e"><div class="card"><h3>Koszty wg lat</h3>${barChart(years, [{ name: 'Prowizje', values: years.map(y => by[y].prowizje), color: '#1565C0' }, { name: 'Podatek od dywidend', values: years.map(y => by[y].zrodlo), color: '#F9A825' }, { name: 'PIT-38', values: years.map(y => by[y].pit), color: '#EF5350' }], { empty: 'Brak kosztów' })}</div>
+    <div class="kpis">${kpi('Koszty łącznie', zlPLN(all), zyskBrutto > 0 ? pct(all / zyskBrutto) + ' zysku przed kosztami' : '', 'main')}${kpi('Prowizje', zlPLN(tot.p))}${kpi('Podatek od dywidend', zlPLN(tot.z), 'u źródła + dopłata w PL')}${kpi('Podatek PIT-38', zlPLN(tot.t), 'od sprzedaży (szacunek)')}</div>
+    <div class="grid g2e"><div class="card"><h3>Koszty wg lat</h3>${barChart(years, [{ name: 'Prowizje', values: years.map(y => by[y].prowizje), color: '#1565C0' }, { name: 'Podatek od dywidend', values: years.map(y => by[y].zrodlo), color: '#F9A825' }, { name: 'PIT-38', values: years.map(y => by[y].pit), color: '#EF5350' }], { pln: true, empty: 'Brak kosztów' })}</div>
       <div class="card"><h3>Struktura kosztów</h3>${(() => { const d = [['Prowizje', tot.p, '#1565C0'], ['Podatek od dywidend', tot.z, '#F9A825'], ['PIT-38', tot.t, '#EF5350']].filter(x => x[1] > 0); return donut(d.map(x => [x[0], x[1]]), { empty: 'Brak kosztów', colors: d.map(x => x[2]) }); })()}</div></div>
     <div class="mut" style="font-size:12px;margin-top:10px">Koszty przewalutowania nie są tu liczone (nie są zapisywane w aplikacji). Podatek PIT-38 to szacunek z zakładki Podatki.</div>`, ' '];
 }
@@ -2138,7 +2213,7 @@ function vDochod() {
   return ['Dochód pasywny', 'Dywidendy i odsetki z ostatnich 12 miesięcy oraz prognoza na kolejne 12', `
     <div class="kpis">${kpi('Ostatnie 12 miesięcy', zl(P.sum12), 'netto', 'main')}${kpi('Średnio miesięcznie', zl(P.sum12 / 12))}${kpi('Prognoza na 12 miesięcy', zl(P.prognoza), 'z pozycji, które nadal masz')}
       ${kpi('Stopa dywidendy portfela', C.wartoscPozycji ? pct(P.tickers.reduce((a, t) => a + t.brutto, 0) / C.wartoscPozycji) : '–', 'brutto, od bieżącej wartości')}</div>
-    <div class="grid g2e"><div class="card"><h3>Ostatnie 12 miesięcy <small>netto PLN</small></h3>${barChart(mies, [{ name: 'Netto', values: P.byMonth, color: '#26A69A' }], { empty: 'Brak dywidend w ostatnich 12 miesiącach' })}</div>
+    <div class="grid g2e"><div class="card"><h3>Ostatnie 12 miesięcy <small>netto ${WL()}</small></h3>${barChart(mies, [{ name: 'Netto', values: P.byMonth, color: '#26A69A' }], { empty: 'Brak dywidend w ostatnich 12 miesiącach' })}</div>
       <div class="card"><h3>Prognoza <small>gdy wypłaty się powtórzą</small></h3>${barChart(P.nextMonths.map(m => m.slice(5) + '.' + m.slice(2, 4)), [{ name: 'Prognoza', values: P.fc, color: '#7E57C2' }], { empty: 'Brak danych do prognozy' })}</div></div>
     <div class="card" style="margin-top:16px">${table([
       { h: 'Instrument', f: t => `<b>${esc(t.ticker)}</b>${t.trzymane ? '' : ' <span class="mut">(sprzedany)</span>'}` }, { h: 'Netto 12 mies.', n: 1, f: t => zl(t.netto) },
@@ -2159,15 +2234,15 @@ function vSymulator() {
       { name: 'Wartość (nominalnie)', points: yearPts.map(p => [dateOf(p.m), p.V]), color: '#1565C0' },
       { name: 'Wartość w dzisiejszych złotych', points: yearPts.map(p => [dateOf(p.m), p.real]), color: '#7E57C2' },
       { name: 'Suma wpłat', points: yearPts.map(p => [dateOf(p.m), p.wplacone]), color: '#94a3b8', dash: true },
-      ...(o.cel > 0 ? [{ name: 'Cel', points: [[dateOf(0), o.cel], [dateOf(o.lata * 12), o.cel]], color: '#F9A825', dash: true }] : [])], { area: true })}</div>
+      ...(o.cel > 0 ? [{ name: 'Cel', points: [[dateOf(0), o.cel], [dateOf(o.lata * 12), o.cel]], color: '#F9A825', dash: true }] : [])], { area: true, pln: true })}</div>
       <div class="card"><h3>Założenia</h3><div class="form">${fld('start', 'Kwota startowa (zł)')}${fld('wplata', 'Wpłata miesięczna (zł)')}${fld('stopa', 'Stopa zwrotu rocznie (%)', '0.1')}${fld('lata', 'Liczba lat', '1')}
         ${fld('inflacja', 'Inflacja rocznie (%)', '0.1')}${fld('wzrost', 'Wzrost wpłat co rok (%)', '0.5')}${fld('cel', 'Cel (zł, w dzisiejszych pieniądzach)')}${fld('wydatki', 'albo: miesięczne wydatki (FIRE, reguła 4%)')}</div>
         <div class="mut" style="font-size:12px;margin-top:8px">Twoja dotychczasowa roczna stopa (XIRR): ${(() => { const x = xirrPortfel(S, C); return x === null ? 'brak danych' : pct(x); })()}. Historycznie akcje globalne dawały ok. 6–8% rocznie ponad inflację – to nie jest gwarancja.</div></div></div>
-    <div class="kpis" style="margin-top:16px;margin-bottom:0">${kpi(`Za ${o.lata} lat`, zl(end.V, 0), 'nominalnie', 'main')}${kpi('W dzisiejszych złotych', zl(end.real, 0), `przy inflacji ${o.inflacja}%`)}${kpi('Suma wpłat', zl(end.wplacone, 0))}${kpi('Zysk z procentu składanego', zl(end.V - end.wplacone, 0))}
-      ${o.cel > 0 ? kpi('Cel osiągniesz', R.goalM === null ? `<span class="neg">nie w ${o.lata} lat</span>` : dateOf(R.goalM).slice(0, 7), R.goalM === null ? 'zwiększ wpłaty lub horyzont' : `za ${Math.floor(R.goalM / 12)} lat ${R.goalM % 12} mies.` + (o.wydatki > 0 ? ` · cel FIRE ${zl(o.cel, 0)}` : '')) : ''}</div>
+    <div class="kpis" style="margin-top:16px;margin-bottom:0">${kpi(`Za ${o.lata} lat`, zlPLN(end.V, 0), 'nominalnie', 'main')}${kpi('W dzisiejszych złotych', zlPLN(end.real, 0), `przy inflacji ${o.inflacja}%`)}${kpi('Suma wpłat', zlPLN(end.wplacone, 0))}${kpi('Zysk z procentu składanego', zlPLN(end.V - end.wplacone, 0))}
+      ${o.cel > 0 ? kpi('Cel osiągniesz', R.goalM === null ? `<span class="neg">nie w ${o.lata} lat</span>` : dateOf(R.goalM).slice(0, 7), R.goalM === null ? 'zwiększ wpłaty lub horyzont' : `za ${Math.floor(R.goalM / 12)} lat ${R.goalM % 12} mies.` + (o.wydatki > 0 ? ` · cel FIRE ${zlPLN(o.cel, 0)}` : '')) : ''}</div>
     <div class="card" style="margin-top:16px">${table([
-      { h: 'Rok', f: p => `${p.m / 12}` }, { h: 'Data', f: p => dateOf(p.m).slice(0, 7) }, { h: 'Suma wpłat', n: 1, f: p => zl(p.wplacone, 0) }, { h: 'Wartość', n: 1, f: p => zl(p.V, 0) },
-      { h: 'W dzisiejszych zł', n: 1, f: p => zl(p.real, 0) }, { h: 'Zysk', n: 1, f: p => pl(p.V - p.wplacone) }], yearPts.filter(p => p.m % 60 === 0 || p.m === o.lata * 12))}</div>`, ' '];
+      { h: 'Rok', f: p => `${p.m / 12}` }, { h: 'Data', f: p => dateOf(p.m).slice(0, 7) }, { h: 'Suma wpłat', n: 1, f: p => zlPLN(p.wplacone, 0) }, { h: 'Wartość', n: 1, f: p => zlPLN(p.V, 0) },
+      { h: 'W dzisiejszych zł', n: 1, f: p => zlPLN(p.real, 0) }, { h: 'Zysk', n: 1, f: p => plPLN(p.V - p.wplacone) }], yearPts.filter(p => p.m % 60 === 0 || p.m === o.lata * 12))}</div>`, ' '];
 }
 
 function vMapa() {
@@ -2369,7 +2444,7 @@ function vImport() {
     { h: 'Data', f: o => esc(o.data) }, { h: 'Operacja', f: o => `${LBL[o.kind]} <span class="mut" style="font-size:11.5px">${esc(o.type)}</span>` },
     { h: 'Instrument', f: o => o.symbol ? esc((mapa[o.symbol] || {}).ticker || o.symbol) : '–' },
     { h: 'Ilość', n: 1, f: o => o.ilosc === null ? '' : String(o.ilosc).replace('.', ',') }, { h: 'Cena', n: 1, f: o => o.cena === null ? '' : String(o.cena).replace('.', ',') },
-    { h: 'Kwota', n: 1, f: o => pl(o.amount).replace(' zł', ' ' + esc((konta.find(k => k.nazwa === IMP.konto) || {}).waluta || '')) },
+    { h: 'Kwota', n: 1, f: o => plPLN(o.amount).replace(' zł', ' ' + esc((konta.find(k => k.nazwa === IMP.konto) || {}).waluta || '')) },
     { h: 'Status', f: o => xtbIstnieje(o.id) ? '<span class="mut">już zaimportowane</span>' : (['buy', 'sell'].includes(o.kind) && !o.ilosc) ? '<span class="neg">brak ilości w opisie</span>' : '<span class="pos">nowe</span>' },
   ], uzyte.slice().sort((a, b) => b.data.localeCompare(a.data)), { empty: 'W pliku nie znaleziono operacji do zaimportowania' });
   const podatki = ops.filter(o => ['divtax', 'inttax'].includes(o.kind)).length;
@@ -2587,6 +2662,7 @@ function editAlert(id, preset = {}) {
 
 /* ===================== ARKUSZ „ANALIZY” – migawka z aplikacji (raz dziennie) ===================== */
 async function buildAnalizy(force) {
+  const C = calcPLN();   // arkusz zawsze w złotych
   if (CFG.demo || !CFG.sheetId || !SYNC.token || !C) return;
   const day = todayStr(); CFG.anDay = CFG.anDay || {};
   if (!force && CFG.anDay[CFG.sheetId] === day) return;
@@ -2595,7 +2671,7 @@ async function buildAnalizy(force) {
   const r2 = v => (v === null || v === undefined || !isFinite(v)) ? '' : Math.round(v * 100) / 100, r4 = v => (v === null || v === undefined || !isFinite(v)) ? '' : Math.round(v * 1e4) / 1e4;
   let r = 1;
   put(1, 2, 'Analizy portfela'); put(2, 2, `Stan z dnia ${new Date().toLocaleDateString('pl-PL')} – zakładkę zapisuje aplikacja raz dziennie (migawka). Bieżące wartości liczone formułami są w zakładce „Podsumowanie”.`);
-  const pts = histPoints(S), T = twrStats(pts), xr = xirrPortfel(S, C), P = passiveIncome(S, C), K = costs(S, C);
+  const pts = histPoints(S, C), T = twrStats(pts), xr = xirrPortfel(S, C), P = passiveIncome(S, C), K = costs(S, C);
   const kosztyRazem = Object.values(K).reduce((a, k) => a + k.prowizje + k.zrodlo + k.pit, 0);
   const kp = [['Roczna stopa (XIRR)', r4(xr), 'p'], ['Stopa TWR', T ? r4(T.tot) : '', 'p'], ['TWR rocznie', T && T.roczna !== null ? r4(T.roczna) : '', 'p'], ['Maks. obsunięcie', T ? r4(T.maxDD) : '', 'p'],
     ['Obecnie od szczytu', T ? r4(T.aktualne) : '', 'p'], ['Dochód pasywny 12 mies.', r2(P.sum12), 'm'], ['Koszty i podatki łącznie', r2(kosztyRazem), 'm']];
@@ -2607,7 +2683,7 @@ async function buildAnalizy(force) {
 
   // Ty vs rynek
   const step = Math.max(1, Math.floor(pts.length / 160)), dates = pts.filter((p, i) => i % step === 0 || i === pts.length - 1).map(p => p.d);
-  const B = dates.length > 1 ? benchSeries(S, dates).filter(b => !b.brak) : [];
+  const B = dates.length > 1 ? benchSeries(S, dates, C).filter(b => !b.brak) : [];
   if (B.length) { let a = sect('TY VS RYNEK – gdyby te same wpłaty, w tych samych dniach, poszły w…', ['Benchmark', 'Wartość dziś', 'Twój portfel', 'Ty vs benchmark']);
     B.forEach(b => { put(r, 2, b.label); put(r, 3, r2(b.dzis)); put(r, 4, r2(C.wartosc)); put(r, 5, r2(C.wartosc - b.dzis)); r++; }); end(a, 4, [['money', 3, 5]]); }
 

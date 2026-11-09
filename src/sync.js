@@ -10,7 +10,7 @@ const TABLES = {
   strategie: { sheet: 'Strategie', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['konto', 'Konto'], ['kapital', 'Kapitał przeznaczony'], ['opis', 'Opis'], ['kolor', 'Kolor']] },
   konta: { sheet: 'Konta', cols: [['id', 'ID'], ['nazwa', 'Nazwa'], ['typ', 'Typ podatkowy'], ['waluta', 'Waluta'], ['gotowka', 'Gotówka'], ['model', 'W modelu 2.1']] },
   instrumenty: { sheet: 'Instrumenty', cols: [['id', 'ID'], ['ticker', 'Ticker'], ['nazwa', 'Nazwa'], ['klasa', 'Klasa'], ['waluta', 'Waluta'], ['cena', 'Cena ręczna'], ['dataCeny', 'Data ceny'], ['symbol', 'Symbol Google Finance'], ['cenaAuto', 'Cena auto (Google)']] },
-  inflacja: { sheet: 'Inflacja', cols: [['miesiac', 'Miesiąc'], ['mm', 'Inflacja PL m/m %'], ['mmUS', 'Inflacja USA m/m %']] },
+  inflacja: { sheet: 'Inflacja', cols: [['miesiac', 'Miesiąc'], ['mm', 'Inflacja PL m/m %'], ['mmUS', 'Inflacja USA m/m %'], ['mmEA', 'Inflacja strefa euro m/m %']] },
   historia: { sheet: 'Historia', cols: [['data', 'Data'], ['wartosc', 'Wartość PLN'], ['kapital', 'Wpłacony kapitał PLN'], ['konta', 'Wartości kont (JSON)'], ['strat', 'Wartości strategii (JSON)']] },
   cele: { sheet: 'Cele 2.1', cols: [['id', 'ID'], ['konto', 'Konto (puste = cały portfel)'], ['koszyk', 'Koszyk'], ['tickery', 'Instrumenty'], ['grupa', 'Grupa'], ['cel', 'Cel %']] },
   alerty: { sheet: 'Alerty', cols: [['id', 'ID'], ['aktywny', 'Aktywny'], ['typ', 'Typ'], ['ticker', 'Instrument'], ['konto', 'Konto'], ['koszyk', 'Koszyk'], ['poziom', 'Poziom'], ['prog', 'Próg blisko'], ['notatka', 'Notatka'],
@@ -470,6 +470,7 @@ async function searchSymbols(q) {
 const INFL_SRC = {
   PL: { fred: 'CP0000PLM086NEST', label: 'Eurostat HICP (Polska)' },
   US: { fred: 'CPIAUCNS', label: 'BLS CPI-U (USA)' },
+  EA: { fred: 'CP0000EZ19M086NEST', label: 'Eurostat HICP (strefa euro)' },
 };
 function mmFromIndex(pts) {   // pts: [['RRRR-MM', indeks]] -> [['RRRR-MM', zmiana m/m %]]
   pts = pts.filter(x => typeof x[1] === 'number' && isFinite(x[1]) && /^\d{4}-\d{2}$/.test(x[0])).sort((a, b) => a[0].localeCompare(b[0]));
@@ -506,6 +507,7 @@ async function pobierzInflacje(quiet) {
   const map = {}; S.inflacja.forEach(r => map[r.miesiac] = r);
   (got.PL || []).forEach(([m, v]) => { (map[m] = map[m] || { miesiac: m, mm: '', mmUS: '' }).mm = v; });
   (got.US || []).forEach(([m, v]) => { (map[m] = map[m] || { miesiac: m, mm: '', mmUS: '' }).mmUS = v; });
+  (got.EA || []).forEach(([m, v]) => { (map[m] = map[m] || { miesiac: m, mm: '', mmUS: '' }).mmEA = v; });
   S.inflacja = Object.values(map).sort((a, b) => a.miesiac.localeCompare(b.miesiac));
   CFG.inflDay = todayStr(); CFG.inflSrc = 'fred'; saveCfg(); changed('inflacja');
   return { pl: (got.PL || []).slice(-1)[0], us: (got.US || []).slice(-1)[0], errs };
@@ -522,6 +524,31 @@ async function nbpRate(cur, dateStr) {
   if (!r.ok) throw new Error('NBP nie zwrócił kursu ' + cur + ' dla ' + dateStr);
   const j = await r.json(); const mid = j.rates[j.rates.length - 1].mid;
   NBP_CACHE[key] = mid; lsSet(LS_NBP, NBP_CACHE); return mid;
+}
+/* kursy historyczne NBP (tabela A) dla waluty prezentacji – pamiętane w przeglądarce */
+const LS_FXH = 'portfel_fxhist_v1';
+let FXH = lsGet(LS_FXH, {});
+function fxStart() {
+  const ds = [...S.wplaty, ...S.transakcje, ...S.dywidendy, ...S.historia].map(x => String(x.data || '').slice(0, 10)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  const d = new Date((ds[0] || todayStr()) + 'T12:00:00'); d.setDate(d.getDate() - 14); return d.toISOString().slice(0, 10);
+}
+async function pobierzFxHist(cur) {
+  if (!cur || cur === 'PLN') return false;
+  const have = FXH[cur] || [], start = fxStart(), today = todayStr();
+  const from = have.length && have[0][0] <= start ? have[have.length - 1][0] : start;
+  if (have.length && have[0][0] <= start && from >= today) return false;
+  const map = {}; have.forEach(([d, v]) => map[d] = v);
+  let a = new Date(from + 'T12:00:00');
+  while (a.toISOString().slice(0, 10) <= today) {
+    const b = new Date(a); b.setDate(b.getDate() + 360);
+    const s = a.toISOString().slice(0, 10), e = (b.toISOString().slice(0, 10) < today ? b.toISOString().slice(0, 10) : today);
+    const r = await fetch(`https://api.nbp.pl/api/exchangerates/rates/a/${cur.toLowerCase()}/${s}/${e}/?format=json`);
+    if (r.ok) (await r.json()).rates.forEach(x => map[x.effectiveDate] = x.mid);
+    else if (r.status !== 404) throw new Error('NBP ' + r.status);
+    a = new Date(e + 'T12:00:00'); a.setDate(a.getDate() + 1);
+  }
+  FXH[cur] = Object.entries(map).sort((x, y) => x[0].localeCompare(y[0]));
+  lsSet(LS_FXH, FXH); return true;
 }
 async function nbpCurrent() {
   const r = await fetch('https://api.nbp.pl/api/exchangerates/tables/a/?format=json');

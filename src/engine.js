@@ -43,10 +43,10 @@ function defaultState() {
 }
 
 /* indeks inflacji: miesiąc 'YYYY-MM' -> poziom cen na koniec miesiąca (start = 1) */
-function inflIndex(inflacja) {
-  const rows = (inflacja || []).filter(r => r.miesiac && has(r.mm)).sort((a, b) => a.miesiac.localeCompare(b.miesiac));
+function inflIndex(inflacja, pole = 'mm') {
+  const rows = (inflacja || []).filter(r => r.miesiac && has(r[pole])).sort((a, b) => a.miesiac.localeCompare(b.miesiac));
   const idx = []; let lvl = 1;
-  for (const r of rows) { lvl *= 1 + num(r.mm) / 100; idx.push([r.miesiac, lvl]); }
+  for (const r of rows) { lvl *= 1 + num(r[pole]) / 100; idx.push([r.miesiac, lvl]); }
   const at = (ym) => { let v = 1; for (const [m, l] of idx) { if (m <= ym) v = l; else break; } return v; };
   const prevMonth = (d) => { const x = new Date(d + 'T00:00:00'); x.setDate(0); return x.toISOString().slice(0, 7); };
   return {
@@ -57,9 +57,25 @@ function inflIndex(inflacja) {
   };
 }
 
-function calc(S) {
+/* opts.waluta – waluta prezentacji (PLN/USD/EUR); opts.fx – kursy historyczne NBP { USD: [[data, kurs], …] }.
+   Kwoty „PLN” w wynikach prezentacyjnych to równowartość kwoty w walucie prezentacji po dzisiejszym kursie,
+   więc formatowanie dzieli je przez bieżący kurs i dostaje kwotę liczoną po kursach historycznych.
+   Podatki (T, podatki()) zawsze w prawdziwych złotych. */
+const INFL_POLE = { PLN: 'mm', USD: 'mmUS', EUR: 'mmEA' };
+function calc(S, opts = {}) {
   const rates = S.ustawienia.kursy || {};
   const rateNow = cur => (!cur || cur === 'PLN') ? 1 : num(rates[cur]);
+  const X = (opts.waluta && opts.waluta !== 'PLN' && rateNow(opts.waluta)) ? opts.waluta : 'PLN';
+  const fxRows = (opts.fx || {})[X] || [];
+  const fxAt = d => {   // kurs NBP z ostatniego dnia roboczego przed d (jak D-1); brak danych -> kurs bieżący
+    if (X === 'PLN') return 1; if (!fxRows.length || !d) return rateNow(X);
+    d = String(d).slice(0, 10); let lo = 0, hi = fxRows.length - 1;
+    if (fxRows[0][0] >= d) return fxRows[0][1];
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (fxRows[m][0] < d) lo = m; else hi = m - 1; }
+    return fxRows[lo][1];
+  };
+  // kwota w PLN z dnia d -> równowartość w walucie prezentacji (po kursie z d), wyrażona po dzisiejszym kursie
+  const hx = (plnAmt, d, cur, amtCur) => X === 'PLN' ? plnAmt : (cur === X && amtCur !== undefined ? amtCur * rateNow(X) : plnAmt / fxAt(d) * rateNow(X));
   const instr = {}; S.instrumenty.forEach(i => { if (i.ticker) instr[i.ticker] = i; });
   const strat = {}; S.strategie.forEach(s => { strat[s.nazwa] = s; });
   const konto = {}; S.konta.forEach(k => { konto[k.nazwa] = k; });
@@ -72,7 +88,8 @@ function calc(S) {
 
   // wybrany=true: sprzedaż z polem „zakup” zamyka najpierw ten konkretny zakup (widok pozycji);
   // podatek zawsze liczony FIFO – tak wymaga ustawa o PIT
-  function fifo(keyFn, wybrany) {
+  function fifo(keyFn, wybrany, conv = false) {
+    const cv = (pln, d, cur, amt) => conv ? hx(pln, d, cur, amt) : pln;
     const lots = {}, realized = [];
     for (const t of txs) {
       const cur = curOf(t.ticker), q = num(t.ilosc), p = num(t.cena), fee = num(t.prowizja);
@@ -82,7 +99,7 @@ function calc(S) {
       if (!lots[key]) lots[key] = [];
       if (t.typ === 'KUPNO') {
         const cost = q * p + fee;
-        lots[key].push({ q, q0: q, cena: p, uc: cost / q, ucPLN: cost * kurs / q, data: t.data, id: t.id, kursOk });
+        lots[key].push({ q, q0: q, cena: p, uc: cost / q, ucPLN: cv(cost * kurs, t.data, cur, cost) / q, ucPLNr: cost * kurs / q, data: t.data, id: t.id, kursOk });
       } else if (t.typ === 'SPRZEDAŻ') {
         let left = q, cost = 0, costPLN = 0, allOk = kursOk, firstBuy = null; const uzyte = [];
         const bierz = lot => { const take = Math.min(left, lot.q);
@@ -94,15 +111,15 @@ function calc(S) {
         if (left > EPS) warnings.push(`Sprzedaż ${t.ticker} z ${t.data} (${t.strategia}): sprzedano więcej niż kupiono (${r2(left)} szt.).`);
         const proceeds = q * p - fee;
         realized.push({ id: t.id, data: t.data, rok: +t.data.slice(0, 4), ticker: t.ticker, strategia: t.strategia, waluta: cur,
-          ilosc: q, przychod: proceeds, koszt: cost, zysk: proceeds - cost, przychodPLN: proceeds * kurs, kosztPLN: costPLN,
-          zyskPLN: proceeds * kurs - costPLN, kursOk: allOk, kupiono: firstBuy, loty: uzyte, cena: p, zakup: t.zakup || '' });
+          ilosc: q, przychod: proceeds, koszt: cost, zysk: proceeds - cost, przychodPLN: cv(proceeds * kurs, t.data, cur, proceeds), kosztPLN: costPLN,
+          zyskPLN: cv(proceeds * kurs, t.data, cur, proceeds) - costPLN, kursOk: allOk, kupiono: firstBuy, loty: uzyte, cena: p, zakup: t.zakup || '' });
       }
     }
     return { lots, realized };
   }
 
   // pozycje i wynik strategii: FIFO w ramach strategii
-  const P = fifo(t => t.strategia + '|' + t.ticker, true);
+  const P = fifo(t => t.strategia + '|' + t.ticker, true, true);
   // podatek: FIFO w ramach konta (rachunku)
   const T = fifo(t => ((strat[t.strategia] || {}).konto || '?') + '|' + t.ticker);
 
@@ -112,10 +129,10 @@ function calc(S) {
     if (qty <= EPS) continue;
     const [s, ticker] = key.split('|');
     const i = instr[ticker] || {}; const cur = curOf(ticker);
-    const koszt = lots.reduce((a, l) => a + l.q * l.uc, 0), kosztPLN = lots.reduce((a, l) => a + l.q * l.ucPLN, 0);
+    const koszt = lots.reduce((a, l) => a + l.q * l.uc, 0), kosztPLN = lots.reduce((a, l) => a + l.q * l.ucPLN, 0), kosztPLNr = lots.reduce((a, l) => a + l.q * l.ucPLNr, 0);
     const cena = priceOf(ticker), wartosc = qty * cena, wartoscPLN = wartosc * rateNow(cur);
     pozycje.push({ strategia: s, konto: (strat[s] || {}).konto || '', ticker, nazwa: i.nazwa || '', klasa: i.klasa || 'Inne', koszyk: i.koszyk || '',
-      waluta: cur, ilosc: qty, koszt, kosztPLN, sredniaCena: koszt / qty, cena, brakCeny: !cena, wartosc, wartoscPLN,
+      waluta: cur, ilosc: qty, koszt, kosztPLN, kosztPLNr, sredniaCena: koszt / qty, cena, brakCeny: !cena, wartosc, wartoscPLN,
       zysk: wartosc - koszt, zyskPct: koszt ? (wartosc - koszt) / koszt : 0, zyskPLN: wartoscPLN - kosztPLN,
       od: lots.reduce((a, l) => l.data < a ? l.data : a, lots[0].data), kursBrak: lots.some(l => !l.kursOk),
       loty: lots.map(l => { const w = l.q * cena, k = l.q * l.uc, kP = l.q * l.ucPLN;
@@ -130,7 +147,7 @@ function calc(S) {
     const bruttoPLN = num(d.brutto) * kurs, podatekPLN = num(d.podatek) * kurs;
     const doplata = typ === 'Opodatkowane' && cur !== 'PLN' ? Math.max(0, r2(S.ustawienia.stawka / 100 * bruttoPLN) - podatekPLN) : 0;
     return { ...d, waluta: cur, kursOk: cur === 'PLN' || has(d.kurs), netto: num(d.brutto) - num(d.podatek), bruttoPLN, podatekPLN,
-      nettoPLN: bruttoPLN - podatekPLN, doplata, rok: +d.data.slice(0, 4), typ };
+      nettoPLN: hx(bruttoPLN - podatekPLN, d.data, cur, num(d.brutto) - num(d.podatek)), nettoPLNprawdziwe: bruttoPLN - podatekPLN, doplata, rok: +d.data.slice(0, 4), typ };
   });
 
   // gotówka na koncie: liczona automatycznie (wpłaty − zakupy + sprzedaże + dywidendy), chyba że wpisana ręcznie
@@ -154,10 +171,15 @@ function calc(S) {
   const gotowkaPLN = sumPLN(gotowka, g => g.pln);
   const wartosc = wartoscPozycji + gotowkaPLN;
   const wplaty = S.wplaty.filter(w => w.data && has(w.kwotaPLN));
-  const kapital = sumPLN(wplaty, w => num(w.kwotaPLN));
-  const II = inflIndex(S.inflacja);
-  const kapitalRealny = sumPLN(wplaty, w => num(w.kwotaPLN) * II.now / II.before(w.data));
-  const kapitalRealnyNa = (d) => sumPLN(wplaty.filter(w => w.data <= d), w => num(w.kwotaPLN) * II.atDate(d) / II.before(w.data));
+  // wpłata w walucie prezentacji: dokładna kwota, gdy konto jest w tej walucie, inaczej po kursie NBP z dnia wpłaty
+  const depX = w => { const k = konto[w.konto] || {};
+    return X !== 'PLN' && k.waluta === X && has(w.kwotaWal) ? num(w.kwotaWal) * rateNow(X) : hx(num(w.kwotaPLN), w.data, 'PLN'); };
+  const kapital = sumPLN(wplaty, depX);
+  const kapitalNa = d => sumPLN(wplaty.filter(w => w.data <= d), depX);
+  const II = inflIndex(S.inflacja, INFL_POLE[X]);
+  const kapitalRealny = sumPLN(wplaty, w => depX(w) * II.now / II.before(w.data));
+  const kapitalRealnyNa = (d) => sumPLN(wplaty.filter(w => w.data <= d), w => depX(w) * II.atDate(d) / II.before(w.data));
+  const histX = (wPLN, d) => X === 'PLN' ? wPLN : wPLN / fxAt(d) * rateNow(X);   // wartość z historii (PLN z dnia d)
 
   // strategie
   const strategie = S.strategie.map(s => {
@@ -178,7 +200,7 @@ function calc(S) {
   const konta = S.konta.map(k => {
     const w = sumPLN(pozycje.filter(p => p.konto === k.nazwa), p => p.wartoscPLN);
     const gg = gotowka.find(x => x.konto === k.nazwa), g = gg.pln;
-    const kap = sumPLN(wplaty.filter(x => x.konto === k.nazwa), x => num(x.kwotaPLN));
+    const kap = sumPLN(wplaty.filter(x => x.konto === k.nazwa), depX);
     return { ...k, wartoscPozycji: w, gotowkaPLN: g, gotowkaKwota: gg.kwota, gotowkaAuto: gg.auto, gotowkaWyliczona: gg.wyliczona, razem: w + g, kapital: kap, zysk: kap ? w + g - kap : null, zyskPct: kap ? (w + g - kap) / kap : null };
   });
 
@@ -231,7 +253,8 @@ function calc(S) {
   const lata = [...new Set([...T.realized.map(r => r.rok), ...dyw.map(d => d.rok), new Date().getFullYear()])].sort((a, b) => b - a);
 
   return { rateNow, pozycje, zamkniete: P.realized, dyw, strategie, konta, klasy, waluty, model, poza, rozdziel, modelFor, podatki, lata,
-    wartosc, wartoscPozycji, gotowkaPLN, kapital, kapitalRealny, kapitalRealnyNa, inflNow: II.now, inflLast: II.lastMonth,
+    wartosc, wartoscPozycji, gotowkaPLN, kapital, kapitalNa, kapitalRealny, kapitalRealnyNa, inflNow: II.now, inflLast: II.lastMonth,
+    waluta: X, hx, fxAt, histX, depX, kursX: rateNow(X),
     zysk: wartosc - kapital, zyskPct: kapital ? (wartosc - kapital) / kapital : 0,
     zyskRealny: wartosc - kapitalRealny, zyskRealnyPct: kapitalRealny ? (wartosc - kapitalRealny) / kapitalRealny : 0,
     niezreal: wartoscPozycji - sumPLN(pozycje, p => p.kosztPLN), zrealizowany, dywNetto, warnings,

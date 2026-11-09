@@ -1,5 +1,6 @@
 /* ===================== ARKUSZ „ANALIZY” – migawka z aplikacji (raz dziennie) ===================== */
 async function buildAnalizy(force) {
+  const C = calcPLN();   // arkusz zawsze w złotych
   if (CFG.demo || !CFG.sheetId || !SYNC.token || !C) return;
   const day = todayStr(); CFG.anDay = CFG.anDay || {};
   if (!force && CFG.anDay[CFG.sheetId] === day) return;
@@ -8,7 +9,7 @@ async function buildAnalizy(force) {
   const r2 = v => (v === null || v === undefined || !isFinite(v)) ? '' : Math.round(v * 100) / 100, r4 = v => (v === null || v === undefined || !isFinite(v)) ? '' : Math.round(v * 1e4) / 1e4;
   let r = 1;
   put(1, 2, 'Analizy portfela'); put(2, 2, `Stan z dnia ${new Date().toLocaleDateString('pl-PL')} – zakładkę zapisuje aplikacja raz dziennie (migawka). Bieżące wartości liczone formułami są w zakładce „Podsumowanie”.`);
-  const pts = histPoints(S), T = twrStats(pts), xr = xirrPortfel(S, C), P = passiveIncome(S, C), K = costs(S, C);
+  const pts = histPoints(S, C), T = twrStats(pts), xr = xirrPortfel(S, C), P = passiveIncome(S, C), K = costs(S, C);
   const kosztyRazem = Object.values(K).reduce((a, k) => a + k.prowizje + k.zrodlo + k.pit, 0);
   const kp = [['Roczna stopa (XIRR)', r4(xr), 'p'], ['Stopa TWR', T ? r4(T.tot) : '', 'p'], ['TWR rocznie', T && T.roczna !== null ? r4(T.roczna) : '', 'p'], ['Maks. obsunięcie', T ? r4(T.maxDD) : '', 'p'],
     ['Obecnie od szczytu', T ? r4(T.aktualne) : '', 'p'], ['Dochód pasywny 12 mies.', r2(P.sum12), 'm'], ['Koszty i podatki łącznie', r2(kosztyRazem), 'm']];
@@ -20,7 +21,7 @@ async function buildAnalizy(force) {
 
   // Ty vs rynek
   const step = Math.max(1, Math.floor(pts.length / 160)), dates = pts.filter((p, i) => i % step === 0 || i === pts.length - 1).map(p => p.d);
-  const B = dates.length > 1 ? benchSeries(S, dates).filter(b => !b.brak) : [];
+  const B = dates.length > 1 ? benchSeries(S, dates, C).filter(b => !b.brak) : [];
   if (B.length) { let a = sect('TY VS RYNEK – gdyby te same wpłaty, w tych samych dniach, poszły w…', ['Benchmark', 'Wartość dziś', 'Twój portfel', 'Ty vs benchmark']);
     B.forEach(b => { put(r, 2, b.label); put(r, 3, r2(b.dzis)); put(r, 4, r2(C.wartosc)); put(r, 5, r2(C.wartosc - b.dzis)); r++; }); end(a, 4, [['money', 3, 5]]); }
 

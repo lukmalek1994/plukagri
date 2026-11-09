@@ -44,25 +44,25 @@ function vWaluta() {
   const R = fxEffect(C), sum = R.reduce((a, r) => ({ c: a.c + r.efektCena, k: a.k + r.efektKurs }), { c: 0, k: 0 });
   const byCur = {}; R.forEach(r => { byCur[r.waluta] = byCur[r.waluta] || { c: 0, k: 0, w: 0 }; byCur[r.waluta].c += r.efektCena; byCur[r.waluta].k += r.efektKurs; byCur[r.waluta].w += r.wartoscPLN; });
   return ['Wpływ waluty', 'Ile zarobiłeś na samych instrumentach, a ile na zmianie kursu walut (otwarte pozycje w walutach obcych)', `
-    <div class="kpis">${kpi('Zysk z ceny instrumentów', pl(sum.c), 'przy kursie z dnia zakupu', 'main')}${kpi('Zysk / strata z kursu walut', pl(sum.k), 'zmiana kursu od zakupu do dziś')}${kpi('Razem', pl(sum.c + sum.k), 'zysk niezrealizowany w PLN')}</div>
-    <div class="grid g2e"><div class="card"><h3>Podział zysku wg pozycji</h3>${barChart(R.map(r => r.ticker), [{ name: 'Cena instrumentu', values: R.map(r => r.efektCena), color: '#1565C0' }, { name: 'Kurs waluty', values: R.map(r => r.efektKurs), color: '#F9A825' }], { empty: 'Brak pozycji w walutach obcych' })}</div>
+    <div class="kpis">${kpi('Zysk z ceny instrumentów', plPLN(sum.c), 'przy kursie z dnia zakupu', 'main')}${kpi('Zysk / strata z kursu walut', plPLN(sum.k), 'zmiana kursu od zakupu do dziś')}${kpi('Razem', plPLN(sum.c + sum.k), 'zysk niezrealizowany w PLN')}</div>
+    <div class="grid g2e"><div class="card"><h3>Podział zysku wg pozycji <small>względem złotego</small></h3>${barChart(R.map(r => r.ticker), [{ name: 'Cena instrumentu', values: R.map(r => r.efektCena), color: '#1565C0' }, { name: 'Kurs waluty', values: R.map(r => r.efektKurs), color: '#F9A825' }], { pln: true, empty: 'Brak pozycji w walutach obcych' })}</div>
       <div class="card"><h3>Wg waluty</h3>${table([
-        { h: 'Waluta', f: x => `<b>${esc(x[0])}</b>` }, { h: 'Wartość PLN', n: 1, f: x => zl(x[1].w, 0) }, { h: 'Z ceny', n: 1, f: x => pl(x[1].c) }, { h: 'Z kursu', n: 1, f: x => pl(x[1].k) },
+        { h: 'Waluta', f: x => `<b>${esc(x[0])}</b>` }, { h: 'Wartość ' + WL(), n: 1, f: x => zlPLN(x[1].w, 0) }, { h: 'Z ceny', n: 1, f: x => plPLN(x[1].c) }, { h: 'Z kursu', n: 1, f: x => plPLN(x[1].k) },
         { h: 'Kurs dziś', n: 1, f: x => C.rateNow(x[0]).toFixed(4) }], Object.entries(byCur), { empty: 'Brak' })}</div></div>
     <div class="card" style="margin-top:16px">${table([
       { h: 'Pozycja', f: r => `<b>${esc(r.ticker)}</b> <span class="mut">${esc(r.strategia)}</span>` }, { h: 'Śr. kurs zakupu', n: 1, f: r => r.avgRate.toFixed(4) }, { h: 'Kurs dziś', n: 1, f: r => r.now.toFixed(4) },
-      { h: 'Zmiana kursu', n: 1, f: r => pp(r.now / r.avgRate - 1) }, { h: 'Zysk z ceny', n: 1, f: r => pl(r.efektCena) }, { h: 'Zysk z kursu', n: 1, f: r => pl(r.efektKurs) }, { h: 'Razem PLN', n: 1, f: r => pl(r.zyskPLN) },
-    ], R, { empty: 'Brak pozycji w walutach obcych' })}</div>`, ' '];
+      { h: 'Zmiana kursu', n: 1, f: r => pp(r.now / r.avgRate - 1) }, { h: 'Zysk z ceny', n: 1, f: r => plPLN(r.efektCena) }, { h: 'Zysk z kursu', n: 1, f: r => plPLN(r.efektKurs) }, { h: 'Razem PLN', n: 1, f: r => plPLN(r.zyskPLN) },
+    ], R, { pln: true, empty: 'Brak pozycji w walutach obcych' })}</div>`, ' '];
 }
 
 function vPorownanie() {
   const rows = C.strategie.filter(s => s.wartosc || s.zrealizowany || s.dywidendyNetto).map(s => ({ ...s, xirr: xirrStrategia(S, C, s), pct: s.koszt ? s.wynik / s.koszt : null }));
   // historia strategii (zapisywana od teraz)
   const series = rows.map(s => ({ name: s.nazwa, color: s.kolor, points: S.historia.map(h => { let m = h.strat; try { if (typeof m === 'string') m = m ? JSON.parse(m) : null; } catch (e) { m = null; }
-    return m && m[s.nazwa] !== undefined ? [String(h.data).slice(0, 10), m[s.nazwa]] : null; }).filter(Boolean) })).filter(s => s.points.length);
+    return m && m[s.nazwa] !== undefined ? [String(h.data).slice(0, 10), C.histX(num(m[s.nazwa]), String(h.data).slice(0, 10))] : null; }).filter(Boolean) })).filter(s => s.points.length);
   return ['Porównanie strategii', 'Która strategia zarabia najlepiej – wynik, roczna stopa zwrotu (XIRR) i wartość w czasie', `
     <div class="grid g2e"><div class="card"><h3>Roczna stopa zwrotu (XIRR)</h3>${barChart(rows.map(s => s.nazwa), [{ name: 'XIRR', values: rows.map(s => s.xirr || 0) }], { signColors: true, fmt: v => (v * 100).toFixed(0) + '%', empty: 'Brak danych' })}</div>
-      <div class="card"><h3>Wynik łączny (PLN)</h3>${barChart(rows.map(s => s.nazwa), [{ name: 'Niezrealizowany', values: rows.map(s => s.niezreal), color: '#1565C0' }, { name: 'Zrealizowany', values: rows.map(s => s.zrealizowany), color: '#26A69A' }, { name: 'Dywidendy', values: rows.map(s => s.dywidendyNetto), color: '#F9A825' }], { empty: 'Brak danych' })}</div></div>
+      <div class="card"><h3>Wynik łączny (${WL()})</h3>${barChart(rows.map(s => s.nazwa), [{ name: 'Niezrealizowany', values: rows.map(s => s.niezreal), color: '#1565C0' }, { name: 'Zrealizowany', values: rows.map(s => s.zrealizowany), color: '#26A69A' }, { name: 'Dywidendy', values: rows.map(s => s.dywidendyNetto), color: '#F9A825' }], { empty: 'Brak danych' })}</div></div>
     <div class="card" style="margin-top:16px"><h3>Wartość strategii w czasie</h3>${series.length ? lineChart(series, {}) : emptyChart('Historia strategii zapisuje się od teraz (raz dziennie) – wykres zapełni się w kolejnych dniach')}</div>
     <div class="card" style="margin-top:16px">${table([
       { h: 'Strategia', f: s => `<span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${esc(s.kolor)};margin-right:7px"></span><b>${esc(s.nazwa)}</b> <span class="mut">${esc(s.konto)}</span>` },
@@ -76,8 +76,8 @@ function vKoszty() {
   const tot = years.reduce((a, y) => ({ p: a.p + by[y].prowizje, z: a.z + by[y].zrodlo, t: a.t + by[y].pit }), { p: 0, z: 0, t: 0 });
   const all = tot.p + tot.z + tot.t, zyskBrutto = C.zysk + all;
   return ['Koszty i podatki', 'Ile kosztowały prowizje i podatki oraz jaką część zysku zabrały', `
-    <div class="kpis">${kpi('Koszty łącznie', zl(all), zyskBrutto > 0 ? pct(all / zyskBrutto) + ' zysku przed kosztami' : '', 'main')}${kpi('Prowizje', zl(tot.p))}${kpi('Podatek od dywidend', zl(tot.z), 'u źródła + dopłata w PL')}${kpi('Podatek PIT-38', zl(tot.t), 'od sprzedaży (szacunek)')}</div>
-    <div class="grid g2e"><div class="card"><h3>Koszty wg lat</h3>${barChart(years, [{ name: 'Prowizje', values: years.map(y => by[y].prowizje), color: '#1565C0' }, { name: 'Podatek od dywidend', values: years.map(y => by[y].zrodlo), color: '#F9A825' }, { name: 'PIT-38', values: years.map(y => by[y].pit), color: '#EF5350' }], { empty: 'Brak kosztów' })}</div>
+    <div class="kpis">${kpi('Koszty łącznie', zlPLN(all), zyskBrutto > 0 ? pct(all / zyskBrutto) + ' zysku przed kosztami' : '', 'main')}${kpi('Prowizje', zlPLN(tot.p))}${kpi('Podatek od dywidend', zlPLN(tot.z), 'u źródła + dopłata w PL')}${kpi('Podatek PIT-38', zlPLN(tot.t), 'od sprzedaży (szacunek)')}</div>
+    <div class="grid g2e"><div class="card"><h3>Koszty wg lat</h3>${barChart(years, [{ name: 'Prowizje', values: years.map(y => by[y].prowizje), color: '#1565C0' }, { name: 'Podatek od dywidend', values: years.map(y => by[y].zrodlo), color: '#F9A825' }, { name: 'PIT-38', values: years.map(y => by[y].pit), color: '#EF5350' }], { pln: true, empty: 'Brak kosztów' })}</div>
       <div class="card"><h3>Struktura kosztów</h3>${(() => { const d = [['Prowizje', tot.p, '#1565C0'], ['Podatek od dywidend', tot.z, '#F9A825'], ['PIT-38', tot.t, '#EF5350']].filter(x => x[1] > 0); return donut(d.map(x => [x[0], x[1]]), { empty: 'Brak kosztów', colors: d.map(x => x[2]) }); })()}</div></div>
     <div class="mut" style="font-size:12px;margin-top:10px">Koszty przewalutowania nie są tu liczone (nie są zapisywane w aplikacji). Podatek PIT-38 to szacunek z zakładki Podatki.</div>`, ' '];
 }
@@ -87,7 +87,7 @@ function vDochod() {
   return ['Dochód pasywny', 'Dywidendy i odsetki z ostatnich 12 miesięcy oraz prognoza na kolejne 12', `
     <div class="kpis">${kpi('Ostatnie 12 miesięcy', zl(P.sum12), 'netto', 'main')}${kpi('Średnio miesięcznie', zl(P.sum12 / 12))}${kpi('Prognoza na 12 miesięcy', zl(P.prognoza), 'z pozycji, które nadal masz')}
       ${kpi('Stopa dywidendy portfela', C.wartoscPozycji ? pct(P.tickers.reduce((a, t) => a + t.brutto, 0) / C.wartoscPozycji) : '–', 'brutto, od bieżącej wartości')}</div>
-    <div class="grid g2e"><div class="card"><h3>Ostatnie 12 miesięcy <small>netto PLN</small></h3>${barChart(mies, [{ name: 'Netto', values: P.byMonth, color: '#26A69A' }], { empty: 'Brak dywidend w ostatnich 12 miesiącach' })}</div>
+    <div class="grid g2e"><div class="card"><h3>Ostatnie 12 miesięcy <small>netto ${WL()}</small></h3>${barChart(mies, [{ name: 'Netto', values: P.byMonth, color: '#26A69A' }], { empty: 'Brak dywidend w ostatnich 12 miesiącach' })}</div>
       <div class="card"><h3>Prognoza <small>gdy wypłaty się powtórzą</small></h3>${barChart(P.nextMonths.map(m => m.slice(5) + '.' + m.slice(2, 4)), [{ name: 'Prognoza', values: P.fc, color: '#7E57C2' }], { empty: 'Brak danych do prognozy' })}</div></div>
     <div class="card" style="margin-top:16px">${table([
       { h: 'Instrument', f: t => `<b>${esc(t.ticker)}</b>${t.trzymane ? '' : ' <span class="mut">(sprzedany)</span>'}` }, { h: 'Netto 12 mies.', n: 1, f: t => zl(t.netto) },
@@ -108,15 +108,15 @@ function vSymulator() {
       { name: 'Wartość (nominalnie)', points: yearPts.map(p => [dateOf(p.m), p.V]), color: '#1565C0' },
       { name: 'Wartość w dzisiejszych złotych', points: yearPts.map(p => [dateOf(p.m), p.real]), color: '#7E57C2' },
       { name: 'Suma wpłat', points: yearPts.map(p => [dateOf(p.m), p.wplacone]), color: '#94a3b8', dash: true },
-      ...(o.cel > 0 ? [{ name: 'Cel', points: [[dateOf(0), o.cel], [dateOf(o.lata * 12), o.cel]], color: '#F9A825', dash: true }] : [])], { area: true })}</div>
+      ...(o.cel > 0 ? [{ name: 'Cel', points: [[dateOf(0), o.cel], [dateOf(o.lata * 12), o.cel]], color: '#F9A825', dash: true }] : [])], { area: true, pln: true })}</div>
       <div class="card"><h3>Założenia</h3><div class="form">${fld('start', 'Kwota startowa (zł)')}${fld('wplata', 'Wpłata miesięczna (zł)')}${fld('stopa', 'Stopa zwrotu rocznie (%)', '0.1')}${fld('lata', 'Liczba lat', '1')}
         ${fld('inflacja', 'Inflacja rocznie (%)', '0.1')}${fld('wzrost', 'Wzrost wpłat co rok (%)', '0.5')}${fld('cel', 'Cel (zł, w dzisiejszych pieniądzach)')}${fld('wydatki', 'albo: miesięczne wydatki (FIRE, reguła 4%)')}</div>
         <div class="mut" style="font-size:12px;margin-top:8px">Twoja dotychczasowa roczna stopa (XIRR): ${(() => { const x = xirrPortfel(S, C); return x === null ? 'brak danych' : pct(x); })()}. Historycznie akcje globalne dawały ok. 6–8% rocznie ponad inflację – to nie jest gwarancja.</div></div></div>
-    <div class="kpis" style="margin-top:16px;margin-bottom:0">${kpi(`Za ${o.lata} lat`, zl(end.V, 0), 'nominalnie', 'main')}${kpi('W dzisiejszych złotych', zl(end.real, 0), `przy inflacji ${o.inflacja}%`)}${kpi('Suma wpłat', zl(end.wplacone, 0))}${kpi('Zysk z procentu składanego', zl(end.V - end.wplacone, 0))}
-      ${o.cel > 0 ? kpi('Cel osiągniesz', R.goalM === null ? `<span class="neg">nie w ${o.lata} lat</span>` : dateOf(R.goalM).slice(0, 7), R.goalM === null ? 'zwiększ wpłaty lub horyzont' : `za ${Math.floor(R.goalM / 12)} lat ${R.goalM % 12} mies.` + (o.wydatki > 0 ? ` · cel FIRE ${zl(o.cel, 0)}` : '')) : ''}</div>
+    <div class="kpis" style="margin-top:16px;margin-bottom:0">${kpi(`Za ${o.lata} lat`, zlPLN(end.V, 0), 'nominalnie', 'main')}${kpi('W dzisiejszych złotych', zlPLN(end.real, 0), `przy inflacji ${o.inflacja}%`)}${kpi('Suma wpłat', zlPLN(end.wplacone, 0))}${kpi('Zysk z procentu składanego', zlPLN(end.V - end.wplacone, 0))}
+      ${o.cel > 0 ? kpi('Cel osiągniesz', R.goalM === null ? `<span class="neg">nie w ${o.lata} lat</span>` : dateOf(R.goalM).slice(0, 7), R.goalM === null ? 'zwiększ wpłaty lub horyzont' : `za ${Math.floor(R.goalM / 12)} lat ${R.goalM % 12} mies.` + (o.wydatki > 0 ? ` · cel FIRE ${zlPLN(o.cel, 0)}` : '')) : ''}</div>
     <div class="card" style="margin-top:16px">${table([
-      { h: 'Rok', f: p => `${p.m / 12}` }, { h: 'Data', f: p => dateOf(p.m).slice(0, 7) }, { h: 'Suma wpłat', n: 1, f: p => zl(p.wplacone, 0) }, { h: 'Wartość', n: 1, f: p => zl(p.V, 0) },
-      { h: 'W dzisiejszych zł', n: 1, f: p => zl(p.real, 0) }, { h: 'Zysk', n: 1, f: p => pl(p.V - p.wplacone) }], yearPts.filter(p => p.m % 60 === 0 || p.m === o.lata * 12))}</div>`, ' '];
+      { h: 'Rok', f: p => `${p.m / 12}` }, { h: 'Data', f: p => dateOf(p.m).slice(0, 7) }, { h: 'Suma wpłat', n: 1, f: p => zlPLN(p.wplacone, 0) }, { h: 'Wartość', n: 1, f: p => zlPLN(p.V, 0) },
+      { h: 'W dzisiejszych zł', n: 1, f: p => zlPLN(p.real, 0) }, { h: 'Zysk', n: 1, f: p => plPLN(p.V - p.wplacone) }], yearPts.filter(p => p.m % 60 === 0 || p.m === o.lata * 12))}</div>`, ' '];
 }
 
 function vMapa() {
