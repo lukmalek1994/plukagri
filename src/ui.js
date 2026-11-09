@@ -114,7 +114,7 @@ const ROZW = new Set();
 function toggleRozw(k) { ROZW.has(k) ? ROZW.delete(k) : ROZW.add(k); render(); }
 const lotKey = p => 'poz|' + p.strategia + '|' + p.ticker;
 const lotSub = p => p.loty.length > 1 || (p.loty[0] && p.loty[0].ilosc < p.loty[0].ilosc0 - 1e-9) ? p.loty.map(l => ({ ...l, _p: p })) : [];
-const lotOpis = l => `<span class="mut">↳ zakup${l._p && ROUTE === 'portfel' ? ' ' + esc(l.data) : ''}</span>${l.ilosc < l.ilosc0 - 1e-9 ? ` <span class="mut" style="font-size:11px" title="część tego zakupu została już sprzedana">(z ${nfq.format(l.ilosc0)})</span>` : ''}`;
+const lotOpis = l => `<span class="mut">↳ zakup${l._p && ROUTE === 'portfel' ? ' ' + esc(l.data) : ''}</span>${l.notatka && !/^XTB#/.test(l.notatka) ? ` <span style="font-size:12.5px">${esc(String(l.notatka).replace(/\s*XTB#\S+/, ''))}</span>` : ''}${l.ilosc < l.ilosc0 - 1e-9 ? ` <span class="mut" style="font-size:11px" title="część tego zakupu została już sprzedana">(z ${nfq.format(l.ilosc0)})</span>` : ''}`;
 const lotAkcje = l => `<span class="akcje"><a onclick="zamknijPozycje('${esc(l._p.strategia)}','${esc(l._p.ticker)}',${l.ilosc},'${l.id}')">zamknij</a> · <a onclick="editTransakcja('${l.id}')">edytuj</a></span>`;
 const osKupno = p => `${money(p.koszt, p.waluta)}<br><span class="mut" style="font-size:11px">wartość kupna</span>`;
 const osInput = (ticker, l) => `<input class="cell" type="number" step="0.01" style="width:110px" value="${l.lz ? '' : r2(l.wartosc)}" placeholder="wpisz z banku" title="Aktualna wartość obligacji z tego zakupu (z banku / obligacjeskarbowe.pl)" onclick="event.stopPropagation()" onchange="setLotOS('${esc(ticker)}','${l.id}',this.value)">${l.lz ? '<br><span class="mut" style="font-size:11px">na razie = kupno</span>' : ''}`;
@@ -528,7 +528,31 @@ function vInstrumenty() {
       { h: '', f: i => `<a onclick="event.stopPropagation();editInstrument('${i.id}')">edytuj</a>` },
     ], rows, { empty: 'Brak instrumentów', drag: 'instrumenty' })}</div>
     <div class="mut" style="font-size:12px;margin-top:8px">⇅ Kolejność zmienisz, przeciągając wiersz myszką.</div>`,
-    `${SYNC.token ? '<button class="btn ghost" onclick="refreshAutoPrices().then(()=>toast(\'Ceny odświeżone\'))">↻ Ceny z Google</button>' : ''}<button class="btn" onclick="editInstrument()">＋ Instrument</button>`];
+    `${SYNC.token ? '<button class="btn ghost" onclick="refreshAutoPrices().then(()=>toast(\'Ceny odświeżone\'))">↻ Ceny z Google</button>' : ''}<button class="btn ghost" onclick="scalInstrumenty()">⇢ Scal instrumenty</button><button class="btn" onclick="editInstrument()">＋ Instrument</button>`];
+}
+// kilka instrumentów -> jeden (np. srebrne Pandy -> SREBRO); nazwa scalanego instrumentu trafia do notatki każdej transakcji
+function scalInstrumenty() {
+  if (S.instrumenty.length < 2) return toast('Za mało instrumentów');
+  const pre = `<div class="chk"><div class="mut" style="font-size:12.5px;margin-bottom:6px">Instrumenty do scalenia (zostaną usunięte, a ich transakcje przeniesione; nazwa trafi do notatki):</div>${S.instrumenty.map(i => `<label><input type="checkbox" value="${esc(i.ticker)}"> <b>${esc(i.ticker)}</b> <span class="mut">${esc(i.nazwa)} · ${esc(i.waluta)}</span></label>`).join('')}</div>`;
+  const form = modal('Scal instrumenty', [
+    { k: 'cel', l: 'Scal do instrumentu', t: 'select', o: S.instrumenty.map(i => [i.ticker, `${i.ticker} – ${i.nazwa} (${i.waluta})`]), full: 1 },
+  ], { cel: (S.instrumenty.find(i => /srebr/i.test(i.ticker)) || S.instrumenty[0]).ticker }, o => {
+    const ts = [...form.closest('.modal').querySelectorAll('.chk input:checked')].map(x => x.value).filter(t => t !== o.cel);
+    if (!ts.length) return 'Zaznacz instrumenty do scalenia (inne niż docelowy)';
+    const cel = S.instrumenty.find(i => i.ticker === o.cel), inne = ts.map(t => S.instrumenty.find(i => i.ticker === t));
+    const zlaW = inne.filter(i => i.waluta !== cel.waluta); if (zlaW.length) return `Inna waluta niż ${cel.ticker} (${cel.waluta}): ${zlaW.map(i => i.ticker).join(', ')}`;
+    let n = 0;
+    inne.forEach(i => {
+      const opis = String(i.nazwa || i.ticker).replace(/^srebrna\s+/i, '').replace(/\s*\(1 oz\)$/i, '');
+      S.transakcje.forEach(t => { if (t.ticker !== i.ticker) return; t.ticker = cel.ticker; n++;
+        const stara = String(t.notatka || '').replace(/^Zapłacono [\d.,]+ zł$/, ''); t.notatka = opis + (stara ? ' · ' + stara : ''); });
+      S.dywidendy.forEach(d => { if (d.ticker === i.ticker) d.ticker = cel.ticker; });
+      (S.alerty || []).forEach(a => { if (a.ticker === i.ticker) a.ticker = cel.ticker; });
+      S.cele.forEach(c => { const l = String(c.tickery || '').split(',').map(x => x.trim()).filter(Boolean).map(x => x === i.ticker ? cel.ticker : x); c.tickery = [...new Set(l)].join(','); });
+    });
+    S.instrumenty = S.instrumenty.filter(i => !ts.includes(i.ticker));
+    changed('instrumenty', 'transakcje', 'dywidendy', 'cele', 'alerty'); toast(`Scalono ${ts.length} instrumentów do ${cel.ticker} · przeniesiono ${n} transakcji`);
+  }, null, pre);
 }
 
 function vUstawienia() {

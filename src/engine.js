@@ -101,7 +101,7 @@ function calc(S, opts = {}) {
       if (!lots[key]) lots[key] = [];
       if (t.typ === 'KUPNO') {
         const cost = q * p + fee;
-        lots[key].push({ q, q0: q, cena: p, uc: cost / q, ucPLN: cv(cost * kurs, t.data, cur, cost) / q, ucPLNr: cost * kurs / q, data: t.data, id: t.id, kursOk, wa: t.wartoscAkt });
+        lots[key].push({ q, q0: q, cena: p, uc: cost / q, ucPLN: cv(cost * kurs, t.data, cur, cost) / q, ucPLNr: cost * kurs / q, data: t.data, id: t.id, kursOk, wa: t.wartoscAkt, notatka: t.notatka || '' });
       } else if (t.typ === 'SPRZEDAŻ') {
         let left = q, cost = 0, costPLN = 0, allOk = kursOk, firstBuy = null; const uzyte = [];
         const bierz = lot => { const take = Math.min(left, lot.q);
@@ -148,7 +148,7 @@ function calc(S, opts = {}) {
       zysk: wartosc - koszt, zyskPct: koszt ? (wartosc - koszt) / koszt : 0, zyskPLN: wartoscPLN - kosztPLN,
       od: lots.reduce((a, l) => l.data < a ? l.data : a, lots[0].data), kursBrak: lots.some(l => !l.kursOk),
       loty: lots.map(l => { const w = lv(l), k = l.q * l.uc, kP = l.q * l.ucPLN;
-        return { id: l.id, data: l.data, ilosc: l.q, ilosc0: l.q0, cenaZakupu: l.cena, lz: lotZakup(l), koszt: k, kosztPLN: kP, wartosc: w, wartoscPLN: w * rateNow(cur),
+        return { id: l.id, data: l.data, ilosc: l.q, ilosc0: l.q0, cenaZakupu: l.cena, lz: lotZakup(l), notatka: l.notatka, koszt: k, kosztPLN: kP, wartosc: w, wartoscPLN: w * rateNow(cur),
           zysk: w - k, zyskPct: k ? (w - k) / k : 0, zyskPLN: w * rateNow(cur) - kP }; }) });
   }
 
