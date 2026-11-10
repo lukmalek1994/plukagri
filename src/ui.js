@@ -168,7 +168,30 @@ function setLotOS(ticker, lotId, v) {
   if (ins && q) { ins.cena = w / q; ins.dataCeny = todayStr(); }
   changed('transakcje', 'instrumenty'); render(); toast('Zapisano aktualną wartość');
 }
-const pozAkcje = p => `<button class="btn sm ghost akcje" onclick="zamknijPozycje('${esc(p.strategia)}','${esc(p.ticker)}',${p.ilosc},'')">Zamknij</button>`;
+const pozAkcje = p => `<span class="akcje"><button class="btn sm ghost" onclick="event.stopPropagation();editPozycja(${esc(JSON.stringify(p.strategia))},${esc(JSON.stringify(p.ticker))})">Edytuj</button> <button class="btn sm ghost" onclick="event.stopPropagation();zamknijPozycje('${esc(p.strategia)}','${esc(p.ticker)}',${p.ilosc},'')">Zamknij</button></span>`;
+// edycja całej pozycji: przeniesienie wszystkich transakcji (i ew. dywidend) instrumentu do innej strategii
+function editPozycja(strategia, ticker) {
+  const txs = S.transakcje.filter(t => t.strategia === strategia && t.ticker === ticker);
+  const dyw = S.dywidendy.filter(d => d.strategia === strategia && d.ticker === ticker);
+  const ins = S.instrumenty.find(i => i.ticker === ticker) || {};
+  const kontoOf = n => (S.strategie.find(x => x.nazwa === n) || {}).konto || '';
+  const pre = `<p class="mut" style="margin-top:0;font-size:13px"><b style="color:var(--ink)">${esc(ticker)}</b> ${esc(ins.nazwa || '')} · ${txs.length} transakcji${dyw.length ? `, ${dyw.length} dywidend` : ''} w strategii „${esc(strategia)}”.
+    ${ins.id ? ` <a onclick="this.closest('.modal-bg').remove();editInstrument('${ins.id}')">Edytuj instrument (nazwa, klasa, waluta, symbol) →</a>` : ''}</p>`;
+  const fields = [
+    { k: 'strategia', l: 'Strategia', t: 'select', o: S.strategie.map(x => [x.nazwa, x.nazwa + (x.konto ? ` (${x.konto})` : '')]), full: 1,
+      help: 'Przenosi wszystkie zakupy i sprzedaże tego instrumentu z tej strategii. Jeśli w docelowej strategii jest już ten instrument, pozycje się połączą.' },
+  ];
+  if (dyw.length) fields.push({ k: 'dyw', l: 'Dywidendy z tego instrumentu', t: 'select', o: [['TAK', 'przenieś razem z pozycją'], ['NIE', 'zostaw w obecnej strategii']], full: 1 });
+  modal('Edytuj pozycję', fields, { strategia, dyw: 'TAK' }, o => {
+    if (!o.strategia || o.strategia === strategia) return;
+    const kOld = kontoOf(strategia), kNew = kontoOf(o.strategia);
+    if (kOld !== kNew && !confirm(`Strategia „${o.strategia}” jest na innym koncie (${kNew || 'brak'} zamiast ${kOld || 'brak'}).\n\nPozycja, gotówka i podatek przeliczą się dla nowego konta. Kontynuować?`)) return 'Anulowano';
+    txs.forEach(t => { t.strategia = o.strategia; });
+    if (o.dyw !== 'NIE') dyw.forEach(d => { d.strategia = o.strategia; });
+    const k = 'poz|' + strategia + '|' + ticker; if (ROZW.has(k)) { ROZW.delete(k); ROZW.add('poz|' + o.strategia + '|' + ticker); }
+    changed('transakcje', ...(o.dyw !== 'NIE' && dyw.length ? ['dywidendy'] : [])); toast(`Przeniesiono ${ticker} do „${o.strategia}”`);
+  }, null, pre);
+}
 function zamknijPozycje(strategia, ticker, ilosc, zakup) {
   const p = C.pozycje.find(x => x.strategia === strategia && x.ticker === ticker) || {};
   editTransakcja(null, strategia, { typ: 'SPRZEDAŻ', ticker, ilosc: +ilosc.toFixed(8), cena: p.cena ? +p.cena.toFixed(4) : '', zakup: zakup || '', wartosc: !p.os ? '' : (l => l ? r2(l.wartosc * ilosc / l.ilosc) : r2(p.wartosc * ilosc / p.ilosc))(zakup && p.loty.find(x => x.id === zakup)) });
