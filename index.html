@@ -101,7 +101,7 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 </head>
 <body>
 <div class="app">
-  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-10 20:57</div></aside>
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-10 21:04</div></aside>
   <main>
     <div class="top">
       <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
@@ -1864,8 +1864,8 @@ function vUstawienia() {
   const celeSel = `<select onchange="FILT.celeKonto=this.value;render()"><option value="">Cały portfel</option>${S.konta.map(k => `<option ${k.nazwa === ck ? 'selected' : ''}>${esc(k.nazwa)}</option>`).join('')}</select>`;
   const celeTbl = table([
     { h: 'Koszyk', f: c => `<b>${esc(c.koszyk)}</b>` }, { h: 'Instrumenty', f: c => esc(String(c.tickery || c.koszyk).split(',').join(', ')) },
-    { h: 'Grupa', f: c => esc(c.grupa) }, { h: 'Cel', n: 1, f: c => num(c.cel) + '%' },
-  ], celeRows, { click: c => `editCel('${c.id}')`, empty: 'Brak koszyków – kliknij „＋ Koszyk”', foot: celeRows.length ? ['Suma', '', '', celeRows.reduce((a, c) => a + num(c.cel), 0) + '%'] : null });
+    { h: 'Grupa', f: c => esc(c.grupa) }, { h: 'Cel', n: 1, f: c => (c === celeRows[celeRows.length - 1] && celeRows.length > 1 ? '<span class="tag" title="Ostatni koszyk ustawia się sam, żeby suma wynosiła 100%">auto</span> ' : '') + fmtCel(c.cel) + '%' },
+  ], celeRows, { click: c => `editCel('${c.id}')`, empty: 'Brak koszyków – kliknij „＋ Koszyk”', foot: celeRows.length ? ['Suma', '', '', (t => Math.abs(t - 100) > 0.001 ? `<span class="neg">${fmtCel(t)}%</span>` : '100%')(celeRows.reduce((a, c) => a + num(c.cel), 0))] : null });
   return ['Ustawienia', 'Konta, kursy walut, alokacja docelowa, połączenie z Google Sheets i kopia zapasowa', `
     <div class="grid g2e">
       <div class="card"><h3>Google Sheets</h3>
@@ -2096,12 +2096,23 @@ function wireSearch(form, editing) {
   btn.onclick = run; q.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); run(); } });
   if (!SYNC.token) out.innerHTML = '<div class="mut">Wyszukiwanie działa po połączeniu z Google Sheets (plakietka u góry). Bez tego wpisz dane ręcznie.</div>';
 }
+// ostatni koszyk portfela dopełnia sumę do 100%
+const fmtCel = v => String(r2(num(v))).replace('.', ',');
+const celeOf = konto => S.cele.filter(c => (c.konto || '') === (konto || ''));
+function bilansCele(konto) {
+  const rows = celeOf(konto); if (!rows.length) return;
+  const last = rows[rows.length - 1], reszta = rows.slice(0, -1).reduce((a, c) => a + num(c.cel), 0);
+  last.cel = r2(Math.max(0, 100 - reszta));
+}
 function editCel(id) {
   const c = S.cele.find(x => x.id === id) || { konto: FILT.celeKonto || '' };
+  const rows0 = celeOf(c.konto), isLast = !!id && rows0[rows0.length - 1] === c;
+  const wolne = r2(100 - rows0.filter(x => x !== c && x !== rows0[rows0.length - 1]).reduce((a, x) => a + num(x.cel), 0));
   const sel = new Set(String(c.tickery || c.koszyk || '').split(',').map(s => s.trim()).filter(Boolean));
   const pre = `<div class="mut" style="font-size:12.5px;margin-bottom:10px">Portfel: <b>${esc(c.konto || 'Cały portfel')}</b></div>`;
   const form = modal(id ? 'Edytuj koszyk' : 'Nowy koszyk', [
-    { k: 'koszyk', l: 'Nazwa koszyka (np. CORE, CSPX, ZŁOTO)' }, { k: 'grupa', l: 'Grupa (opcjonalnie)' }, { k: 'cel', l: 'Cel %', t: 'number' },
+    { k: 'koszyk', l: 'Nazwa koszyka (np. CORE, CSPX, ZŁOTO)' }, { k: 'grupa', l: 'Grupa (opcjonalnie)' },
+    { k: 'cel', l: 'Cel %', t: 'number', help: isLast ? 'Ostatni koszyk – cel ustawia się sam (100% minus pozostałe koszyki)' : rows0.length ? `Ostatni koszyk portfela dopasuje się sam. Do rozdania maks. ${fmtCel(wolne)}%` : 'Pierwszy koszyk dostanie 100% – kolejne odejmą od niego swój udział' },
   ], c, o => {
     const ts = [...form.closest('.modal').querySelectorAll('.chk input:checked')].map(x => x.value);
     if (!o.koszyk) return 'Podaj nazwę koszyka';
@@ -2109,9 +2120,15 @@ function editCel(id) {
     const inny = S.cele.find(x => x.id !== id && (x.konto || '') === (c.konto || '') && String(x.tickery || x.koszyk).split(',').some(t => ts.includes(t.trim())));
     if (inny) return `Instrument jest już w koszyku „${inny.koszyk}” tego portfela`;
     o.tickery = ts.join(','); o.konto = c.konto || '';
-    if (id) Object.assign(c, o); else S.cele.push({ id: uid(), ...o }); changed('cele');
-  }, id ? () => { S.cele = S.cele.filter(x => x.id !== id); changed('cele'); } : null,
+    if (!isLast && rows0.length && (o.cel < 0 || o.cel > wolne + 1e-9)) return `Cel musi być między 0 a ${fmtCel(wolne)}% (reszta należy do pozostałych koszyków)`;
+    if (isLast) delete o.cel;
+    if (id) Object.assign(c, o);
+    else { const nw = { id: uid(), ...o }, last = rows0[rows0.length - 1];
+      if (last) S.cele.splice(S.cele.indexOf(last), 0, nw); else S.cele.push(nw); }   // nowy koszyk przed ostatnim – ostatni dalej dopełnia
+    bilansCele(o.konto); changed('cele');
+  }, id ? () => { S.cele = S.cele.filter(x => x.id !== id); bilansCele(c.konto); changed('cele'); } : null,
   pre + `<div class="chk"><div class="mut" style="font-size:12.5px;margin-bottom:6px">Instrumenty w koszyku:</div>${S.instrumenty.map(i => `<label><input type="checkbox" value="${esc(i.ticker)}" ${sel.has(i.ticker) ? 'checked' : ''}> <b>${esc(i.ticker)}</b> <span class="mut">${esc(i.nazwa)}</span></label>`).join('')}</div>`);
+  if (isLast) { form.elements.cel.readOnly = true; form.elements.cel.style.background = '#f1f4f8'; }
 }
 function kopiujCele(from, to) {
   if (S.cele.some(c => c.konto === to) && !confirm(`Konto ${to} ma już portfel docelowy – zastąpić?`)) return;
@@ -2122,6 +2139,7 @@ function migrateCele() {
   let ch = false;
   S.cele.forEach(c => { if (c.konto === undefined) { c.konto = ''; ch = true; }
     if (!c.tickery) { const ts = S.instrumenty.filter(i => i.koszyk && i.koszyk === c.koszyk).map(i => i.ticker); c.tickery = ts.length ? ts.join(',') : c.koszyk; ch = true; } });
+  [...new Set(S.cele.map(c => c.konto || ''))].forEach(k => { const rows = celeOf(k), przed = rows.length && num(rows[rows.length - 1].cel); bilansCele(k); if (rows.length && przed !== rows[rows.length - 1].cel) ch = true; });
   if (ch) changed('cele');
 }
 function setCena(id, v) { const i = S.instrumenty.find(x => x.id === id); i.cena = v === '' ? '' : num(v); i.dataCeny = v === '' ? '' : todayStr(); changed('instrumenty'); render(); }
