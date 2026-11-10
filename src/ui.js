@@ -93,6 +93,42 @@ function render() {
   alertyPowiadom();
 }
 
+/* ---------- kokpit: kliknięcie w klasę aktywów pokazuje jej składniki ---------- */
+let KLASA_SEL = '';
+function klasySzczegoly(data, KK) {
+  const tot = data.reduce((a, d) => a + d[1], 0);
+  const blocks = data.map(([kl, v], i) => {
+    let rows;
+    if (kl === 'Gotówka') rows = C.konta.filter(k => k.gotowkaPLN).map(k => ({ t: k.nazwa, n: 'gotówka na koncie', w: k.gotowkaPLN, z: null, kz: 0 }));
+    else {
+      const m = {};
+      C.pozycje.filter(p => p.klasa === kl).forEach(p => { const x = m[p.ticker] || (m[p.ticker] = { t: p.ticker, n: p.nazwa, s: new Set(), w: 0, z: 0, kz: 0 });
+        x.w += p.wartoscPLN; x.z += p.zyskPLN; x.kz += p.kosztPLN; if (p.strategia) x.s.add(p.strategia); if (!KK && p.konto) x.s.add(p.konto); });
+      rows = Object.values(m).map(x => ({ ...x, n: x.n + (x.s.size ? ' · ' + [...x.s].join(', ') : '') }));
+    }
+    rows.sort((a, b) => b.w - a.w);
+    const tbl = table([
+      { h: kl === 'Gotówka' ? 'Konto' : 'Instrument', f: r => `<div class="kd-n"><b>${esc(r.t)}</b><span class="mut">${esc(r.n)}</span></div>` },
+      { h: 'Wartość', n: 1, f: r => zl(r.w, 0) },
+      { h: 'Udział', n: 1, f: r => `${pct(v ? r.w / v : 0)}<div class="mut kd-s">${pct(tot ? r.w / tot : 0)} portf.</div>` },
+      { h: 'Zysk', n: 1, f: r => r.z === null ? '–' : `${pl(r.z)}<div class="kd-s">${r.kz ? pp(r.z / r.kz) : ''}</div>` },
+    ], rows, { empty: 'Brak pozycji', click: r => kl === 'Gotówka' ? `go('ustawienia')` : `klasaDoPortfela(${esc(JSON.stringify(kl))},${esc(JSON.stringify(KK || ''))})` });
+    return `<div class="klasa-det" data-i="${i}" data-k="${esc(kl)}" style="display:none"><div class="kd-h"><i style="background:${PAL[i % PAL.length]}"></i><b>${esc(kl)}</b><span class="mut">${zl(v, 0)} · ${rows.length} ${kl === 'Gotówka' ? 'kont' : 'poz.'}</span><span class="sp"></span><a onclick="pokazKlase(-1)">✕ zamknij</a></div>${tbl}</div>`;
+  }).join('');
+  const hint = data.length ? `<div class="mut kd-hint">Kliknij wycinek lub nazwę klasy, aby zobaczyć jej aktywa.</div>` : '';
+  setTimeout(() => { const el = [...document.querySelectorAll('.klasa-det')].find(e => e.dataset.k === KLASA_SEL); pokazKlase(el ? +el.dataset.i : -1, true); });
+  return hint + blocks;
+}
+function klasaDoPortfela(kl, kk) { FILT.portfel = { s: '', k: kk, c: kl }; go('portfel'); }
+function pokazKlase(i, keep) {
+  const dets = [...document.querySelectorAll('.klasa-det')], cur = dets.find(e => e.style.display !== 'none');
+  if (!keep && cur && +cur.dataset.i === i) i = -1;   // drugie kliknięcie zamyka
+  dets.forEach(e => { e.style.display = +e.dataset.i === i ? '' : 'none'; });
+  const sel = dets.find(e => +e.dataset.i === i); KLASA_SEL = sel ? sel.dataset.k : '';
+  document.querySelectorAll('#klasyDonut .dseg').forEach(e => { e.classList.toggle('dim', i >= 0 && +e.dataset.i !== i); e.classList.toggle('on', +e.dataset.i === i); });
+  const h = document.querySelector('.kd-hint'); if (h) h.style.display = i >= 0 ? 'none' : '';
+}
+
 /* ---------- elementy ---------- */
 const kpi = (l, v, s = '', cls = '') => `<div class="kpi ${cls}"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
 function table(cols, rows, opts = {}) {
@@ -223,7 +259,9 @@ function vKokpitInner(SV, KK) {
     { name: 'Stopa zwrotu', points: h.filter(x => x.k).map(x => [x.d, (x.w - x.k) / x.k]) },
     { name: 'Realna (po inflacji)', points: h.filter(x => x.k).map(x => { const kr = C.kapitalRealnyNa(x.d.slice(0, 10)); return [x.d, kr ? (x.w - kr) / kr : 0]; }), color: '#7E57C2' },
   ], { pct: true, h: 200, empty: emptyMsg() });
-  const klasy = donut(Object.entries(C.klasy), { center: [nf0.format(C.wartosc / (C.kursX || 1) / 1000) + ' tys.', WL()], empty: 'Dodaj pierwszą transakcję' });
+  const klasyRet = {};
+  const klasy = donut(Object.entries(C.klasy), { center: [nf0.format(C.wartosc / (C.kursX || 1) / 1000) + ' tys.', WL()], empty: 'Dodaj pierwszą transakcję', click: 'pokazKlase', id: 'klasyDonut', ret: klasyRet })
+    + klasySzczegoly(klasyRet.data || [], KK);
   const waluty = donut(Object.entries(C.waluty), { empty: 'Brak pozycji' });
   const strat = C.strategie.filter(s => s.wartosc || s.zrealizowany || s.dywidendyNetto);
   const stratTbl = table([

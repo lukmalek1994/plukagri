@@ -49,15 +49,17 @@ function donut(data, opts = {}) {
   const tot = data.reduce((a, d) => a + d[1], 0);
   if (!tot) return emptyChart(opts.empty);
   const R = 80, r = 52, C = 100; let a0 = -Math.PI / 2, out = '';
+  const ck = k => opts.click ? ` class="dseg" data-i="${k}" onclick="${opts.click}(${k})"` : '';   // klikalne wycinki/legenda
   data.forEach(([, v], k) => {
     const a1 = a0 + 2 * Math.PI * v / tot, big = a1 - a0 > Math.PI ? 1 : 0, c = opts.colors?.[k] || PAL[k % PAL.length];
-    if (data.length === 1) { out += `<circle cx="${C}" cy="${C}" r="${(R + r) / 2}" fill="none" stroke="${c}" stroke-width="${R - r}"/>`; }
+    if (data.length === 1) { out += `<circle cx="${C}" cy="${C}" r="${(R + r) / 2}" fill="none" stroke="${c}" stroke-width="${R - r}"${ck(k)}/>`; }
     else { const p = (ang, rad) => `${(C + rad * Math.cos(ang)).toFixed(2)},${(C + rad * Math.sin(ang)).toFixed(2)}`;
-      out += `<path d="M${p(a0, R)}A${R},${R} 0 ${big} 1 ${p(a1, R)}L${p(a1, r)}A${r},${r} 0 ${big} 0 ${p(a0, r)}Z" fill="${c}"/>`; }
+      out += `<path d="M${p(a0, R)}A${R},${R} 0 ${big} 1 ${p(a1, R)}L${p(a1, r)}A${r},${r} 0 ${big} 0 ${p(a0, r)}Z" fill="${c}"${ck(k)}><title>${esc(data[k][0])}</title></path>`; }
     a0 = a1; });
   const center = opts.center ? `<text x="${C}" y="${C - 2}" text-anchor="middle" class="dc1">${esc(opts.center[0])}</text><text x="${C}" y="${C + 16}" text-anchor="middle" class="dc2">${esc(opts.center[1])}</text>` : '';
-  const leg = data.map(([n, v], k) => `<div class="dl"><i style="background:${opts.colors?.[k] || PAL[k % PAL.length]}"></i><span>${esc(n)}</span><b>${(v / tot * 100).toFixed(1).replace('.', ',')}%</b></div>`).join('');
-  return `<div class="donut"><svg viewBox="0 0 200 200">${out}${center}</svg><div class="dlegend">${leg}</div></div>`;
+  const leg = data.map(([n, v], k) => `<div class="dl${opts.click ? ' dseg' : ''}"${opts.click ? ` data-i="${k}" onclick="${opts.click}(${k})"` : ''}><i style="background:${opts.colors?.[k] || PAL[k % PAL.length]}"></i><span>${esc(n)}</span><b>${(v / tot * 100).toFixed(1).replace('.', ',')}%</b></div>`).join('');
+  if (opts.ret) opts.ret.data = data;   // kolejność po sortowaniu – dla szczegółów
+  return `<div class="donut"${opts.id ? ` id="${opts.id}"` : ''}><svg viewBox="0 0 200 200">${out}${center}</svg><div class="dlegend">${leg}</div></div>`;
 }
 
 /* bars: labels[], series:[{name,color,values[]}], opts {h, fmt, horizontal} */

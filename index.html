@@ -94,11 +94,14 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 .viewsel{font-weight:600;padding:8px 12px;border-radius:9px;border:1px solid var(--line);background:#fff;min-width:170px}
 .heat td.n{font-size:12px;padding:6px 4px;text-align:center;border-radius:4px}.heat th.n{text-align:center}.heat{border-collapse:separate;border-spacing:2px}
 .kpi.main .pos,.kpi.main .neg{color:#fff}
+
+.dseg{cursor:pointer;transition:opacity .15s}.donut svg path.dseg:hover{opacity:.8}.dseg.dim{opacity:.3}.dl.dseg{border-radius:6px;padding:3px 6px;margin:0 -6px}.dl.dseg:hover{background:#f1f5fb}.dl.dseg.on{background:#e8f0fc;font-weight:600}.dl.dseg.dim{opacity:.55}
+.klasa-det{margin-top:14px;border-top:1px solid #e6ebf2;padding-top:10px}.kd-h{display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:6px}.kd-h i{width:10px;height:10px;border-radius:3px}.kd-h .sp{flex:1}.kd-h a{cursor:pointer;font-size:12.5px}.kd-hint{font-size:12px;margin-top:10px}.kd-n{display:flex;flex-direction:column;max-width:150px}.klasa-det td,.klasa-det th{padding-left:6px;padding-right:6px;font-size:12.5px}.kd-n span{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.kd-s{font-size:11.5px}
 </style>
 </head>
 <body>
 <div class="app">
-  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-09 23:37</div></aside>
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-10 20:51</div></aside>
   <main>
     <div class="top">
       <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
@@ -439,15 +442,17 @@ function donut(data, opts = {}) {
   const tot = data.reduce((a, d) => a + d[1], 0);
   if (!tot) return emptyChart(opts.empty);
   const R = 80, r = 52, C = 100; let a0 = -Math.PI / 2, out = '';
+  const ck = k => opts.click ? ` class="dseg" data-i="${k}" onclick="${opts.click}(${k})"` : '';   // klikalne wycinki/legenda
   data.forEach(([, v], k) => {
     const a1 = a0 + 2 * Math.PI * v / tot, big = a1 - a0 > Math.PI ? 1 : 0, c = opts.colors?.[k] || PAL[k % PAL.length];
-    if (data.length === 1) { out += `<circle cx="${C}" cy="${C}" r="${(R + r) / 2}" fill="none" stroke="${c}" stroke-width="${R - r}"/>`; }
+    if (data.length === 1) { out += `<circle cx="${C}" cy="${C}" r="${(R + r) / 2}" fill="none" stroke="${c}" stroke-width="${R - r}"${ck(k)}/>`; }
     else { const p = (ang, rad) => `${(C + rad * Math.cos(ang)).toFixed(2)},${(C + rad * Math.sin(ang)).toFixed(2)}`;
-      out += `<path d="M${p(a0, R)}A${R},${R} 0 ${big} 1 ${p(a1, R)}L${p(a1, r)}A${r},${r} 0 ${big} 0 ${p(a0, r)}Z" fill="${c}"/>`; }
+      out += `<path d="M${p(a0, R)}A${R},${R} 0 ${big} 1 ${p(a1, R)}L${p(a1, r)}A${r},${r} 0 ${big} 0 ${p(a0, r)}Z" fill="${c}"${ck(k)}><title>${esc(data[k][0])}</title></path>`; }
     a0 = a1; });
   const center = opts.center ? `<text x="${C}" y="${C - 2}" text-anchor="middle" class="dc1">${esc(opts.center[0])}</text><text x="${C}" y="${C + 16}" text-anchor="middle" class="dc2">${esc(opts.center[1])}</text>` : '';
-  const leg = data.map(([n, v], k) => `<div class="dl"><i style="background:${opts.colors?.[k] || PAL[k % PAL.length]}"></i><span>${esc(n)}</span><b>${(v / tot * 100).toFixed(1).replace('.', ',')}%</b></div>`).join('');
-  return `<div class="donut"><svg viewBox="0 0 200 200">${out}${center}</svg><div class="dlegend">${leg}</div></div>`;
+  const leg = data.map(([n, v], k) => `<div class="dl${opts.click ? ' dseg' : ''}"${opts.click ? ` data-i="${k}" onclick="${opts.click}(${k})"` : ''}><i style="background:${opts.colors?.[k] || PAL[k % PAL.length]}"></i><span>${esc(n)}</span><b>${(v / tot * 100).toFixed(1).replace('.', ',')}%</b></div>`).join('');
+  if (opts.ret) opts.ret.data = data;   // kolejność po sortowaniu – dla szczegółów
+  return `<div class="donut"${opts.id ? ` id="${opts.id}"` : ''}><svg viewBox="0 0 200 200">${out}${center}</svg><div class="dlegend">${leg}</div></div>`;
 }
 
 /* bars: labels[], series:[{name,color,values[]}], opts {h, fmt, horizontal} */
@@ -1326,6 +1331,42 @@ function render() {
   alertyPowiadom();
 }
 
+/* ---------- kokpit: kliknięcie w klasę aktywów pokazuje jej składniki ---------- */
+let KLASA_SEL = '';
+function klasySzczegoly(data, KK) {
+  const tot = data.reduce((a, d) => a + d[1], 0);
+  const blocks = data.map(([kl, v], i) => {
+    let rows;
+    if (kl === 'Gotówka') rows = C.konta.filter(k => k.gotowkaPLN).map(k => ({ t: k.nazwa, n: 'gotówka na koncie', w: k.gotowkaPLN, z: null, kz: 0 }));
+    else {
+      const m = {};
+      C.pozycje.filter(p => p.klasa === kl).forEach(p => { const x = m[p.ticker] || (m[p.ticker] = { t: p.ticker, n: p.nazwa, s: new Set(), w: 0, z: 0, kz: 0 });
+        x.w += p.wartoscPLN; x.z += p.zyskPLN; x.kz += p.kosztPLN; if (p.strategia) x.s.add(p.strategia); if (!KK && p.konto) x.s.add(p.konto); });
+      rows = Object.values(m).map(x => ({ ...x, n: x.n + (x.s.size ? ' · ' + [...x.s].join(', ') : '') }));
+    }
+    rows.sort((a, b) => b.w - a.w);
+    const tbl = table([
+      { h: kl === 'Gotówka' ? 'Konto' : 'Instrument', f: r => `<div class="kd-n"><b>${esc(r.t)}</b><span class="mut">${esc(r.n)}</span></div>` },
+      { h: 'Wartość', n: 1, f: r => zl(r.w, 0) },
+      { h: 'Udział', n: 1, f: r => `${pct(v ? r.w / v : 0)}<div class="mut kd-s">${pct(tot ? r.w / tot : 0)} portf.</div>` },
+      { h: 'Zysk', n: 1, f: r => r.z === null ? '–' : `${pl(r.z)}<div class="kd-s">${r.kz ? pp(r.z / r.kz) : ''}</div>` },
+    ], rows, { empty: 'Brak pozycji', click: r => kl === 'Gotówka' ? `go('ustawienia')` : `klasaDoPortfela(${esc(JSON.stringify(kl))},${esc(JSON.stringify(KK || ''))})` });
+    return `<div class="klasa-det" data-i="${i}" data-k="${esc(kl)}" style="display:none"><div class="kd-h"><i style="background:${PAL[i % PAL.length]}"></i><b>${esc(kl)}</b><span class="mut">${zl(v, 0)} · ${rows.length} ${kl === 'Gotówka' ? 'kont' : 'poz.'}</span><span class="sp"></span><a onclick="pokazKlase(-1)">✕ zamknij</a></div>${tbl}</div>`;
+  }).join('');
+  const hint = data.length ? `<div class="mut kd-hint">Kliknij wycinek lub nazwę klasy, aby zobaczyć jej aktywa.</div>` : '';
+  setTimeout(() => { const el = [...document.querySelectorAll('.klasa-det')].find(e => e.dataset.k === KLASA_SEL); pokazKlase(el ? +el.dataset.i : -1, true); });
+  return hint + blocks;
+}
+function klasaDoPortfela(kl, kk) { FILT.portfel = { s: '', k: kk, c: kl }; go('portfel'); }
+function pokazKlase(i, keep) {
+  const dets = [...document.querySelectorAll('.klasa-det')], cur = dets.find(e => e.style.display !== 'none');
+  if (!keep && cur && +cur.dataset.i === i) i = -1;   // drugie kliknięcie zamyka
+  dets.forEach(e => { e.style.display = +e.dataset.i === i ? '' : 'none'; });
+  const sel = dets.find(e => +e.dataset.i === i); KLASA_SEL = sel ? sel.dataset.k : '';
+  document.querySelectorAll('#klasyDonut .dseg').forEach(e => { e.classList.toggle('dim', i >= 0 && +e.dataset.i !== i); e.classList.toggle('on', +e.dataset.i === i); });
+  const h = document.querySelector('.kd-hint'); if (h) h.style.display = i >= 0 ? 'none' : '';
+}
+
 /* ---------- elementy ---------- */
 const kpi = (l, v, s = '', cls = '') => `<div class="kpi ${cls}"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
 function table(cols, rows, opts = {}) {
@@ -1456,7 +1497,9 @@ function vKokpitInner(SV, KK) {
     { name: 'Stopa zwrotu', points: h.filter(x => x.k).map(x => [x.d, (x.w - x.k) / x.k]) },
     { name: 'Realna (po inflacji)', points: h.filter(x => x.k).map(x => { const kr = C.kapitalRealnyNa(x.d.slice(0, 10)); return [x.d, kr ? (x.w - kr) / kr : 0]; }), color: '#7E57C2' },
   ], { pct: true, h: 200, empty: emptyMsg() });
-  const klasy = donut(Object.entries(C.klasy), { center: [nf0.format(C.wartosc / (C.kursX || 1) / 1000) + ' tys.', WL()], empty: 'Dodaj pierwszą transakcję' });
+  const klasyRet = {};
+  const klasy = donut(Object.entries(C.klasy), { center: [nf0.format(C.wartosc / (C.kursX || 1) / 1000) + ' tys.', WL()], empty: 'Dodaj pierwszą transakcję', click: 'pokazKlase', id: 'klasyDonut', ret: klasyRet })
+    + klasySzczegoly(klasyRet.data || [], KK);
   const waluty = donut(Object.entries(C.waluty), { empty: 'Brak pozycji' });
   const strat = C.strategie.filter(s => s.wartosc || s.zrealizowany || s.dywidendyNetto);
   const stratTbl = table([
