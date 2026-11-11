@@ -558,3 +558,50 @@ async function nbpCurrent() {
   S.ustawienia.kursyData = t.effectiveDate; changed('ustawienia');
   return t.effectiveDate;
 }
+
+/* ---------- kursy walut NA ŻYWO (do bieżącej wyceny; podatki dalej po kursach NBP z dnia transakcji) ----------
+   1) Coinbase exchange-rates (publiczne, bez klucza, działa w przeglądarce) – co minutę
+   2) awaryjnie GOOGLEFINANCE("CURRENCY:USDPLN") w Twoim arkuszu (gdy zalogowany) – najwyżej co 5 minut
+   3) gdy oba zawiodą – zostaje kurs NBP z Ustawień */
+const LS_LIVEFX = 'portfel_livefx_v1', LIVE_FX_MS = 60000;
+let LIVE_FX = lsGet(LS_LIVEFX, { rates: {}, ts: 0, src: '' });
+if (LIVE_FX.ts && Date.now() - LIVE_FX.ts > 12 * 3600e3) LIVE_FX = { rates: {}, ts: 0, src: '' };   // stare kursy z wczoraj – nie używaj
+let LIVE_FX_BUSY = false, LIVE_FX_SHEET_TS = 0;
+const liveCurs = () => Object.keys(S.ustawienia.kursy || {}).filter(c => c && c !== 'PLN');
+async function fxLiveCoinbase(curs) {
+  const r = await fetch('https://api.coinbase.com/v2/exchange-rates?currency=PLN', { cache: 'no-store' });
+  if (!r.ok) throw new Error('Coinbase ' + r.status);
+  const m = ((await r.json()).data || {}).rates || {}, out = {};
+  curs.forEach(c => { const v = parseFloat(m[c]); if (v > 0) out[c] = Math.round(1e6 / v) / 1e6; });   // m[c] = ile c za 1 PLN
+  if (!out.USD && curs.includes('USD')) throw new Error('Coinbase: brak USD');
+  return out;
+}
+async function fxLiveSheet(curs) {
+  if (CFG.demo || !CFG.sheetId || !SYNC.token || Date.now() > SYNC.exp) throw new Error('brak połączenia z arkuszem');
+  if (Date.now() - LIVE_FX_SHEET_TS < 5 * 60000) throw new Error('arkusz – za wcześnie');
+  LIVE_FX_SHEET_TS = Date.now();
+  try { await gapi('POST', `${SHEETS}/${CFG.sheetId}:batchUpdate`, { requests: [{ addSheet: { properties: { title: 'Szukaj' } } }] }); } catch (e) {}
+  const rng = encodeURIComponent(`'Szukaj'!X1:X${curs.length}`), t = Date.now();
+  await gapi('PUT', `${SHEETS}/${CFG.sheetId}/values/${rng}?valueInputOption=USER_ENTERED`,
+    { values: curs.map(c => [`=GOOGLEFINANCE("CURRENCY:${c}PLN")+0*LEN("${t}")`]) });
+  for (let i = 0; i < 8; i++) {
+    await new Promise(r => setTimeout(r, 1500));
+    const v = ((await gapi('GET', `${SHEETS}/${CFG.sheetId}/values/${rng}?valueRenderOption=UNFORMATTED_VALUE`)).values || []).map(r => r[0]);
+    if (v.some(x => typeof x === 'number')) { const out = {}; curs.forEach((c, k) => { if (typeof v[k] === 'number' && v[k] > 0) out[c] = v[k]; }); return out; }
+  }
+  throw new Error('arkusz nie policzył kursów');
+}
+async function odswiezKursyLive(reczne) {
+  if (LIVE_FX_BUSY || (typeof navigator !== 'undefined' && !navigator.onLine)) return false;
+  LIVE_FX_BUSY = true;
+  try {
+    const curs = liveCurs(); let rates = null, src = '';
+    try { rates = await fxLiveCoinbase(curs); src = 'Coinbase'; }
+    catch (e) { try { rates = await fxLiveSheet(curs); src = 'Google Finance'; } catch (e2) {} }
+    if (!rates || !Object.keys(rates).length) { if (reczne) toast('Nie udało się pobrać kursów na żywo – liczę po kursie NBP'); return false; }
+    const zm = Object.keys(rates).some(c => Math.abs(num(LIVE_FX.rates[c]) - rates[c]) > 1e-6);
+    LIVE_FX = { rates, ts: Date.now(), src }; lsSet(LS_LIVEFX, LIVE_FX);
+    if (reczne) toast(`USD/PLN ${(rates.USD || 0).toFixed(4).replace('.', ',')} (${src})`);
+    return zm;
+  } finally { LIVE_FX_BUSY = false; }
+}

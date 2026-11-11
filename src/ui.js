@@ -80,10 +80,27 @@ function renderSyncBadge() {
   const b = $('#sync'); if (!b) return;
   b.className = 'badge ' + SYNC.state; b.innerHTML = `<i></i>${esc(SYNC.msg)}`;
 }
+function fxLiveInfo() {   // { live: true/false, txt: '13:31 · Coinbase' }
+  const ok = LIVE_FX.ts && Date.now() - LIVE_FX.ts < 10 * 60000 && num(LIVE_FX.rates.USD) > 0;
+  const hm = LIVE_FX.ts ? new Date(LIVE_FX.ts).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }) : '';
+  return { live: ok, txt: ok ? `na żywo ${hm} · ${LIVE_FX.src}` : `NBP ${S.ustawienia.kursyData || ''}`.trim() };
+}
+function renderFxBadge() {
+  const b = $('#fxbadge'); if (!b) return; const k = C ? C.rateNow('USD') : 0;
+  if (!k) { b.style.display = 'none'; return; } b.style.display = '';
+  const I = fxLiveInfo(); b.className = 'badge fx ' + (I.live ? 'ok' : 'pending');
+  b.innerHTML = `<i></i>USD/PLN <b>${k.toFixed(4).replace('.', ',')}</b><span class="fxs"> · ${esc(I.txt)}</span>`;
+}
+// odświeżenie po nowym kursie – bez przerywania wpisywania w formularzu
+function renderPoKursie() {
+  const a = document.activeElement;
+  if (document.querySelector('.modal-bg') || (a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName))) { renderFxBadge(); return; }
+  render();
+}
 
 function render() {
   C = calc(S, calcOpts());
-  renderNav(); renderSyncBadge();
+  renderNav(); renderSyncBadge(); renderFxBadge();
   const V = { kokpit: vKokpit, portfel: vPortfel, strategia: vStrategia, konto: vKonto, transakcje: vTransakcje, dywidendy: vDywidendy, wplaty: vWplaty,
     podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, fire: vFire, mapa: vMapa, import: vImport, alerty: vAlerty, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
   const [title, sub, body, actions] = V();
@@ -304,7 +321,7 @@ function vKokpitInner(SV, KK) {
     { h: 'Wartość', n: 1, f: p => zl(p.wartoscPLN, 0) }, { h: 'Udział', n: 1, f: p => pct(C.wartosc ? p.wartoscPLN / C.wartosc : 0) },
     { h: 'Zysk', n: 1, f: p => pl(p.zyskPLN) }, { h: '%', n: 1, f: p => pp(p.kosztPLN ? p.zyskPLN / p.kosztPLN : 0) },
   ], top, { empty: 'Brak otwartych pozycji', click: p => `go('portfel')` });
-  const sub = `Stan na ${new Date().toLocaleDateString('pl-PL')}${kursUsd ? ' · USD/PLN ' + kursUsd.toFixed(4).replace('.', ',') : ''}${S.ustawienia.kursyData ? ' (NBP ' + S.ustawienia.kursyData + ')' : ''}`;
+  const sub = `Stan na ${new Date().toLocaleDateString('pl-PL')}${kursUsd ? ' · USD/PLN ' + kursUsd.toFixed(4).replace('.', ',') + ' (' + esc(fxLiveInfo().txt) + ')' : ''}`;
   const intro = !S.transakcje.length && !CFG.demo && !KK ? `<div class="alert info">👋 Chcesz najpierw zobaczyć, jak to wygląda? <a onclick="wejdzDemo()"><b>Wczytaj przykładowy portfel</b></a> (Twoje dane wrócą jednym kliknięciem).<br>Albo zacznij od <a onclick="go('ustawienia')">Ustawień</a> (konta, połączenie z Google), potem dodaj <a onclick="editTransakcja()">pierwszą transakcję</a>. Ceny aktualizujesz w <a onclick="go('instrumenty')">Instrumentach</a>.</div>` : '';
   const widok = `<select class="viewsel" onchange="FILT.kokpitKonto=this.value;render()"><option value="">📊 Cały portfel</option>${S.konta.map(k => `<option value="${esc(k.nazwa)}" ${k.nazwa === KK ? 'selected' : ''}>${esc(k.nazwa)}</option>`).join('')}</select>`;
   const noHist = KK && !SV.historia.length ? `<div class="alert info">Historia wartości tego konta zbiera się od dziś (zapis raz dziennie). Wykresy w czasie zapełnią się w kolejnych dniach.</div>` : '';
@@ -638,8 +655,9 @@ function vUstawienia() {
           <button class="btn" onclick="const nid=$('#sid').value.trim();if(nid!==CFG.sheetId){CFG.createdByApp=false;tokenClient=null;SYNC.token=null;}CFG.clientId=$('#cid').value.trim();CFG.sheetId=nid;saveCfg();googleConnect(true).then(ok=>{if(ok)toast('Połączono z Google Sheets');render()})">${SYNC.token ? 'Połącz ponownie' : 'Zaloguj przez Google'}</button>
           ${SYNC.token ? '<button class="btn ghost" onclick="buildSummary(true).then(()=>buildAnalizy(true)).then(()=>toast(\'Zakładki Podsumowanie i Analizy w arkuszu odświeżone\')).catch(e=>toast(e.message))">▦ Odśwież Podsumowanie w arkuszu</button><button class="btn ghost" onclick="syncNow()">↻ Synchronizuj teraz</button><button class="btn danger" onclick="googleDisconnect();render()">Rozłącz</button>' : ''}</div></div>
       <div class="card"><h3>Kursy walut (bieżące, do wyceny)</h3>
-        <div class="form">${Object.keys(u.kursy).map(c => `<label>${c}/PLN<input type="number" step="any" value="${esc(u.kursy[c])}" onchange="S.ustawienia.kursy['${c}']=this.value;changed('ustawienia');render()"></label>`).join('')}</div>
-        <div class="actions" style="justify-content:flex-start"><button class="btn ghost" onclick="pobierzKursy()">↻ Pobierz z NBP</button><span class="mut">${u.kursyData ? 'Tabela NBP z ' + esc(u.kursyData) : ''}</span></div>
+        <p class="mut" style="margin-top:0;font-size:12.5px">Wycena liczy się po kursie <b>na żywo</b>, odświeżanym co minutę (${esc(fxLiveInfo().txt)}${Object.keys(LIVE_FX.rates || {}).length ? ': ' + Object.entries(LIVE_FX.rates).map(([c, v]) => c + ' ' + num(v).toFixed(4).replace('.', ',')).join(', ') : ''}). Poniższe kursy NBP są zapasowe – używane, gdy kurs na żywo jest niedostępny. Podatek (PIT-38) zawsze po kursie NBP z dnia poprzedzającego transakcję.</p>
+        <div class="form">${Object.keys(u.kursy).map(c => `<label>${c}/PLN (NBP)<input type="number" step="any" value="${esc(u.kursy[c])}" onchange="S.ustawienia.kursy['${c}']=this.value;changed('ustawienia');render()"></label>`).join('')}</div>
+        <div class="actions" style="justify-content:flex-start"><button class="btn ghost" onclick="odswiezKursyLive(true).then(()=>render())">↻ Kurs na żywo</button><button class="btn ghost" onclick="pobierzKursy()">↻ Pobierz z NBP</button><span class="mut">${u.kursyData ? 'Tabela NBP z ' + esc(u.kursyData) : ''}</span></div>
         <div class="form" style="margin-top:10px"><label>Stawka podatku Belki %<input type="number" value="${esc(u.stawka)}" onchange="S.ustawienia.stawka=num(this.value)||19;changed('ustawienia');render()"></label></div></div>
     </div>
     <div class="grid g2e" style="margin-top:16px">
@@ -1132,6 +1150,8 @@ function wyjdzDemo() {
 function demoBanner() { return CFG.demo ? `<div class="alert info" style="display:flex;align-items:center;gap:12px"><span style="flex:1">🧪 <b>Tryb demonstracyjny</b> – oglądasz przykładowy portfel. Możesz klikać i dodawać dane do woli, nic nie trafia do Twojego arkusza.</span><button class="btn sm" onclick="wyjdzDemo()">↩ Wróć do moich danych</button></div>` : ''; }
 
 /* ---------- start ---------- */
+setInterval(() => { if (document.visibilityState === 'visible') odswiezKursyLive(false).then(zm => { if (zm) renderPoKursie(); else renderFxBadge(); }).catch(() => {}); }, LIVE_FX_MS);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - LIVE_FX.ts > LIVE_FX_MS) odswiezKursyLive(false).then(zm => { if (zm) renderPoKursie(); else renderFxBadge(); }).catch(() => {}); });
 setInterval(() => { if (document.visibilityState === 'visible') { C = calc(S, calcOpts()); snapshotIntraday(); if (ROUTE === 'kokpit' && RANGE === '1d') render(); } }, 15 * 60000);
 function boot() {
   const MIG = { 'CURRENCY:XAUUSD': 'YAHOO:GC=F', 'CURRENCY:XAGUSD': 'YAHOO:SI=F', 'CURRENCY:BTCUSD': 'YAHOO:BTC-USD' };
@@ -1144,5 +1164,6 @@ function boot() {
   else setSync('local', CFG.sheetId ? 'Kliknij, aby połączyć z Google Sheets' : 'Dane tylko w tej przeglądarce');
   if (CFG.waluta && CFG.waluta !== 'PLN') pobierzFxHist(CFG.waluta).then(ch => { if (ch) render(); }).catch(() => {});
   if (CFG.inflDay !== todayStr() || CFG.inflSrc !== 'fred' || !S.inflacja.some(r => has(r.mmEA))) pobierzInflacje(true).then(r => { if (r) { render(); snapshot(); } }).catch(() => {});
+  odswiezKursyLive(false).then(zm => { if (zm) { render(); snapshot(); } else renderFxBadge(); }).catch(() => {});
   const kd = S.ustawienia.kursyData; if (!kd || kd < todayStr().slice(0, 10) && navigator.onLine) nbpCurrent().then(() => { render(); snapshot(); }).catch(() => {});
 }

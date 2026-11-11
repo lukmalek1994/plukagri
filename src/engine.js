@@ -65,7 +65,9 @@ function inflIndex(inflacja, pole = 'mm') {
    Podatki (T, podatki()) zawsze w prawdziwych złotych. */
 const INFL_POLE = { PLN: 'mm', USD: 'mmUS', EUR: 'mmEA' };
 function calc(S, opts = {}) {
-  const rates = S.ustawienia.kursy || {};
+  // kursy bieżące do wyceny: na żywo (LIVE_FX, odświeżane co minutę), a gdy ich brak – tabela NBP z Ustawień
+  const live = opts.live || (typeof LIVE_FX !== 'undefined' && LIVE_FX && LIVE_FX.rates) || {};
+  const rates = { ...(S.ustawienia.kursy || {}) }; Object.keys(live).forEach(c => { if (num(live[c]) > 0) rates[c] = live[c]; });
   const rateNow = cur => (!cur || cur === 'PLN') ? 1 : num(rates[cur]);
   const X = (opts.waluta && opts.waluta !== 'PLN' && rateNow(opts.waluta)) ? opts.waluta : 'PLN';
   const fxRows = (opts.fx || {})[X] || [];

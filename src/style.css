@@ -90,3 +90,6 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 
 .dseg{cursor:pointer;transition:opacity .15s}.donut svg path.dseg:hover{opacity:.8}.dseg.dim{opacity:.3}.dl.dseg{border-radius:6px;padding:3px 6px;margin:0 -6px}.dl.dseg:hover{background:#f1f5fb}.dl.dseg.on{background:#e8f0fc;font-weight:600}.dl.dseg.dim{opacity:.55}
 .klasa-det{margin-top:14px;border-top:1px solid #e6ebf2;padding-top:10px}.kd-h{display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:6px}.kd-h i{width:10px;height:10px;border-radius:3px}.kd-h .sp{flex:1}.kd-h a{cursor:pointer;font-size:12.5px}.kd-hint{font-size:12px;margin-top:10px}.kd-n{display:flex;flex-direction:column;max-width:150px}.klasa-det td,.klasa-det th{padding-left:6px;padding-right:6px;font-size:12.5px}.kd-n span{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.kd-s{font-size:11.5px}
+
+.badge.fx b{color:#1e293b;font-weight:600}
+@media(max-width:760px){.badge.fx .fxs{display:none}}
