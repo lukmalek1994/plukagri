@@ -33,7 +33,7 @@ function defaultState() {
       { id: 'i5', ticker: 'SREBRO', nazwa: 'Srebro fizyczne (1 oz)', klasa: 'Srebro', koszyk: 'SREBRO', waluta: 'USD', cena: '', dataCeny: '', symbol: 'YAHOO:SI=F', cenaAuto: '' },
       { id: 'i6', ticker: 'BTC', nazwa: 'Bitcoin', klasa: 'Krypto', koszyk: 'BTC', waluta: 'USD', cena: '', dataCeny: '', symbol: 'YAHOO:BTC-USD', cenaAuto: '' },
     ],
-    transakcje: [], dywidendy: [], wplaty: [], inflacja: [], historia: [],
+    transakcje: [], dywidendy: [], wplaty: [], inflacja: [], historia: [], finanse: [],
     alerty: [],
     cele: [
       { id: 'c1', konto: '', koszyk: 'CSPX', tickery: 'CSPX', grupa: 'CORE', cel: 39 }, { id: 'c2', konto: '', koszyk: 'IWDA', tickery: 'IWDA', grupa: 'CORE', cel: 26 },

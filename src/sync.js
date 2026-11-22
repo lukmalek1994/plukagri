@@ -15,6 +15,8 @@ const TABLES = {
   cele: { sheet: 'Cele 2.1', cols: [['id', 'ID'], ['konto', 'Konto (puste = cały portfel)'], ['koszyk', 'Koszyk'], ['tickery', 'Instrumenty'], ['grupa', 'Grupa'], ['cel', 'Cel %']] },
   alerty: { sheet: 'Alerty', cols: [['id', 'ID'], ['aktywny', 'Aktywny'], ['typ', 'Typ'], ['ticker', 'Instrument'], ['konto', 'Konto'], ['koszyk', 'Koszyk'], ['poziom', 'Poziom'], ['prog', 'Próg blisko'], ['notatka', 'Notatka'],
     ['opis', 'Opis'], ['yahoo', 'Symbol Yahoo'], ['yahooR', 'Symbol Yahoo (ręczny)'], ['waluta', 'Waluta'], ['cenaApp', 'Cena (aplikacja)'], ['srednia', 'Średnia cena zakupu'], ['dane', 'Dane dla skryptu (JSON)']] },
+  finanse: { sheet: 'Finanse', cols: [['id', 'ID'], ['data', 'Data'], ['typ', 'Rodzaj'], ['kwota', 'Kwota'], ['waluta', 'Waluta'], ['kontrahent', 'Odbiorca / nadawca'], ['tytul', 'Tytuł przelewu'],
+    ['kategoria', 'Kategoria'], ['bank', 'Z konta / bank'], ['wplata', 'Powiązana wpłata (ID)'], ['notatka', 'Notatka'], ['plik', 'Plik'], ['plikUrl', 'Link do pliku (Google Drive)'], ['plikId', 'ID pliku'], ['plikTyp', 'Typ pliku']] },
   ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
 };
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -38,7 +40,7 @@ function toRows(name) {
     const u = S.ustawienia; list = [{ klucz: 'stawka', wartosc: u.stawka }, { klucz: 'kursyData', wartosc: u.kursyData || '' },
       ...Object.entries(u.kursy || {}).map(([k, v]) => ({ klucz: 'kurs_' + k, wartosc: v }))];
   } else list = S[name] || [];
-  const cell = (k, v) => { if (k === 'cenaAuto') return ''; v = v ?? ''; if (typeof v === 'string' && !['id', 'miesiac', 'data', 'dataCeny', 'klucz', 'ticker', 'nazwa'].includes(k) && /^-?\d+(\.\d+)?$/.test(v.trim())) return Number(v); return v; };
+  const cell = (k, v) => { if (k === 'cenaAuto') return ''; v = v ?? ''; if (typeof v === 'string' && !['id', 'miesiac', 'data', 'dataCeny', 'klucz', 'ticker', 'nazwa', 'plikId', 'tytul', 'wplata'].includes(k) && /^-?\d+(\.\d+)?$/.test(v.trim())) return Number(v); return v; };
   return [T.cols.map(c => c[1]), ...list.map(o => T.cols.map(([k]) => cell(k, o[k])))];
 }
 function fromRows(name, rows) {
@@ -73,7 +75,9 @@ function priceFormula(sym, day) {
 
 /* ---------- Google: logowanie ---------- */
 // arkusz utworzony przez aplikację -> drive.file (dostęp tylko do niego); własny arkusz użytkownika -> spreadsheets
-const scopeNow = () => (CFG.sheetId && !CFG.createdByApp) ? 'https://www.googleapis.com/auth/spreadsheets' : 'https://www.googleapis.com/auth/drive.file';
+// drive.file jest zawsze – potrzebny też do zapisu potwierdzeń przelewów (Moje finanse) na Google Drive
+const SCOPE_DRIVE = 'https://www.googleapis.com/auth/drive.file', SCOPE_V = 2;
+const scopeNow = () => (CFG.sheetId && !CFG.createdByApp) ? 'https://www.googleapis.com/auth/spreadsheets ' + SCOPE_DRIVE : SCOPE_DRIVE;
 let tokenClient = null;
 function setSync(state, msg) { SYNC.state = state; SYNC.msg = msg; if (typeof renderSyncBadge === 'function') renderSyncBadge(); }
 function loadGis() {
@@ -89,16 +93,17 @@ async function googleConnect(interactive = true) {
   try { await loadGis(); } catch (e) { setSync('error', e.message); return false; }
   return new Promise(resolve => {
     tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: CFG.clientId, scope: scopeNow(),
+      client_id: CFG.clientId, scope: scopeNow(), include_granted_scopes: true,
       callback: async (resp) => {
         if (resp.error) { setSync('error', 'Logowanie przerwane: ' + resp.error); return resolve(false); }
         SYNC.token = resp.access_token; SYNC.exp = Date.now() + (resp.expires_in - 60) * 1000;
-        CFG.connected = true; saveCfg();
+        try { SYNC.drive = google.accounts.oauth2.hasGrantedAllScopes(resp, SCOPE_DRIVE); } catch (e) { SYNC.drive = String(resp.scope || '').includes(SCOPE_DRIVE); }
+        CFG.connected = true; if (SYNC.drive) CFG.scopeV = SCOPE_V; saveCfg();
         try { await afterLogin(); resolve(true); } catch (e) { setSync('error', 'Błąd synchronizacji: ' + e.message); resolve(false); }
       },
       error_callback: (e) => { setSync('error', 'Logowanie Google: ' + (e.message || e.type)); resolve(false); },
     });
-    tokenClient.requestAccessToken({ prompt: interactive && !CFG.connectedOnce ? 'consent' : '' });
+    tokenClient.requestAccessToken({ prompt: interactive && (!CFG.connectedOnce || CFG.scopeV !== SCOPE_V) ? 'consent' : '' });
   });
 }
 function googleDisconnect() {

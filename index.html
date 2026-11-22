@@ -100,11 +100,21 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 
 .badge.fx b{color:#1e293b;font-weight:600}
 @media(max-width:760px){.badge.fx .fxs{display:none}}
+/* Moje finanse – potwierdzenia przelewów */
+.dropzone{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:2px dashed #c5d3e8;border-radius:12px;background:#f8fbff;padding:22px;cursor:pointer;text-align:center;transition:.15s}
+.dropzone:hover,.dropzone.on{border-color:#1565c0;background:#eef5ff}
+.dropzone.sm{padding:12px;flex-direction:row;gap:6px;margin-top:4px;font-size:13px}
+.fin-f{gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center}.fin-f select,.fin-f input[type=search]{padding:6px 8px;border:1px solid #d6dee9;border-radius:8px;font:inherit;font-size:13px}
+.fin-f input[type=search]{min-width:220px}.fin-f .chk{display:flex;align-items:center;gap:6px;font-size:13px}
+.fin-add{color:#1565c0;cursor:pointer;font-size:13px}.fin-add:hover{text-decoration:underline}
+.modal.fin-podglad{width:min(900px,96vw);max-width:96vw}
+.fin-view{height:min(70vh,760px);background:#f3f6fa;border-radius:10px;overflow:auto;display:flex;align-items:center;justify-content:center}
+.fin-view img{max-width:100%;max-height:100%;object-fit:contain}.fin-view iframe{width:100%;height:100%;border:0}
 </style>
 </head>
 <body>
 <div class="app">
-  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-11 13:35</div></aside>
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-22 13:01</div></aside>
   <main>
     <div class="top">
       <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
@@ -153,7 +163,7 @@ function defaultState() {
       { id: 'i5', ticker: 'SREBRO', nazwa: 'Srebro fizyczne (1 oz)', klasa: 'Srebro', koszyk: 'SREBRO', waluta: 'USD', cena: '', dataCeny: '', symbol: 'YAHOO:SI=F', cenaAuto: '' },
       { id: 'i6', ticker: 'BTC', nazwa: 'Bitcoin', klasa: 'Krypto', koszyk: 'BTC', waluta: 'USD', cena: '', dataCeny: '', symbol: 'YAHOO:BTC-USD', cenaAuto: '' },
     ],
-    transakcje: [], dywidendy: [], wplaty: [], inflacja: [], historia: [],
+    transakcje: [], dywidendy: [], wplaty: [], inflacja: [], historia: [], finanse: [],
     alerty: [],
     cele: [
       { id: 'c1', konto: '', koszyk: 'CSPX', tickery: 'CSPX', grupa: 'CORE', cel: 39 }, { id: 'c2', konto: '', koszyk: 'IWDA', tickery: 'IWDA', grupa: 'CORE', cel: 26 },
@@ -498,6 +508,8 @@ const TABLES = {
   cele: { sheet: 'Cele 2.1', cols: [['id', 'ID'], ['konto', 'Konto (puste = cały portfel)'], ['koszyk', 'Koszyk'], ['tickery', 'Instrumenty'], ['grupa', 'Grupa'], ['cel', 'Cel %']] },
   alerty: { sheet: 'Alerty', cols: [['id', 'ID'], ['aktywny', 'Aktywny'], ['typ', 'Typ'], ['ticker', 'Instrument'], ['konto', 'Konto'], ['koszyk', 'Koszyk'], ['poziom', 'Poziom'], ['prog', 'Próg blisko'], ['notatka', 'Notatka'],
     ['opis', 'Opis'], ['yahoo', 'Symbol Yahoo'], ['yahooR', 'Symbol Yahoo (ręczny)'], ['waluta', 'Waluta'], ['cenaApp', 'Cena (aplikacja)'], ['srednia', 'Średnia cena zakupu'], ['dane', 'Dane dla skryptu (JSON)']] },
+  finanse: { sheet: 'Finanse', cols: [['id', 'ID'], ['data', 'Data'], ['typ', 'Rodzaj'], ['kwota', 'Kwota'], ['waluta', 'Waluta'], ['kontrahent', 'Odbiorca / nadawca'], ['tytul', 'Tytuł przelewu'],
+    ['kategoria', 'Kategoria'], ['bank', 'Z konta / bank'], ['wplata', 'Powiązana wpłata (ID)'], ['notatka', 'Notatka'], ['plik', 'Plik'], ['plikUrl', 'Link do pliku (Google Drive)'], ['plikId', 'ID pliku'], ['plikTyp', 'Typ pliku']] },
   ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
 };
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -521,7 +533,7 @@ function toRows(name) {
     const u = S.ustawienia; list = [{ klucz: 'stawka', wartosc: u.stawka }, { klucz: 'kursyData', wartosc: u.kursyData || '' },
       ...Object.entries(u.kursy || {}).map(([k, v]) => ({ klucz: 'kurs_' + k, wartosc: v }))];
   } else list = S[name] || [];
-  const cell = (k, v) => { if (k === 'cenaAuto') return ''; v = v ?? ''; if (typeof v === 'string' && !['id', 'miesiac', 'data', 'dataCeny', 'klucz', 'ticker', 'nazwa'].includes(k) && /^-?\d+(\.\d+)?$/.test(v.trim())) return Number(v); return v; };
+  const cell = (k, v) => { if (k === 'cenaAuto') return ''; v = v ?? ''; if (typeof v === 'string' && !['id', 'miesiac', 'data', 'dataCeny', 'klucz', 'ticker', 'nazwa', 'plikId', 'tytul', 'wplata'].includes(k) && /^-?\d+(\.\d+)?$/.test(v.trim())) return Number(v); return v; };
   return [T.cols.map(c => c[1]), ...list.map(o => T.cols.map(([k]) => cell(k, o[k])))];
 }
 function fromRows(name, rows) {
@@ -556,7 +568,9 @@ function priceFormula(sym, day) {
 
 /* ---------- Google: logowanie ---------- */
 // arkusz utworzony przez aplikację -> drive.file (dostęp tylko do niego); własny arkusz użytkownika -> spreadsheets
-const scopeNow = () => (CFG.sheetId && !CFG.createdByApp) ? 'https://www.googleapis.com/auth/spreadsheets' : 'https://www.googleapis.com/auth/drive.file';
+// drive.file jest zawsze – potrzebny też do zapisu potwierdzeń przelewów (Moje finanse) na Google Drive
+const SCOPE_DRIVE = 'https://www.googleapis.com/auth/drive.file', SCOPE_V = 2;
+const scopeNow = () => (CFG.sheetId && !CFG.createdByApp) ? 'https://www.googleapis.com/auth/spreadsheets ' + SCOPE_DRIVE : SCOPE_DRIVE;
 let tokenClient = null;
 function setSync(state, msg) { SYNC.state = state; SYNC.msg = msg; if (typeof renderSyncBadge === 'function') renderSyncBadge(); }
 function loadGis() {
@@ -572,16 +586,17 @@ async function googleConnect(interactive = true) {
   try { await loadGis(); } catch (e) { setSync('error', e.message); return false; }
   return new Promise(resolve => {
     tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: CFG.clientId, scope: scopeNow(),
+      client_id: CFG.clientId, scope: scopeNow(), include_granted_scopes: true,
       callback: async (resp) => {
         if (resp.error) { setSync('error', 'Logowanie przerwane: ' + resp.error); return resolve(false); }
         SYNC.token = resp.access_token; SYNC.exp = Date.now() + (resp.expires_in - 60) * 1000;
-        CFG.connected = true; saveCfg();
+        try { SYNC.drive = google.accounts.oauth2.hasGrantedAllScopes(resp, SCOPE_DRIVE); } catch (e) { SYNC.drive = String(resp.scope || '').includes(SCOPE_DRIVE); }
+        CFG.connected = true; if (SYNC.drive) CFG.scopeV = SCOPE_V; saveCfg();
         try { await afterLogin(); resolve(true); } catch (e) { setSync('error', 'Błąd synchronizacji: ' + e.message); resolve(false); }
       },
       error_callback: (e) => { setSync('error', 'Logowanie Google: ' + (e.message || e.type)); resolve(false); },
     });
-    tokenClient.requestAccessToken({ prompt: interactive && !CFG.connectedOnce ? 'consent' : '' });
+    tokenClient.requestAccessToken({ prompt: interactive && (!CFG.connectedOnce || CFG.scopeV !== SCOPE_V) ? 'consent' : '' });
   });
 }
 function googleDisconnect() {
@@ -1363,6 +1378,7 @@ function renderNav() {
     <div class="nav-h">Analizy</div>${it('waluta', '¤', 'Wpływ waluty')}${it('porownanie', '⚖', 'Porównanie strategii')}${it('koszty', '−', 'Koszty i podatki')}${it('dochod', '◎', 'Dochód pasywny')}${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}
     <div class="nav-h">Planowanie</div>${it('symulator', '➚', 'Symulator przyszłości')}${it('fire', '🔥', 'FIRE – ile brakuje')}${it('mapa', '▦', 'Mapa portfela')}${it('alerty', '🔔', 'Alerty' + (() => { const n = C ? alertyAktywne().filter(x => x.e.stan === 'osiągnięty' || x.e.stan === 'blisko').length : 0; return n ? ` (${n})` : ''; })())}
     <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◈', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}
+    <div class="nav-h">Moje finanse</div>${it('finanse', '🧾', 'Potwierdzenia przelewów' + (() => { const n = (S.finanse || []).filter(f => !f.plikId).length; return n ? ` (${n} bez pliku)` : ''; })())}
     <div class="nav-h">Konfiguracja</div>${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('import', '⤓', 'Import')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`;
 }
 function toggleNav(id) { CFG.navClosed = CFG.navClosed || {}; CFG.navClosed[id] = !CFG.navClosed[id]; saveCfg(); renderNav(); }
@@ -1390,10 +1406,11 @@ function renderPoKursie() {
 }
 
 function render() {
+  if (!S.finanse) S.finanse = [];
   C = calc(S, calcOpts());
   renderNav(); renderSyncBadge(); renderFxBadge();
   const V = { kokpit: vKokpit, portfel: vPortfel, strategia: vStrategia, konto: vKonto, transakcje: vTransakcje, dywidendy: vDywidendy, wplaty: vWplaty,
-    podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, fire: vFire, mapa: vMapa, import: vImport, alerty: vAlerty, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
+    podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, fire: vFire, mapa: vMapa, import: vImport, alerty: vAlerty, finanse: vFinanse, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
   const [title, sub, body, actions] = V();
   $('#title').innerHTML = `${esc(title)}<small>${sub || ''}</small>`;
   $('#topActions').innerHTML = walutaSeg() + (actions || `<button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`);
@@ -1815,6 +1832,7 @@ function vWplaty() {
     <div class="card" style="margin-top:16px"><h3>Operacje <small>${fk ? esc(fk) + ' · ' : ''}${rows.length} poz. · razem ${zlPLN(sumaF)}</small></h3>${table([
       { h: 'Data', f: w => esc(w.data) }, { h: 'Konto', f: w => esc(w.konto) }, { h: 'Kwota PLN', n: 1, f: w => plPLN(num(w.kwotaPLN)) },
       { h: 'Kwota w walucie konta', n: 1, f: w => has(w.kwotaWal) ? nf2.format(num(w.kwotaWal)) : '–' }, { h: 'Notatka', f: w => esc(w.notatka) },
+      { h: '', f: w => { const p = (S.finanse || []).find(f => f.wplata === w.id); return p ? `<a title="Potwierdzenie przelewu" onclick="event.stopPropagation();${p.plikId ? `finPodglad('${p.id}')` : `editFinanse('${p.id}')`}">${p.plikId ? '📎' : '🧾'}</a>` : ''; } },
     ], rows, { empty: 'Brak wpłat', click: w => `editWplata('${w.id}')` })}</div>`,
     `<button class="btn" onclick="editWplata(null${fk ? `,'${esc(fk)}'` : ''})">＋ Wpłata</button>`];
 }
@@ -2448,7 +2466,7 @@ function boot() {
   const MIG = { 'CURRENCY:XAUUSD': 'YAHOO:GC=F', 'CURRENCY:XAGUSD': 'YAHOO:SI=F', 'CURRENCY:BTCUSD': 'YAHOO:BTC-USD' };
   let mig = false; S.instrumenty.forEach(i => { if (MIG[i.symbol]) { i.symbol = MIG[i.symbol]; mig = true; }
     if (i.klasa === 'Obligacje' && isOS(i)) { i.klasa = 'Obligacje skarbowe'; mig = true; } }); if (mig) changed('instrumenty');
-  migrateCele(); if (!S.alerty) S.alerty = [];
+  migrateCele(); if (!S.alerty) S.alerty = []; if (!S.finanse) S.finanse = [];
   readHash(); render(); snapshot();
   if (CFG.demo) setSync('local', 'Tryb demo – nic nie zapisuje się w arkuszu');
   else if (CFG.clientId && CFG.connected) setSync('pending', 'Kliknij tutaj, aby połączyć z Google Sheets');
@@ -3260,6 +3278,206 @@ function vFire() {
     ], D.konta)}</div>
     <div class="mut" style="font-size:12px;margin-top:10px">Wszystko w dzisiejszych złotych: stopa zwrotu jest realna (po inflacji), więc cel i prognozy nie wymagają przeliczania o inflację. Cel = roczne wydatki ÷ stopa wypłat, powiększony o podatek Belki od części zysku na kontach opodatkowanych (udział zysku szacowany na moment osiągnięcia FIRE). To symulacja przy stałej stopie – rzeczywiste wyniki będą się wahać.</div>`,
     `<button class="btn ghost" onclick="CFG.fire={};saveCfg();render()">Przywróć dane z portfela</button>`];
+}
+
+/* ===================== MOJE FINANSE – POTWIERDZENIA PRZELEWÓW =====================
+   Dane przelewu -> zakładka „Finanse” w arkuszu. Plik potwierdzenia (PDF / zdjęcie) -> Twój Google Drive,
+   folder „Portfel – potwierdzenia przelewów” (uprawnienie drive.file: aplikacja widzi tylko pliki, które sama tam wgrała). */
+const DRIVE = 'https://www.googleapis.com/drive/v3/files', DRIVE_UP = 'https://www.googleapis.com/upload/drive/v3/files';
+const FIN_FOLDER = 'Portfel – potwierdzenia przelewów';
+const FIN_TYPY = ['Przelew wychodzący', 'Przelew przychodzący', 'Wpłata na konto inwestycyjne', 'Wypłata z konta inwestycyjnego', 'Inne'];
+const FIN_WAL = ['PLN', 'USD', 'EUR', 'GBP', 'CHF'];
+const finWych = t => t === 'Przelew wychodzący' || t === 'Wpłata na konto inwestycyjne';   // pieniądze wychodzą z banku
+const finInw = t => t === 'Wpłata na konto inwestycyjne' || t === 'Wypłata z konta inwestycyjnego';
+const finLista = () => (S.finanse = S.finanse || []);
+
+/* ---------- Google Drive ---------- */
+function driveGotowy() {
+  if (CFG.demo) { toast('W trybie demo pliki nie są wysyłane'); return false; }
+  if (!SYNC.token || Date.now() > SYNC.exp) { toast('Zaloguj się do Google – kliknij plakietkę u góry'); return false; }
+  if (!SYNC.drive) { toast('Brak zgody na Google Drive – kliknij „Zaloguj przez Google” w Ustawieniach i zaznacz dostęp do plików'); return false; }
+  return true;
+}
+async function driveFetch(method, url, body, raw) {
+  const r = await fetch(url, { method, headers: Object.assign({ Authorization: 'Bearer ' + SYNC.token }, body && !(body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+    body: body ? (body instanceof FormData ? body : JSON.stringify(body)) : undefined });
+  if (r.status === 401) { SYNC.token = null; throw new Error('Sesja Google wygasła – zaloguj się ponownie'); }
+  if (!r.ok) { let t = ''; try { t = (await r.json()).error.message; } catch (e) {} const er = new Error(`Google Drive ${r.status} ${t}`); er.status = r.status; throw er; }
+  return raw ? r.blob() : r.json();
+}
+async function finFolder() {
+  if (CFG.finFolderId) {
+    try { const f = await driveFetch('GET', `${DRIVE}/${CFG.finFolderId}?fields=id,trashed`); if (!f.trashed) return f.id; } catch (e) { if (e.status !== 404) throw e; }
+  }
+  const q = encodeURIComponent(`name='${FIN_FOLDER}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const found = await driveFetch('GET', `${DRIVE}?q=${q}&fields=files(id)&spaces=drive`);
+  const id = found.files && found.files[0] ? found.files[0].id
+    : (await driveFetch('POST', `${DRIVE}?fields=id`, { name: FIN_FOLDER, mimeType: 'application/vnd.google-apps.folder' })).id;
+  CFG.finFolderId = id; saveCfg(); return id;
+}
+const finNazwaPliku = (f, file) => {
+  const ext = (String(file.name).match(/\.[a-z0-9]{1,5}$/i) || [''])[0].toLowerCase();
+  const cz = [f.data, f.kontrahent || f.typ, has(f.kwota) ? nf2.format(num(f.kwota)) + ' ' + (f.waluta || 'PLN') : ''].filter(Boolean).join(' ');
+  return (cz.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'potwierdzenie') + ext;
+};
+async function driveWyslij(file, nazwa) {
+  const folder = await finFolder();
+  const fd = new FormData();
+  fd.append('metadata', new Blob([JSON.stringify({ name: nazwa, parents: [folder] })], { type: 'application/json' }));
+  fd.append('file', file);
+  return driveFetch('POST', `${DRIVE_UP}?uploadType=multipart&fields=id,name,webViewLink,mimeType`, fd);
+}
+async function driveDoKosza(id) { if (id) await driveFetch('PATCH', `${DRIVE}/${id}?fields=id`, { trashed: true }); }
+
+/* wysłanie pliku dla zapisanego wpisu (po zamknięciu formularza) */
+async function finDolaczPlik(f, file) {
+  const stary = f.plikId;
+  f.plikStan = 'wysyłanie'; render();
+  try {
+    const r = await driveWyslij(file, finNazwaPliku(f, file));
+    Object.assign(f, { plik: r.name, plikId: r.id, plikUrl: r.webViewLink || `https://drive.google.com/file/d/${r.id}/view`, plikTyp: r.mimeType || file.type || '' });
+    delete f.plikStan; changed('finanse'); render(); toast('Potwierdzenie zapisane w Google Drive ✓');
+    if (stary && stary !== r.id) driveDoKosza(stary).catch(() => {});
+  } catch (e) { delete f.plikStan; render(); toast('Nie udało się wysłać pliku: ' + e.message); }
+}
+
+/* ---------- widok ---------- */
+function vFinanse() {
+  const L = finLista(), F = FILT.fin || (FILT.fin = { rok: '', typ: '', q: '', brak: false });
+  const lata = [...new Set(L.map(f => String(f.data).slice(0, 4)).filter(Boolean))].sort().reverse();
+  const q = String(F.q || '').toLowerCase();
+  const rows = L.filter(f => (!F.rok || String(f.data).startsWith(F.rok)) && (!F.typ || f.typ === F.typ) && (!F.brak || !f.plikId)
+    && (!q || [f.kontrahent, f.tytul, f.kategoria, f.bank, f.notatka, f.plik].some(v => String(v || '').toLowerCase().includes(q))))
+    .sort((a, b) => String(b.data).localeCompare(String(a.data)));
+  // sumy w podziale na waluty
+  const sumy = (lst, wych) => { const m = {}; lst.filter(f => finWych(f.typ) === wych && f.typ !== 'Inne').forEach(f => { const w = f.waluta || 'PLN'; m[w] = (m[w] || 0) + num(f.kwota); });
+    const e = Object.entries(m).sort((a, b) => a[0] === 'PLN' ? -1 : b[0] === 'PLN' ? 1 : 0); return e.length ? e.map(([w, v]) => money(v, w)).join('<br>') : '–'; };
+  const brak = rows.filter(f => !f.plikId).length;
+  const opt = (v, cur, lab) => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(lab || v)}</option>`;
+  const filtry = `<div class="row fin-f">
+      <select onchange="FILT.fin.rok=this.value;render()">${opt('', F.rok, 'Wszystkie lata')}${lata.map(r => opt(r, F.rok)).join('')}</select>
+      <select onchange="FILT.fin.typ=this.value;render()">${opt('', F.typ, 'Wszystkie rodzaje')}${FIN_TYPY.map(t => opt(t, F.typ)).join('')}</select>
+      <input type="search" placeholder="Szukaj: odbiorca, tytuł, kategoria…" value="${esc(F.q || '')}" onchange="FILT.fin.q=this.value;render()">
+      <label class="chk"><input type="checkbox" ${F.brak ? 'checked' : ''} onchange="FILT.fin.brak=this.checked;render()"> tylko bez pliku</label>
+      ${CFG.finFolderId ? `<span class="sp" style="flex:1"></span><a class="btn ghost sm" href="https://drive.google.com/drive/folders/${esc(CFG.finFolderId)}" target="_blank" rel="noopener">📁 Folder w Google Drive</a>` : ''}</div>`;
+  const plikCel = f => f.plikStan ? '<span class="mut">⏳ wysyłanie…</span>'
+    : f.plikId ? `<a onclick="event.stopPropagation();finPodglad('${f.id}')" title="${esc(f.plik || '')}">📎 Podgląd</a>`
+    : `<label class="fin-add" onclick="event.stopPropagation()">＋ dodaj plik<input type="file" accept="image/*,application/pdf" style="display:none" onchange="finPlikDoWpisu('${f.id}',this.files[0])"></label>`;
+  const wpl = f => { const w = f.wplata && S.wplaty.find(x => x.id === f.wplata); return w ? `<div class="mut" style="font-size:11.5px">↧ wpłata: ${esc(w.konto)}</div>` : ''; };
+  const tbl = table([
+    { h: 'Data', f: f => esc(f.data) },
+    { h: 'Rodzaj', f: f => `<span class="tag ${finWych(f.typ) ? 'sell' : f.typ === 'Inne' ? '' : 'buy'}">${esc(f.typ || '')}</span>` },
+    { h: 'Odbiorca / nadawca', f: f => `<b>${esc(f.kontrahent || '–')}</b>${f.tytul ? `<div class="mut" style="font-size:12px">${esc(f.tytul)}</div>` : ''}${wpl(f)}` },
+    { h: 'Kategoria', f: f => f.kategoria ? `<span class="tag">${esc(f.kategoria)}</span>` : '' },
+    { h: 'Z konta', f: f => esc(f.bank || '') },
+    { h: 'Kwota', n: 1, f: f => `<span class="${f.typ === 'Inne' ? '' : finWych(f.typ) ? 'neg' : 'pos'}">${f.typ === 'Inne' ? '' : finWych(f.typ) ? '−' : '+'}${money(num(f.kwota), f.waluta || 'PLN')}</span>` },
+    { h: 'Potwierdzenie', f: plikCel },
+  ], rows, { empty: L.length ? 'Brak przelewów dla wybranych filtrów' : 'Nie masz jeszcze żadnych potwierdzeń – dodaj pierwsze przyciskiem „＋ Potwierdzenie” albo upuść plik powyżej', click: f => `editFinanse('${f.id}')` });
+  const info = !SYNC.token && !CFG.demo ? `<div class="alert info">Pliki potwierdzeń zapisują się na Twoim Google Drive. <a onclick="syncNow()"><b>Zaloguj się do Google</b></a>, żeby móc je dodawać i oglądać. Same dane przelewów możesz wpisywać także bez logowania.</div>`
+    : SYNC.token && !SYNC.drive && !CFG.demo ? `<div class="alert">Aplikacja nie ma jeszcze zgody na zapis plików w Google Drive. Kliknij <a onclick="googleConnect(true)"><b>Zaloguj ponownie</b></a> i zaznacz dostęp do plików.</div>` : '';
+  return ['Moje finanse', 'Potwierdzenia przelewów – dane w arkuszu, pliki na Twoim Google Drive', `${info}
+    <div class="kpis">${kpi('Przelewów', rows.length, F.rok ? 'w ' + F.rok : 'łącznie', 'main')}${kpi('Wychodzące', sumy(rows, true))}${kpi('Przychodzące', sumy(rows, false))}${kpi('Bez pliku', brak, brak ? '<a onclick="FILT.fin.brak=true;render()">pokaż</a>' : 'wszystko ma potwierdzenie')}</div>
+    <label class="dropzone" ondragover="event.preventDefault();this.classList.add('on')" ondragleave="this.classList.remove('on')" ondrop="event.preventDefault();this.classList.remove('on');editFinanse(null,event.dataTransfer.files[0])">
+      <input type="file" accept="image/*,application/pdf" style="display:none" onchange="editFinanse(null,this.files[0]);this.value=''">
+      <b>🧾 Upuść tutaj potwierdzenie przelewu</b><span class="mut">PDF lub zdjęcie z telefonu – albo kliknij, aby wybrać plik</span></label>
+    <div class="card" style="margin-top:16px"><h3>Przelewy <small>${rows.length} poz.</small></h3>${filtry}${tbl}</div>`,
+    `<button class="btn" onclick="editFinanse()">＋ Potwierdzenie</button>`];
+}
+
+/* ---------- formularz ---------- */
+function editFinanse(id, plikStart) {
+  const L = finLista();
+  const f = L.find(x => x.id === id) || { data: todayStr(), typ: 'Przelew wychodzący', waluta: 'PLN', bank: (L[L.length - 1] || {}).bank || '' };
+  let plik = plikStart || null;
+  const wplOpc = [['', '– brak –'], ['__new', '＋ utwórz nową wpłatę/wypłatę z tych danych'],
+    ...S.wplaty.slice().sort((a, b) => String(b.data).localeCompare(String(a.data))).map(w => [w.id, `${w.data} · ${w.konto} · ${nf2.format(num(w.kwotaPLN))} zł`])];
+  const form = modal(id ? 'Edytuj potwierdzenie' : 'Nowe potwierdzenie przelewu', [
+    { k: 'data', l: 'Data przelewu', t: 'date' }, { k: 'typ', l: 'Rodzaj', t: 'select', o: FIN_TYPY },
+    { k: 'kwota', l: 'Kwota', t: 'number' }, { k: 'waluta', l: 'Waluta', t: 'select', o: FIN_WAL },
+    { k: 'kontrahent', l: 'Odbiorca / nadawca', ph: 'np. XTB S.A., Urząd Skarbowy' }, { k: 'kategoria', l: 'Kategoria', ph: 'np. Inwestycje, Podatki, Mieszkanie' },
+    { k: 'tytul', l: 'Tytuł przelewu', full: 1 },
+    { k: 'bank', l: 'Z konta / bank', ph: 'np. mBank osobiste' },
+    { k: 'wplata', l: 'Powiązana wpłata (Wpłaty i wypłaty)', t: 'select', o: wplOpc },
+    { k: 'kontoInw', l: 'Konto inwestycyjne dla nowej wpłaty', t: 'select', o: S.konta.map(k => k.nazwa) },
+    { k: 'notatka', l: 'Notatka', full: 1 },
+  ], f, o => {
+    if (!o.data || !(o.kwota > 0)) return 'Uzupełnij datę i kwotę (dodatnią – kierunek wynika z rodzaju)';
+    if (!finInw(o.typ) && o.wplata === '__new') o.wplata = '';
+    if (o.wplata === '__new') {
+      const znak = o.typ === 'Wypłata z konta inwestycyjnego' ? -1 : 1, pln = o.waluta === 'PLN';
+      const kurs = pln ? 1 : (C && C.rateNow(o.waluta)) || 0;
+      if (!pln && !kurs) return 'Nie znam kursu ' + o.waluta + ' – utwórz wpłatę ręcznie w „Wpłaty i wypłaty”';
+      const w = { id: uid(), data: o.data, konto: o.kontoInw, kwotaPLN: r2(znak * o.kwota * kurs), kwotaWal: pln ? '' : znak * o.kwota,
+        notatka: ['Przelew', o.kontrahent, o.tytul].filter(Boolean).join(' · ') + (pln ? '' : ` (przeliczone po kursie ${kurs})`) };
+      S.wplaty.push(w); changed('wplaty'); o.wplata = w.id;
+    }
+    delete o.kontoInw;
+    let rec = f;
+    if (id) Object.assign(f, o); else { rec = { id: uid(), ...o }; L.push(rec); }
+    changed('finanse'); toast('Zapisano przelew');
+    if (plik) setTimeout(() => finDolaczPlik(rec, plik), 0);
+  }, id ? () => {
+    S.finanse = L.filter(x => x.id !== id); changed('finanse');
+    if (f.plikId) { if (SYNC.token && SYNC.drive) driveDoKosza(f.plikId).then(() => toast('Plik przeniesiony do kosza Google Drive')).catch(() => toast('Wpis usunięty – plik został na Google Drive'));
+      else toast('Wpis usunięty – plik został na Google Drive (zaloguj się, by usuwać też pliki)'); }
+  } : null);
+  // lista podpowiedzi kategorii i banków
+  const dl = (name, vals) => { const el = form.elements[name], idl = 'dl_' + name; el.setAttribute('list', idl);
+    form.insertAdjacentHTML('beforeend', `<datalist id="${idl}">${[...new Set(vals.filter(Boolean))].map(v => `<option value="${esc(v)}">`).join('')}</datalist>`); };
+  dl('kategoria', ['Inwestycje', 'Podatki', ...L.map(x => x.kategoria)]); dl('bank', L.map(x => x.bank)); dl('kontrahent', L.map(x => x.kontrahent));
+  // pole pliku
+  const zone = document.createElement('label'); zone.className = 'full fin-plik';
+  const opis = () => plik ? `📎 <b>${esc(plik.name)}</b> <span class="mut">(${nf0.format(plik.size / 1024)} kB – wyśle się po zapisaniu)</span>`
+    : f.plikId ? `📎 <b>${esc(f.plik || 'plik')}</b> <span class="mut">– kliknij, aby podmienić</span>` : '<b>＋ Dołącz potwierdzenie</b> <span class="mut">PDF lub zdjęcie (możesz też upuścić plik tutaj)</span>';
+  zone.innerHTML = `Plik potwierdzenia<div class="dropzone sm"><span class="fin-opis">${opis()}</span></div><input type="file" accept="image/*,application/pdf" style="display:none">`;
+  form.appendChild(zone);
+  const ustaw = file => { if (!file) return; if (file.size > 25 * 1024 * 1024) return toast('Plik jest za duży (maks. 25 MB)'); plik = file; zone.querySelector('.fin-opis').innerHTML = opis(); };
+  zone.querySelector('input').onchange = e => ustaw(e.target.files[0]);
+  const dz = zone.querySelector('.dropzone');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('on'); }); dz.addEventListener('dragleave', () => dz.classList.remove('on'));
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('on'); ustaw(e.dataTransfer.files[0]); });
+  // linki poza <label>, żeby kliknięcie nie otwierało okna wyboru pliku
+  const pod = [f.plikId ? `<a onclick="finPodglad('${f.id}')">Podgląd</a> · <a href="${esc(f.plikUrl)}" target="_blank" rel="noopener">Otwórz w Google Drive</a>` : '',
+    !CFG.demo && (!SYNC.token || !SYNC.drive) ? '<span style="color:#b45309">Aby dołączyć plik, najpierw zaloguj się do Google (plakietka u góry).</span>' : ''].filter(Boolean).join('<br>');
+  if (pod) zone.insertAdjacentHTML('afterend', `<div class="full help" style="font-size:11.5px;margin-top:-6px">${pod}</div>`);
+  if (plikStart) ustaw(plikStart);
+  // pola wpłaty tylko dla wpłat/wypłat na konto inwestycyjne
+  const pokaz = () => { const inw = finInw(form.elements.typ.value);
+    form.elements.wplata.closest('label').style.display = inw ? '' : 'none';
+    form.elements.kontoInw.closest('label').style.display = inw && form.elements.wplata.value === '__new' ? '' : 'none'; };
+  form.elements.typ.addEventListener('change', pokaz); form.elements.wplata.addEventListener('change', pokaz); pokaz();
+  // sprawdzenie logowania dopiero przy zapisie z plikiem
+  const save = form.closest('.modal').querySelector('[data-a=save]'), orig = save.onclick;
+  save.onclick = () => { if (plik && !driveGotowy()) { if (!confirm('Nie można teraz wysłać pliku na Google Drive.\n\nZapisać sam wpis bez pliku? (plik dodasz później w tabeli)')) return; plik = null; } orig(); };
+}
+function finPlikDoWpisu(id, file) {
+  const f = finLista().find(x => x.id === id); if (!f || !file) return;
+  if (file.size > 25 * 1024 * 1024) return toast('Plik jest za duży (maks. 25 MB)');
+  if (!driveGotowy()) return;
+  finDolaczPlik(f, file);
+}
+
+/* ---------- podgląd ---------- */
+async function finPodglad(id) {
+  const f = finLista().find(x => x.id === id); if (!f || !f.plikId) return;
+  if (!SYNC.token || Date.now() > SYNC.exp || !SYNC.drive) { window.open(f.plikUrl, '_blank', 'noopener'); return; }
+  const bg = document.createElement('div'); bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal fin-podglad"><h2>${esc(f.kontrahent || f.typ)} <small class="mut">${esc(f.data)} · ${money(num(f.kwota), f.waluta || 'PLN')}</small></h2>
+    <div class="fin-view"><div class="empty">Wczytywanie…</div></div>
+    <div class="actions"><a class="btn ghost" href="${esc(f.plikUrl)}" target="_blank" rel="noopener">Otwórz w Google Drive</a><a class="btn ghost" data-a="dl" style="display:none">⬇ Pobierz</a><span class="sp"></span><button class="btn" data-a="close">Zamknij</button></div></div>`;
+  document.body.appendChild(bg);
+  let url = '';
+  const close = () => { bg.remove(); if (url) URL.revokeObjectURL(url); };
+  bg.addEventListener('click', e => { if (e.target === bg) close(); }); bg.querySelector('[data-a=close]').onclick = close;
+  try {
+    const blob = await driveFetch('GET', `${DRIVE}/${f.plikId}?alt=media`, null, true);
+    url = URL.createObjectURL(blob);
+    const t = blob.type || f.plikTyp || '', box = bg.querySelector('.fin-view');
+    box.innerHTML = t.startsWith('image/') ? `<img src="${url}" alt="">` : t === 'application/pdf' ? `<iframe src="${url}"></iframe>` : `<div class="empty">Podgląd niedostępny dla tego typu pliku – użyj „Pobierz”.</div>`;
+    const a = bg.querySelector('[data-a=dl]'); a.href = url; a.download = f.plik || 'potwierdzenie'; a.style.display = '';
+  } catch (e) {
+    bg.querySelector('.fin-view').innerHTML = `<div class="empty">Nie udało się wczytać pliku (${esc(e.message)}).<br>Spróbuj „Otwórz w Google Drive”.</div>`;
+  }
 }
 
 boot();

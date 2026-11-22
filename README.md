@@ -67,6 +67,15 @@ Ceny odświeżają się raz dziennie, przy pierwszym otwarciu aplikacji. Inne in
 
 **Wyszukiwanie symboli:** w „Instrumenty i ceny → ＋ Instrument” wpisz nazwę lub ticker (np. `cspx`, `orlen`, `złoto`) i kliknij **Szukaj**. Aplikacja zapyta Yahoo Finance przez Twój arkusz (funkcja `YAHOO_SZUKAJ` ze skryptu, wyniki w zakładce „Szukaj”). Kliknięcie wyniku uzupełnia ticker, nazwę, klasę, walutę i symbol. Gdy nic się nie znajdzie, wpisz dane ręcznie.
 
+## Moje finanse – potwierdzenia przelewów
+
+Zakładka **Moje finanse → Potwierdzenia przelewów** przechowuje potwierdzenia przelewów (PDF lub zdjęcie).
+
+- Dane przelewu (data, rodzaj, kwota, odbiorca, tytuł, kategoria, bank) trafiają do zakładki **Finanse** w arkuszu.
+- Plik trafia na **Twój Google Drive**, do folderu „Portfel – potwierdzenia przelewów”. Aplikacja widzi tylko pliki, które sama tam wgrała (uprawnienie `drive.file`).
+- **Jednorazowo:** w Google Cloud Console (projekt `Portfel`) włącz **Google Drive API** (*Interfejsy API i usługi → Biblioteka → Google Drive API → Włącz*). Przy następnym logowaniu Google zapyta o zgodę na pliki – zaznacz ją.
+- Przelew na konto inwestycyjne można od razu powiązać z wpisem w „Wpłaty i wypłaty” (albo utworzyć nową wpłatę z tych danych).
+
 ## Jak to działa na co dzień
 
 - **Zapis:** każda zmiana w aplikacji trafia do arkusza w ciągu 1–2 sekund. Stan widać w plakietce u góry („Zapisano w Google Sheets ✓”).
