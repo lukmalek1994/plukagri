@@ -19,7 +19,7 @@ const TABLES = {
     ['kategoria', 'Kategoria'], ['bank', 'Z konta / bank'], ['wplata', 'Powiązana wpłata (ID)'], ['notatka', 'Notatka'], ['plik', 'Plik'], ['plikUrl', 'Link do pliku (Google Drive)'], ['plikId', 'ID pliku'], ['plikTyp', 'Typ pliku']] },
   dokumenty: { sheet: 'Dokumenty PIT', cols: [['id', 'ID'], ['rok', 'Rok podatkowy'], ['rodzaj', 'Rodzaj dokumentu'], ['wystawca', 'Wystawca'], ['konto', 'Konto'], ['data', 'Data'], ['kwota', 'Kwota'],
     ['notatka', 'Notatka'], ['plik', 'Plik'], ['plikUrl', 'Link do pliku (Google Drive)'], ['plikId', 'ID pliku'], ['plikTyp', 'Typ pliku']] },
-  paragony: { sheet: 'Paragony metale', cols: [['id', 'ID'], ['data', 'Data zakupu'], ['metal', 'Metal'], ['produkt', 'Produkt'], ['ilosc', 'Ilość'], ['kwota', 'Kwota'], ['waluta', 'Waluta'],
+  paragony: { sheet: 'Paragony metale', cols: [['id', 'ID'], ['data', 'Data zakupu'], ['kierunek', 'Zakup / sprzedaż'], ['metal', 'Metal'], ['produkt', 'Produkt'], ['ilosc', 'Ilość'], ['kwota', 'Kwota'], ['waluta', 'Waluta'],
     ['sklep', 'Sklep / sprzedawca'], ['dokument', 'Rodzaj dokumentu'], ['numer', 'Numer'], ['transakcja', 'Transakcja (ID)'], ['notatka', 'Notatka'],
     ['plik', 'Plik'], ['plikUrl', 'Link do pliku (Google Drive)'], ['plikId', 'ID pliku'], ['plikTyp', 'Typ pliku']] },
   ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
