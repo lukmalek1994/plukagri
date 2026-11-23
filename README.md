@@ -76,6 +76,13 @@ Zakładka **Moje finanse → Potwierdzenia przelewów** przechowuje potwierdzeni
 - **Jednorazowo:** w Google Cloud Console (projekt `Portfel`) włącz **Google Drive API** (*Interfejsy API i usługi → Biblioteka → Google Drive API → Włącz*). Przy następnym logowaniu Google zapyta o zgodę na pliki – zaznacz ją.
 - Przelew na konto inwestycyjne można od razu powiązać z wpisem w „Wpłaty i wypłaty” (albo utworzyć nową wpłatę z tych danych).
 
+## Moje finanse – dokumenty PIT
+
+Zakładka **Moje finanse → Dokumenty PIT** przechowuje PIT-8C, zeznania PIT-38, UPO, potwierdzenia zapłaty i pisma z urzędu.
+
+- Dane dokumentu trafiają do zakładki **Dokumenty PIT** w arkuszu, a plik na Twój Google Drive do folderu „Portfel – dokumenty PIT/<rok>”.
+- Dla wybranego roku aplikacja pokazuje listę kontrolną: PIT-8C od każdego konta „Opodatkowane” ze sprzedażą lub dywidendami w tym roku, PIT-38, UPO i potwierdzenie zapłaty (gdy jest podatek do zapłaty), obok podatku wyliczonego przez aplikację.
+
 ## Jak to działa na co dzień
 
 - **Zapis:** każda zmiana w aplikacji trafia do arkusza w ciągu 1–2 sekund. Stan widać w plakietce u góry („Zapisano w Google Sheets ✓”).

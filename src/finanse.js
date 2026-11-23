@@ -33,13 +33,24 @@ async function finFolder() {
     : (await driveFetch('POST', `${DRIVE}?fields=id`, { name: FIN_FOLDER, mimeType: 'application/vnd.google-apps.folder' })).id;
   CFG.finFolderId = id; saveCfg(); return id;
 }
+// dowolny folder (opcjonalnie wewnątrz innego), zapamiętany w CFG.driveDirs
+async function driveFolder(nazwa, parent) {
+  const key = (parent || 'root') + '/' + nazwa; CFG.driveDirs = CFG.driveDirs || {};
+  const znany = CFG.driveDirs[key];
+  if (znany) { try { const f = await driveFetch('GET', `${DRIVE}/${znany}?fields=id,trashed`); if (!f.trashed) return f.id; } catch (e) { if (e.status !== 404) throw e; } }
+  const q = encodeURIComponent(`name='${nazwa.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false` + (parent ? ` and '${parent}' in parents` : ''));
+  const found = await driveFetch('GET', `${DRIVE}?q=${q}&fields=files(id)&spaces=drive`);
+  const id = found.files && found.files[0] ? found.files[0].id
+    : (await driveFetch('POST', `${DRIVE}?fields=id`, Object.assign({ name: nazwa, mimeType: 'application/vnd.google-apps.folder' }, parent ? { parents: [parent] } : {}))).id;
+  CFG.driveDirs[key] = id; saveCfg(); return id;
+}
 const finNazwaPliku = (f, file) => {
   const ext = (String(file.name).match(/\.[a-z0-9]{1,5}$/i) || [''])[0].toLowerCase();
   const cz = [f.data, f.kontrahent || f.typ, has(f.kwota) ? nf2.format(num(f.kwota)) + ' ' + (f.waluta || 'PLN') : ''].filter(Boolean).join(' ');
   return (cz.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'potwierdzenie') + ext;
 };
-async function driveWyslij(file, nazwa) {
-  const folder = await finFolder();
+async function driveWyslij(file, nazwa, folderId) {
+  const folder = folderId || await finFolder();
   const fd = new FormData();
   fd.append('metadata', new Blob([JSON.stringify({ name: nazwa, parents: [folder] })], { type: 'application/json' }));
   fd.append('file', file);
@@ -176,11 +187,12 @@ function finPlikDoWpisu(id, file) {
 }
 
 /* ---------- podgląd ---------- */
-async function finPodglad(id) {
-  const f = finLista().find(x => x.id === id); if (!f || !f.plikId) return;
+function finPodglad(id) { const f = finLista().find(x => x.id === id); if (f) podgladPliku(f, f.kontrahent || f.typ, `${esc(f.data)} · ${money(num(f.kwota), f.waluta || 'PLN')}`); }
+async function podgladPliku(f, tytul, podtytul) {
+  if (!f || !f.plikId) return;
   if (!SYNC.token || Date.now() > SYNC.exp || !SYNC.drive) { window.open(f.plikUrl, '_blank', 'noopener'); return; }
   const bg = document.createElement('div'); bg.className = 'modal-bg';
-  bg.innerHTML = `<div class="modal fin-podglad"><h2>${esc(f.kontrahent || f.typ)} <small class="mut">${esc(f.data)} · ${money(num(f.kwota), f.waluta || 'PLN')}</small></h2>
+  bg.innerHTML = `<div class="modal fin-podglad"><h2>${esc(tytul)} <small class="mut">${podtytul || ''}</small></h2>
     <div class="fin-view"><div class="empty">Wczytywanie…</div></div>
     <div class="actions"><a class="btn ghost" href="${esc(f.plikUrl)}" target="_blank" rel="noopener">Otwórz w Google Drive</a><a class="btn ghost" data-a="dl" style="display:none">⬇ Pobierz</a><span class="sp"></span><button class="btn" data-a="close">Zamknij</button></div></div>`;
   document.body.appendChild(bg);

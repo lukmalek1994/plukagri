@@ -17,6 +17,8 @@ const TABLES = {
     ['opis', 'Opis'], ['yahoo', 'Symbol Yahoo'], ['yahooR', 'Symbol Yahoo (ręczny)'], ['waluta', 'Waluta'], ['cenaApp', 'Cena (aplikacja)'], ['srednia', 'Średnia cena zakupu'], ['dane', 'Dane dla skryptu (JSON)']] },
   finanse: { sheet: 'Finanse', cols: [['id', 'ID'], ['data', 'Data'], ['typ', 'Rodzaj'], ['kwota', 'Kwota'], ['waluta', 'Waluta'], ['kontrahent', 'Odbiorca / nadawca'], ['tytul', 'Tytuł przelewu'],
     ['kategoria', 'Kategoria'], ['bank', 'Z konta / bank'], ['wplata', 'Powiązana wpłata (ID)'], ['notatka', 'Notatka'], ['plik', 'Plik'], ['plikUrl', 'Link do pliku (Google Drive)'], ['plikId', 'ID pliku'], ['plikTyp', 'Typ pliku']] },
+  dokumenty: { sheet: 'Dokumenty PIT', cols: [['id', 'ID'], ['rok', 'Rok podatkowy'], ['rodzaj', 'Rodzaj dokumentu'], ['wystawca', 'Wystawca'], ['konto', 'Konto'], ['data', 'Data'], ['kwota', 'Kwota'],
+    ['notatka', 'Notatka'], ['plik', 'Plik'], ['plikUrl', 'Link do pliku (Google Drive)'], ['plikId', 'ID pliku'], ['plikTyp', 'Typ pliku']] },
   ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
 };
 const uid = () => Math.random().toString(36).slice(2, 10);

@@ -110,11 +110,16 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 .modal.fin-podglad{width:min(900px,96vw);max-width:96vw}
 .fin-view{height:min(70vh,760px);background:#f3f6fa;border-radius:10px;overflow:auto;display:flex;align-items:center;justify-content:center}
 .fin-view img{max-width:100%;max-height:100%;object-fit:contain}.fin-view iframe{width:100%;height:100%;border:0}
+/* Dokumenty PIT – lista kontrolna */
+.pit-check{display:flex;flex-direction:column;gap:6px}
+.pit-it{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #e3e9f2;border-radius:10px;font-size:13px}.pit-it>div{flex:1}
+.pit-it .pit-ic{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#eef2f7;color:#94a3b8;font-weight:700}
+.pit-it.ok{background:#f3fbf6;border-color:#cdebd8}.pit-it.ok .pit-ic{background:#16a34a;color:#fff}
 </style>
 </head>
 <body>
 <div class="app">
-  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-22 13:01</div></aside>
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-23 18:34</div></aside>
   <main>
     <div class="top">
       <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
@@ -163,7 +168,7 @@ function defaultState() {
       { id: 'i5', ticker: 'SREBRO', nazwa: 'Srebro fizyczne (1 oz)', klasa: 'Srebro', koszyk: 'SREBRO', waluta: 'USD', cena: '', dataCeny: '', symbol: 'YAHOO:SI=F', cenaAuto: '' },
       { id: 'i6', ticker: 'BTC', nazwa: 'Bitcoin', klasa: 'Krypto', koszyk: 'BTC', waluta: 'USD', cena: '', dataCeny: '', symbol: 'YAHOO:BTC-USD', cenaAuto: '' },
     ],
-    transakcje: [], dywidendy: [], wplaty: [], inflacja: [], historia: [], finanse: [],
+    transakcje: [], dywidendy: [], wplaty: [], inflacja: [], historia: [], finanse: [], dokumenty: [],
     alerty: [],
     cele: [
       { id: 'c1', konto: '', koszyk: 'CSPX', tickery: 'CSPX', grupa: 'CORE', cel: 39 }, { id: 'c2', konto: '', koszyk: 'IWDA', tickery: 'IWDA', grupa: 'CORE', cel: 26 },
@@ -510,6 +515,8 @@ const TABLES = {
     ['opis', 'Opis'], ['yahoo', 'Symbol Yahoo'], ['yahooR', 'Symbol Yahoo (ręczny)'], ['waluta', 'Waluta'], ['cenaApp', 'Cena (aplikacja)'], ['srednia', 'Średnia cena zakupu'], ['dane', 'Dane dla skryptu (JSON)']] },
   finanse: { sheet: 'Finanse', cols: [['id', 'ID'], ['data', 'Data'], ['typ', 'Rodzaj'], ['kwota', 'Kwota'], ['waluta', 'Waluta'], ['kontrahent', 'Odbiorca / nadawca'], ['tytul', 'Tytuł przelewu'],
     ['kategoria', 'Kategoria'], ['bank', 'Z konta / bank'], ['wplata', 'Powiązana wpłata (ID)'], ['notatka', 'Notatka'], ['plik', 'Plik'], ['plikUrl', 'Link do pliku (Google Drive)'], ['plikId', 'ID pliku'], ['plikTyp', 'Typ pliku']] },
+  dokumenty: { sheet: 'Dokumenty PIT', cols: [['id', 'ID'], ['rok', 'Rok podatkowy'], ['rodzaj', 'Rodzaj dokumentu'], ['wystawca', 'Wystawca'], ['konto', 'Konto'], ['data', 'Data'], ['kwota', 'Kwota'],
+    ['notatka', 'Notatka'], ['plik', 'Plik'], ['plikUrl', 'Link do pliku (Google Drive)'], ['plikId', 'ID pliku'], ['plikTyp', 'Typ pliku']] },
   ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
 };
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -1378,7 +1385,7 @@ function renderNav() {
     <div class="nav-h">Analizy</div>${it('waluta', '¤', 'Wpływ waluty')}${it('porownanie', '⚖', 'Porównanie strategii')}${it('koszty', '−', 'Koszty i podatki')}${it('dochod', '◎', 'Dochód pasywny')}${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}
     <div class="nav-h">Planowanie</div>${it('symulator', '➚', 'Symulator przyszłości')}${it('fire', '🔥', 'FIRE – ile brakuje')}${it('mapa', '▦', 'Mapa portfela')}${it('alerty', '🔔', 'Alerty' + (() => { const n = C ? alertyAktywne().filter(x => x.e.stan === 'osiągnięty' || x.e.stan === 'blisko').length : 0; return n ? ` (${n})` : ''; })())}
     <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◈', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}
-    <div class="nav-h">Moje finanse</div>${it('finanse', '🧾', 'Potwierdzenia przelewów' + (() => { const n = (S.finanse || []).filter(f => !f.plikId).length; return n ? ` (${n} bez pliku)` : ''; })())}
+    <div class="nav-h">Moje finanse</div>${it('finanse', '🧾', 'Potwierdzenia przelewów' + (() => { const n = (S.finanse || []).filter(f => !f.plikId).length; return n ? ` (${n} bez pliku)` : ''; })())}${it('dokumenty', '📄', 'Dokumenty PIT')}
     <div class="nav-h">Konfiguracja</div>${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('import', '⤓', 'Import')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`;
 }
 function toggleNav(id) { CFG.navClosed = CFG.navClosed || {}; CFG.navClosed[id] = !CFG.navClosed[id]; saveCfg(); renderNav(); }
@@ -1406,11 +1413,11 @@ function renderPoKursie() {
 }
 
 function render() {
-  if (!S.finanse) S.finanse = [];
+  if (!S.finanse) S.finanse = []; if (!S.dokumenty) S.dokumenty = [];
   C = calc(S, calcOpts());
   renderNav(); renderSyncBadge(); renderFxBadge();
   const V = { kokpit: vKokpit, portfel: vPortfel, strategia: vStrategia, konto: vKonto, transakcje: vTransakcje, dywidendy: vDywidendy, wplaty: vWplaty,
-    podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, fire: vFire, mapa: vMapa, import: vImport, alerty: vAlerty, finanse: vFinanse, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
+    podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, fire: vFire, mapa: vMapa, import: vImport, alerty: vAlerty, finanse: vFinanse, dokumenty: vDokumenty, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
   const [title, sub, body, actions] = V();
   $('#title').innerHTML = `${esc(title)}<small>${sub || ''}</small>`;
   $('#topActions').innerHTML = walutaSeg() + (actions || `<button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`);
@@ -1861,7 +1868,7 @@ function vPodatki() {
       { h: 'Ilość', n: 1, f: r => nfq.format(r.ilosc) }, { h: 'Przychód PLN', n: 1, f: r => zlPLN(r.przychodPLN) }, { h: 'Koszt ' + WL(), n: 1, f: r => zlPLN(r.kosztPLN) },
       { h: 'Dochód PLN', n: 1, f: r => plPLN(r.zyskPLN) }, { h: '', f: r => r.kursOk ? '' : '<span class="warn">brak kursu</span>' },
     ], P.sprzedaze, { empty: 'Brak sprzedaży w tym roku', foot: ['Razem', '', '', '', zlPLN(P.przychod), zlPLN(P.koszty), zlPLN(P.dochod), ''] })}</div>
-    <div class="mut" style="font-size:12px;margin-top:10px">Porównaj z PIT-8C od brokera. To pomoc w rozliczeniu, nie doradztwo podatkowe.</div>`, ' '];
+    <div class="mut" style="font-size:12px;margin-top:10px">Porównaj z PIT-8C od brokera. To pomoc w rozliczeniu, nie doradztwo podatkowe. · <a onclick="FILT.pit=Object.assign(FILT.pit||{q:''},{rok:'${rok}'});go('dokumenty')">📄 Dokumenty PIT za ${rok} (${(S.dokumenty || []).filter(d => String(d.rok) === String(rok)).length})</a></div>`, ' '];
 }
 
 function vInflacja() {
@@ -2466,7 +2473,7 @@ function boot() {
   const MIG = { 'CURRENCY:XAUUSD': 'YAHOO:GC=F', 'CURRENCY:XAGUSD': 'YAHOO:SI=F', 'CURRENCY:BTCUSD': 'YAHOO:BTC-USD' };
   let mig = false; S.instrumenty.forEach(i => { if (MIG[i.symbol]) { i.symbol = MIG[i.symbol]; mig = true; }
     if (i.klasa === 'Obligacje' && isOS(i)) { i.klasa = 'Obligacje skarbowe'; mig = true; } }); if (mig) changed('instrumenty');
-  migrateCele(); if (!S.alerty) S.alerty = []; if (!S.finanse) S.finanse = [];
+  migrateCele(); if (!S.alerty) S.alerty = []; if (!S.finanse) S.finanse = []; if (!S.dokumenty) S.dokumenty = [];
   readHash(); render(); snapshot();
   if (CFG.demo) setSync('local', 'Tryb demo – nic nie zapisuje się w arkuszu');
   else if (CFG.clientId && CFG.connected) setSync('pending', 'Kliknij tutaj, aby połączyć z Google Sheets');
@@ -3315,13 +3322,24 @@ async function finFolder() {
     : (await driveFetch('POST', `${DRIVE}?fields=id`, { name: FIN_FOLDER, mimeType: 'application/vnd.google-apps.folder' })).id;
   CFG.finFolderId = id; saveCfg(); return id;
 }
+// dowolny folder (opcjonalnie wewnątrz innego), zapamiętany w CFG.driveDirs
+async function driveFolder(nazwa, parent) {
+  const key = (parent || 'root') + '/' + nazwa; CFG.driveDirs = CFG.driveDirs || {};
+  const znany = CFG.driveDirs[key];
+  if (znany) { try { const f = await driveFetch('GET', `${DRIVE}/${znany}?fields=id,trashed`); if (!f.trashed) return f.id; } catch (e) { if (e.status !== 404) throw e; } }
+  const q = encodeURIComponent(`name='${nazwa.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false` + (parent ? ` and '${parent}' in parents` : ''));
+  const found = await driveFetch('GET', `${DRIVE}?q=${q}&fields=files(id)&spaces=drive`);
+  const id = found.files && found.files[0] ? found.files[0].id
+    : (await driveFetch('POST', `${DRIVE}?fields=id`, Object.assign({ name: nazwa, mimeType: 'application/vnd.google-apps.folder' }, parent ? { parents: [parent] } : {}))).id;
+  CFG.driveDirs[key] = id; saveCfg(); return id;
+}
 const finNazwaPliku = (f, file) => {
   const ext = (String(file.name).match(/\.[a-z0-9]{1,5}$/i) || [''])[0].toLowerCase();
   const cz = [f.data, f.kontrahent || f.typ, has(f.kwota) ? nf2.format(num(f.kwota)) + ' ' + (f.waluta || 'PLN') : ''].filter(Boolean).join(' ');
   return (cz.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'potwierdzenie') + ext;
 };
-async function driveWyslij(file, nazwa) {
-  const folder = await finFolder();
+async function driveWyslij(file, nazwa, folderId) {
+  const folder = folderId || await finFolder();
   const fd = new FormData();
   fd.append('metadata', new Blob([JSON.stringify({ name: nazwa, parents: [folder] })], { type: 'application/json' }));
   fd.append('file', file);
@@ -3458,11 +3476,12 @@ function finPlikDoWpisu(id, file) {
 }
 
 /* ---------- podgląd ---------- */
-async function finPodglad(id) {
-  const f = finLista().find(x => x.id === id); if (!f || !f.plikId) return;
+function finPodglad(id) { const f = finLista().find(x => x.id === id); if (f) podgladPliku(f, f.kontrahent || f.typ, `${esc(f.data)} · ${money(num(f.kwota), f.waluta || 'PLN')}`); }
+async function podgladPliku(f, tytul, podtytul) {
+  if (!f || !f.plikId) return;
   if (!SYNC.token || Date.now() > SYNC.exp || !SYNC.drive) { window.open(f.plikUrl, '_blank', 'noopener'); return; }
   const bg = document.createElement('div'); bg.className = 'modal-bg';
-  bg.innerHTML = `<div class="modal fin-podglad"><h2>${esc(f.kontrahent || f.typ)} <small class="mut">${esc(f.data)} · ${money(num(f.kwota), f.waluta || 'PLN')}</small></h2>
+  bg.innerHTML = `<div class="modal fin-podglad"><h2>${esc(tytul)} <small class="mut">${podtytul || ''}</small></h2>
     <div class="fin-view"><div class="empty">Wczytywanie…</div></div>
     <div class="actions"><a class="btn ghost" href="${esc(f.plikUrl)}" target="_blank" rel="noopener">Otwórz w Google Drive</a><a class="btn ghost" data-a="dl" style="display:none">⬇ Pobierz</a><span class="sp"></span><button class="btn" data-a="close">Zamknij</button></div></div>`;
   document.body.appendChild(bg);
@@ -3479,6 +3498,147 @@ async function finPodglad(id) {
     bg.querySelector('.fin-view').innerHTML = `<div class="empty">Nie udało się wczytać pliku (${esc(e.message)}).<br>Spróbuj „Otwórz w Google Drive”.</div>`;
   }
 }
+
+/* ===================== MOJE FINANSE – DOKUMENTY PIT =====================
+   Dane dokumentu -> zakładka „Dokumenty PIT” w arkuszu. Plik -> Google Drive: „Portfel – dokumenty PIT/<rok>”. */
+const PIT_FOLDER = 'Portfel – dokumenty PIT';
+const PIT_RODZAJE = ['PIT-8C (od brokera)', 'PIT-38 (zeznanie)', 'UPO (potwierdzenie złożenia)', 'Potwierdzenie zapłaty podatku', 'PIT-37', 'PIT-36', 'PIT-11', 'PIT/ZG',
+  'Korekta zeznania', 'Pismo / decyzja z urzędu', 'Certyfikat rezydencji / W-8BEN', 'Inne'];
+const pitLista = () => (S.dokumenty = S.dokumenty || []);
+const pitRokDomyslny = () => { const d = new Date(); return String(d.getMonth() <= 4 ? d.getFullYear() - 1 : d.getFullYear()); };   // do maja: rozliczamy poprzedni rok
+const pitKrotko = r => String(r || '').replace(/\s*\(.*\)$/, '');
+
+/* konta „Opodatkowane” z operacjami w danym roku -> od każdego broker powinien przysłać PIT-8C */
+function pitKontaZRuchem(rok) {
+  const kontoStrat = n => (S.strategie.find(s => s.nazwa === n) || {}).konto;
+  const opod = new Set(S.konta.filter(k => k.typ === 'Opodatkowane').map(k => k.nazwa)), m = new Set();
+  S.transakcje.filter(t => t.typ === 'SPRZEDAŻ' && String(t.data).startsWith(rok)).forEach(t => { const k = kontoStrat(t.strategia); if (opod.has(k)) m.add(k); });
+  S.dywidendy.filter(d => String(d.data).startsWith(rok)).forEach(d => { const k = kontoStrat(d.strategia); if (opod.has(k)) m.add(k); });
+  return [...m];
+}
+
+function vDokumenty() {
+  const L = pitLista(), F = FILT.pit || (FILT.pit = { rok: pitRokDomyslny(), q: '' });
+  const lata = [...new Set([F.rok, pitRokDomyslny(), String(new Date().getFullYear()), String(new Date().getFullYear() - 1), ...L.map(d => String(d.rok)), ...((C && C.lata) || []).map(String)].filter(Boolean))].sort().reverse();
+  const q = String(F.q || '').toLowerCase();
+  const rows = L.filter(d => (!F.rok || String(d.rok) === F.rok) && (!q || [d.rodzaj, d.wystawca, d.konto, d.notatka, d.plik].some(v => String(v || '').toLowerCase().includes(q))))
+    .sort((a, b) => String(b.rok).localeCompare(String(a.rok)) || PIT_RODZAJE.indexOf(a.rodzaj) - PIT_RODZAJE.indexOf(b.rodzaj) || String(b.data).localeCompare(String(a.data)));
+  const opt = (v, cur, lab) => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(lab || v)}</option>`;
+
+  // lista kontrolna dla wybranego roku
+  let lista = '', P = null;
+  if (F.rok) {
+    const zRok = L.filter(d => String(d.rok) === F.rok), ma = (rodz, konto) => zRok.find(d => d.rodzaj === rodz && (!konto || d.konto === konto));
+    const konta = pitKontaZRuchem(F.rok);
+    try { P = C.podatki(+F.rok, num(CFG.strataPrev[F.rok]), num(CFG.kryptoPrev[F.rok])); } catch (e) {}
+    const pozycje = [...konta.map(k => ({ rodz: PIT_RODZAJE[0], konto: k, opis: `PIT-8C – ${k}`, help: 'broker wysyła do końca lutego' })),
+      { rodz: PIT_RODZAJE[1], opis: 'PIT-38 – złożone zeznanie', help: 'termin: 30 kwietnia' }, { rodz: PIT_RODZAJE[2], opis: 'UPO – potwierdzenie złożenia', help: 'z e-Urzędu Skarbowego' }];
+    if (P && P.razem > 0) pozycje.push({ rodz: PIT_RODZAJE[3], opis: 'Potwierdzenie zapłaty podatku', help: `wg aplikacji ${zlPLN(P.razem, 0)}` });
+    lista = `<div class="pit-check">${pozycje.map(p => { const d = ma(p.rodz, p.konto);
+      return `<div class="pit-it ${d ? 'ok' : ''}"><span class="pit-ic">${d ? '✓' : '○'}</span><div><b>${esc(p.opis)}</b><div class="mut" style="font-size:11.5px">${d ? (d.plikId ? '📎 ' + esc(d.plik || 'plik') : 'wpis bez pliku') : esc(p.help)}</div></div>
+        ${d ? (d.plikId ? `<a onclick="pitPodglad('${d.id}')">Podgląd</a>` : `<a onclick="editDokument('${d.id}')">dodaj plik</a>`) : `<a onclick='editDokument(null,null,${esc(JSON.stringify({ rok: F.rok, rodzaj: p.rodz, konto: p.konto || '' }))})'>＋ dodaj</a>`}</div>`; }).join('')}</div>
+      ${!konta.length ? '<div class="mut" style="font-size:12px;margin-top:8px">W tym roku nie ma sprzedaży ani dywidend na kontach „Opodatkowane” – PIT-8C nie powinny przyjść.</div>' : ''}`;
+  }
+  const plikCel = d => d.plikStan ? '<span class="mut">⏳ wysyłanie…</span>'
+    : d.plikId ? `<a onclick="event.stopPropagation();pitPodglad('${d.id}')" title="${esc(d.plik || '')}">📎 Podgląd</a>`
+    : `<label class="fin-add" onclick="event.stopPropagation()">＋ dodaj plik<input type="file" accept="image/*,application/pdf" style="display:none" onchange="pitPlikDoWpisu('${d.id}',this.files[0])"></label>`;
+  const tbl = table([
+    { h: 'Rok', f: d => `<b>${esc(d.rok)}</b>` },
+    { h: 'Dokument', f: d => `<span class="tag">${esc(pitKrotko(d.rodzaj))}</span>` },
+    { h: 'Wystawca / konto', f: d => `${esc(d.wystawca || '')}${d.konto ? `<div class="mut" style="font-size:12px">${esc(d.konto)}</div>` : ''}` },
+    { h: 'Data', f: d => esc(d.data || '') },
+    { h: 'Kwota', n: 1, f: d => has(d.kwota) ? zlPLN(num(d.kwota)) : '' },
+    { h: 'Notatka', f: d => `<span class="mut" style="font-size:12.5px">${esc(d.notatka || '')}</span>` },
+    { h: 'Plik', f: plikCel },
+  ], rows, { empty: L.length ? 'Brak dokumentów dla wybranych filtrów' : 'Nie masz jeszcze dokumentów – dodaj pierwszy przyciskiem „＋ Dokument” albo upuść plik powyżej', click: d => `editDokument('${d.id}')` });
+  const info = !SYNC.token && !CFG.demo ? `<div class="alert info">Pliki dokumentów zapisują się na Twoim Google Drive. <a onclick="syncNow()"><b>Zaloguj się do Google</b></a>, żeby móc je dodawać i oglądać.</div>`
+    : SYNC.token && !SYNC.drive && !CFG.demo ? `<div class="alert">Aplikacja nie ma jeszcze zgody na zapis plików w Google Drive. Kliknij <a onclick="googleConnect(true)"><b>Zaloguj ponownie</b></a> i zaznacz dostęp do plików.</div>` : '';
+  const folder = (CFG.driveDirs || {})['root/' + PIT_FOLDER];
+  return ['Dokumenty PIT', 'PIT-8C, zeznania, UPO i pisma z urzędu – dane w arkuszu, pliki na Twoim Google Drive', `${info}
+    <div class="row fin-f"><select onchange="FILT.pit.rok=this.value;render()">${opt('', F.rok, 'Wszystkie lata')}${lata.map(r => opt(r, F.rok, 'Rok podatkowy ' + r)).join('')}</select>
+      <input type="search" placeholder="Szukaj: dokument, wystawca, konto…" value="${esc(F.q || '')}" onchange="FILT.pit.q=this.value;render()">
+      ${folder ? `<span class="sp" style="flex:1"></span><a class="btn ghost sm" href="https://drive.google.com/drive/folders/${esc(folder)}" target="_blank" rel="noopener">📁 Folder w Google Drive</a>` : ''}</div>
+    ${F.rok ? `<div class="grid g2"><div class="card"><h3>Lista kontrolna ${esc(F.rok)} <small>podpowiedź na podstawie Twoich kont i operacji</small></h3>${lista}</div>
+      <div class="card"><h3>Rozliczenie ${esc(F.rok)} wg aplikacji <small><a onclick="FILT.rok='${esc(F.rok)}';go('podatki')">szczegóły PIT-38 →</a></small></h3>
+        ${P ? `<div class="kpis" style="margin:0">${kpi('Podatek do zapłaty', zlPLN(P.razem, 0), 'papiery + dywidendy + krypto', 'main')}${kpi('Dochód z papierów', plPLN(P.dochod))}</div>
+        <div class="mut" style="font-size:12px;margin-top:8px">Porównaj z kwotami z PIT-8C od brokera przed złożeniem PIT-38.</div>` : '<div class="empty">Brak danych</div>'}</div></div>` : ''}
+    <label class="dropzone" style="margin-top:16px" ondragover="event.preventDefault();this.classList.add('on')" ondragleave="this.classList.remove('on')" ondrop="event.preventDefault();this.classList.remove('on');editDokument(null,event.dataTransfer.files[0])">
+      <input type="file" accept="image/*,application/pdf" style="display:none" onchange="editDokument(null,this.files[0]);this.value=''">
+      <b>📄 Upuść tutaj dokument PIT</b><span class="mut">PDF lub zdjęcie – albo kliknij, aby wybrać plik</span></label>
+    <div class="card" style="margin-top:16px"><h3>Dokumenty <small>${rows.length} poz.</small></h3>${tbl}</div>`,
+    `<button class="btn" onclick="editDokument()">＋ Dokument</button>`];
+}
+
+/* ---------- formularz ---------- */
+function editDokument(id, plikStart, preset) {
+  const L = pitLista();
+  const d = L.find(x => x.id === id) || { rok: (FILT.pit && FILT.pit.rok) || pitRokDomyslny(), rodzaj: PIT_RODZAJE[0], data: todayStr(), ...(preset || {}) };
+  if (!id && !d.wystawca && d.rodzaj === PIT_RODZAJE[0] && d.konto) d.wystawca = /xtb/i.test(d.konto) ? 'XTB S.A.' : '';
+  let plik = plikStart || null;
+  const form = modal(id ? 'Edytuj dokument' : 'Nowy dokument PIT', [
+    { k: 'rok', l: 'Rok podatkowy', t: 'number' }, { k: 'rodzaj', l: 'Rodzaj dokumentu', t: 'select', o: PIT_RODZAJE },
+    { k: 'wystawca', l: 'Wystawca', ph: 'np. XTB S.A., Urząd Skarbowy' }, { k: 'konto', l: 'Konto (opcjonalnie)', t: 'select', o: [['', '– brak –'], ...S.konta.map(k => k.nazwa)] },
+    { k: 'data', l: 'Data dokumentu / złożenia', t: 'date' }, { k: 'kwota', l: 'Kwota (opcjonalnie)', t: 'number', help: 'np. podatek do zapłaty lub zwrot' },
+    { k: 'notatka', l: 'Notatka', full: 1 },
+  ], d, o => {
+    if (!(o.rok > 1990)) return 'Podaj rok podatkowy';
+    o.rok = String(Math.round(o.rok));
+    let rec = d;
+    if (id) Object.assign(d, o); else { rec = { id: uid(), ...o }; L.push(rec); }
+    if (FILT.pit) FILT.pit.rok = o.rok;
+    changed('dokumenty'); toast('Zapisano dokument');
+    if (plik) setTimeout(() => pitDolaczPlik(rec, plik), 0);
+  }, id ? () => {
+    S.dokumenty = L.filter(x => x.id !== id); changed('dokumenty');
+    if (d.plikId) { if (SYNC.token && SYNC.drive) driveDoKosza(d.plikId).then(() => toast('Plik przeniesiony do kosza Google Drive')).catch(() => toast('Wpis usunięty – plik został na Google Drive'));
+      else toast('Wpis usunięty – plik został na Google Drive (zaloguj się, by usuwać też pliki)'); }
+  } : null);
+  form.elements.wystawca.setAttribute('list', 'dl_pitw');
+  form.insertAdjacentHTML('beforeend', `<datalist id="dl_pitw">${[...new Set(['XTB S.A.', 'Urząd Skarbowy', ...L.map(x => x.wystawca)].filter(Boolean))].map(v => `<option value="${esc(v)}">`).join('')}</datalist>`);
+  // pole pliku (jak w potwierdzeniach przelewów)
+  const zone = document.createElement('label'); zone.className = 'full fin-plik';
+  const opis = () => plik ? `📎 <b>${esc(plik.name)}</b> <span class="mut">(${nf0.format(plik.size / 1024)} kB – wyśle się po zapisaniu)</span>`
+    : d.plikId ? `📎 <b>${esc(d.plik || 'plik')}</b> <span class="mut">– kliknij, aby podmienić</span>` : '<b>＋ Dołącz plik</b> <span class="mut">PDF lub zdjęcie (możesz też upuścić plik tutaj)</span>';
+  zone.innerHTML = `Plik dokumentu<div class="dropzone sm"><span class="fin-opis">${opis()}</span></div><input type="file" accept="image/*,application/pdf" style="display:none">`;
+  form.appendChild(zone);
+  const ustaw = file => { if (!file) return; if (file.size > 25 * 1024 * 1024) return toast('Plik jest za duży (maks. 25 MB)'); plik = file; zone.querySelector('.fin-opis').innerHTML = opis();
+    // podpowiedź rodzaju z nazwy pliku
+    if (!id) { const n = file.name.toUpperCase(); const hit = /UPO/.test(n) ? 2 : /8C/.test(n) ? 0 : /PIT.?38/.test(n) ? 1 : /PIT.?37/.test(n) ? 4 : /PIT.?11/.test(n) ? 6 : /ZG/.test(n) ? 7 : -1;
+      if (hit >= 0) form.elements.rodzaj.value = PIT_RODZAJE[hit]; const y = n.match(/20\d\d/); if (y && !preset) form.elements.rok.value = y[0]; } };
+  zone.querySelector('input').onchange = e => ustaw(e.target.files[0]);
+  const dz = zone.querySelector('.dropzone');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('on'); }); dz.addEventListener('dragleave', () => dz.classList.remove('on'));
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('on'); ustaw(e.dataTransfer.files[0]); });
+  const pod = [d.plikId ? `<a onclick="pitPodglad('${d.id}')">Podgląd</a> · <a href="${esc(d.plikUrl)}" target="_blank" rel="noopener">Otwórz w Google Drive</a>` : '',
+    !CFG.demo && (!SYNC.token || !SYNC.drive) ? '<span style="color:#b45309">Aby dołączyć plik, najpierw zaloguj się do Google (plakietka u góry).</span>' : ''].filter(Boolean).join('<br>');
+  if (pod) zone.insertAdjacentHTML('afterend', `<div class="full help" style="font-size:11.5px;margin-top:-6px">${pod}</div>`);
+  if (plikStart) ustaw(plikStart);
+  const save = form.closest('.modal').querySelector('[data-a=save]'), orig = save.onclick;
+  save.onclick = () => { if (plik && !driveGotowy()) { if (!confirm('Nie można teraz wysłać pliku na Google Drive.\n\nZapisać sam wpis bez pliku? (plik dodasz później w tabeli)')) return; plik = null; } orig(); };
+}
+
+const pitNazwaPliku = (d, file) => {
+  const ext = (String(file.name).match(/\.[a-z0-9]{1,5}$/i) || [''])[0].toLowerCase();
+  return ([d.rok, pitKrotko(d.rodzaj), d.konto || d.wystawca, d.data].filter(Boolean).join(' ').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim() || 'dokument') + ext;
+};
+async function pitDolaczPlik(d, file) {
+  const stary = d.plikId;
+  d.plikStan = 'wysyłanie'; render();
+  try {
+    const glowny = await driveFolder(PIT_FOLDER), rokF = await driveFolder(String(d.rok), glowny);
+    const r = await driveWyslij(file, pitNazwaPliku(d, file), rokF);
+    Object.assign(d, { plik: r.name, plikId: r.id, plikUrl: r.webViewLink || `https://drive.google.com/file/d/${r.id}/view`, plikTyp: r.mimeType || file.type || '' });
+    delete d.plikStan; changed('dokumenty'); render(); toast('Dokument zapisany w Google Drive ✓');
+    if (stary && stary !== r.id) driveDoKosza(stary).catch(() => {});
+  } catch (e) { delete d.plikStan; render(); toast('Nie udało się wysłać pliku: ' + e.message); }
+}
+function pitPlikDoWpisu(id, file) {
+  const d = pitLista().find(x => x.id === id); if (!d || !file) return;
+  if (file.size > 25 * 1024 * 1024) return toast('Plik jest za duży (maks. 25 MB)');
+  if (!driveGotowy()) return;
+  pitDolaczPlik(d, file);
+}
+function pitPodglad(id) { const d = pitLista().find(x => x.id === id); if (d) podgladPliku(d, `${pitKrotko(d.rodzaj)} za ${d.rok}`, esc([d.wystawca, d.konto, d.data].filter(Boolean).join(' · '))); }
 
 boot();
 </script>
