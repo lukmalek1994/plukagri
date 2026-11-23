@@ -409,11 +409,11 @@ function vStrategia() {
     { h: 'Od', f: p => esc(p.od) }, { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) },
     { h: 'Śr. cena', n: 1, f: p => p.os ? osKupno(p) : money(p.sredniaCena, p.waluta) }, { h: 'Cena', n: 1, f: p => p.os ? osWartosc(p) : p.brakCeny ? '<span class="warn">brak</span>' : money(p.cena, p.waluta) },
     { h: 'Wartość ' + WL(), n: 1, f: p => zl(p.wartoscPLN) },
-    { h: 'Zysk ' + WL(), n: 1, f: p => pl(p.zyskPLN) }, { h: '%', n: 1, f: p => pp(p.kosztPLN ? p.zyskPLN / p.kosztPLN : 0) }, { h: '', f: pozAkcje },
+    { h: 'Zysk ' + WL(), n: 1, f: p => pl(p.zyskPLN) }, { h: '%', n: 1, f: p => pp(p.kosztPLN ? p.zyskPLN / p.kosztPLN : 0) }, { h: 'Rocznie', n: 1, f: p => roczCel(p.loty) }, { h: '', f: pozAkcje },
   ], poz, { empty: 'Brak otwartych pozycji – dodaj transakcję kupna', expand: { key: lotKey, sub: lotSub, cols: [
     { f: lotOpis }, { f: l => esc(l.data) }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => l._p.os ? money(l.koszt, l._p.waluta) : money(l.cenaZakupu, l._p.waluta) },
     { n: 1, f: l => l._p.os ? osInput(l._p.ticker, l) : l._p.brakCeny ? '' : money(l._p.cena, l._p.waluta) }, { n: 1, f: l => zl(l.wartoscPLN) },
-    { n: 1, f: l => pl(l.zyskPLN) }, { n: 1, f: l => pp(l.kosztPLN ? l.zyskPLN / l.kosztPLN : 0) }, { f: lotAkcje }] } });
+    { n: 1, f: l => pl(l.zyskPLN) }, { n: 1, f: l => pp(l.kosztPLN ? l.zyskPLN / l.kosztPLN : 0) }, { n: 1, f: l => roczCel([l]) }, { f: lotAkcje }] } });
   const zamTbl = table([
     { h: 'Sprzedaż', f: r => esc(r.data) }, { h: 'Instrument', f: r => `<b>${esc(r.ticker)}</b>` }, { h: 'Ilość', n: 1, f: r => nfq.format(r.ilosc) },
     { h: 'Koszt ' + WL(), n: 1, f: r => zl(r.kosztPLN) }, { h: 'Przychód ' + WL(), n: 1, f: r => zl(r.przychodPLN) },
