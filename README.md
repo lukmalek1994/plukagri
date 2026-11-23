@@ -90,6 +90,17 @@ Zakładka **Moje finanse → Paragony – metale** przechowuje paragony i faktur
 - Dane trafiają do zakładki **Paragony metale** w arkuszu, a plik na Google Drive do folderu „Portfel – paragony metale/<rok>”.
 - Paragon można powiązać z transakcją kupna lub sprzedaży metalu. Aplikacja pokazuje listę „Transakcje metali bez paragonu” (jednym kliknięciem tworzy paragon z danymi z transakcji), a przy zakupie w pozycjach portfela pojawia się ikonka 🧾.
 
+## Monitor sklepów (np. Chińska Panda 2026)
+
+Zakładka **Planowanie → Monitor sklepów** pilnuje polskich sklepów z metalami i powiadamia na telefon, gdy pojawi się szukana moneta.
+
+- Lista sklepów i ustawienia (fraza, wykluczenia, cena maksymalna, temat ntfy, co ile minut) zapisują się w arkuszach **Monitor sklepów** i **Monitor – ustawienia**.
+- Sprawdza je skrypt `Portfel_Ceny.gs` (wklej aktualną wersję w Rozszerzenia → Apps Script), a uruchamiasz go w menu arkusza **Portfel → 🪙 Włącz monitor sklepów**. Działa co 5–30 minut, także przy zamkniętej aplikacji.
+- Dla sklepu wystarczy domena (typ „auto” – skrypt sam znajdzie wyszukiwarkę), adres strony z listą (typ „lista”, `{q}` = fraza) albo adres produktu (typ „produkt”).
+- Dostępność skrypt czyta ze strony produktu (dane schema.org, a gdy ich brak – teksty typu „Dodaj do koszyka” / „Brak w magazynie”). Wyniki: arkusze **Monitor – stan** i **Monitor – sklepy**.
+- Powiadomienia: push przez darmową aplikację **ntfy** (zasubskrybuj temat pokazany w aplikacji) i/lub e-mail. Każda zmiana stanu na „dostępny” (opcjonalnie „przedsprzedaż” / „na zamówienie”) daje jedno powiadomienie.
+- Chińska Panda od 2016 r. ma 30 g, nie 1 oz – domyślny filtr szuka „panda” + „2026” i pomija złote, kolorowane i inne roczniki.
+
 ## Jak to działa na co dzień
 
 - **Zapis:** każda zmiana w aplikacji trafia do arkusza w ciągu 1–2 sekund. Stan widać w plakietce u góry („Zapisano w Google Sheets ✓”).

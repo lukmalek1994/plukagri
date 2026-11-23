@@ -144,6 +144,11 @@ function onOpen() {
     .addItem('Włącz alerty e-mail (co 30 min)', 'WLACZ_ALERTY')
     .addItem('Sprawdź alerty teraz', 'SPRAWDZ_ALERTY')
     .addItem('Wyłącz alerty e-mail', 'WYLACZ_ALERTY')
+    .addSeparator()
+    .addItem('🪙 Włącz monitor sklepów', 'WLACZ_MONITOR')
+    .addItem('🪙 Sprawdź sklepy teraz', 'MONITOR_SKLEPOW')
+    .addItem('🪙 Wyślij testowe powiadomienie', 'TEST_POWIADOMIENIA')
+    .addItem('🪙 Wyłącz monitor sklepów', 'WYLACZ_MONITOR')
     .addToUi();
 }
 function WLACZ_ALERTY() {
@@ -237,5 +242,247 @@ function SPRAWDZ_ALERTY() {
     if (mail.length > 1) temat += ' (+' + (mail.length - 1) + ')';
     var body = mail.map(function (m) { return (m.stan === 'osiągnięty' ? 'OSIĄGNIĘTY: ' : 'BLISKO: ') + m.nazwa + '\n  ' + m.opis + (m.rada ? '\n  ' + m.rada : '') + (m.notatka ? '\n  Notatka: ' + m.notatka : ''); }).join('\n\n');
     MailApp.sendEmail(Session.getEffectiveUser().getEmail(), temat, body + '\n\nArkusz: ' + ss.getUrl() + '\n(Wysłane przez skrypt w Twoim arkuszu „Portfel”. Wyłączysz w menu Portfel → Wyłącz alerty e-mail.)');
+  }
+}
+
+/* =====================================================================
+ * MONITOR SKLEPÓW (np. Chińska Panda 2026 w polskich sklepach z metalami)
+ * Lista sklepów i ustawienia: aplikacja → Planowanie → Monitor sklepów
+ *   (zapisują się w arkuszach „Monitor sklepów” i „Monitor – ustawienia”).
+ * Menu „Portfel” → „Włącz monitor sklepów” – sprawdzanie co 5–30 minut.
+ * Wyniki: arkusze „Monitor – stan” (produkty) i „Monitor – sklepy” (czy sklep da się odczytać).
+ * Powiadomienie: push przez ntfy (aplikacja ntfy na telefonie) i/lub e-mail,
+ *   gdy produkt staje się dostępny (raz na każdą zmianę stanu).
+ * ===================================================================== */
+var MON_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+var MON_WZORY = [   // typowe adresy wyszukiwarek sklepów (PrestaShop, WooCommerce, IdoSell, Shoper, Magento, Shopify…)
+  '/szukaj?controller=search&s={q}', '/pl/szukaj?controller=search&s={q}', '/?s={q}&post_type=product', '/search.php?text={q}',
+  '/pl/search.html?text={q}', '/pl/searchquery/{q}', '/searchquery/{q}', '/catalogsearch/result/?q={q}', '/search?q={q}',
+  '/pl/search?q={q}', '/szukaj?q={q}', '/wyszukiwanie?q={q}', '/search?search={q}', '/?s={q}'];
+var MON_OK = { instock: 'dostępny', limitedavailability: 'dostępny', onlineonly: 'dostępny', instoreonly: 'dostępny',
+  preorder: 'przedsprzedaż', presale: 'przedsprzedaż', backorder: 'na zamówienie', madetoorder: 'na zamówienie',
+  outofstock: 'niedostępny', soldout: 'niedostępny', discontinued: 'niedostępny' };
+
+function monUst_() {
+  var u = { szukaj: 'panda', wymagane: 'panda, 2026', wyklucz: '', cenaMax: '', ntfy: '', email: 'TAK', minuty: 10, przedsprzedaz: 'TAK', wlaczony: 'TAK' };
+  var sh = SpreadsheetApp.getActive().getSheetByName('Monitor – ustawienia');
+  if (sh && sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().forEach(function (r) { if (r[0] !== '') u[String(r[0])] = r[1]; });
+  return u;
+}
+function monSklepy_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName('Monitor sklepów');
+  if (!sh || sh.getLastRow() < 2) return [];
+  var v = sh.getDataRange().getValues(), c = {};
+  v[0].forEach(function (h, i) { c[String(h)] = i; });
+  return v.slice(1).map(function (r) {
+    return { sklep: String(r[c['Sklep']] || ''), adres: String(r[c['Adres']] || '').trim(), typ: String(r[c['Typ']] || 'auto'), aktywny: String(r[c['Aktywny']] || 'TAK') };
+  }).filter(function (s) { return s.adres && s.aktywny !== 'NIE'; });
+}
+function monMinuty_(u) { var m = Number(u.minuty) || 10; return [5, 10, 15, 30].reduce(function (a, b) { return Math.abs(b - m) < Math.abs(a - m) ? b : a; }); }
+
+function WLACZ_MONITOR() {
+  var u = monUst_(), m = monMinuty_(u);
+  WYLACZ_MONITOR(true);
+  ScriptApp.newTrigger('MONITOR_SKLEPOW').timeBased().everyMinutes(m).create();
+  PropertiesService.getScriptProperties().setProperty('mon_minuty', String(m));
+  MONITOR_SKLEPOW();
+  try { SpreadsheetApp.getUi().alert('Monitor sklepów włączony – sprawdzanie co ' + m + ' min.\n\nWyniki: arkusz „Monitor – stan”.' + (u.ntfy ? '\nPowiadomienia push: temat ntfy „' + u.ntfy + '”.' : '\nUstaw temat ntfy w aplikacji, żeby dostawać powiadomienia push.') + (String(u.email) !== 'NIE' ? '\nE-mail: ' + Session.getEffectiveUser().getEmail() : '')); } catch (e) {}
+}
+function WYLACZ_MONITOR(cicho) {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'MONITOR_SKLEPOW') ScriptApp.deleteTrigger(t); });
+  PropertiesService.getScriptProperties().deleteProperty('mon_minuty');
+  if (cicho !== true) try { SpreadsheetApp.getUi().alert('Monitor sklepów wyłączony.'); } catch (e) {}
+}
+function TEST_POWIADOMIENIA() {
+  var u = monUst_();
+  monWyslij_(u, [{ sklep: 'Test', nazwa: 'To jest testowe powiadomienie z monitora sklepów', stan: 'dostępny', cena: '', waluta: '', url: SpreadsheetApp.getActive().getUrl() }]);
+  try { SpreadsheetApp.getUi().alert('Wysłano test' + (u.ntfy ? ' na ntfy („' + u.ntfy + '”)' : '') + (String(u.email) !== 'NIE' ? ' i na e-mail' : '') + '.'); } catch (e) {}
+}
+
+/* ---------- pomocnicze ---------- */
+function monNorm_(s) {
+  return String(s || '').toLowerCase().replace(/ł/g, 'l').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/&nbsp;|&#160;/g, ' ').replace(/[-_+/|,.:;()\[\]"']+/g, ' ').replace(/(\d)\s*(g|gr|gram|gramow|gramy)\b/g, '$1 g').replace(/\s+/g, ' ').trim();
+}
+function monLista_(s) { return String(s || '').split(/[,;\n]/).map(monNorm_).filter(function (x) { return x; }); }
+function monPasuje_(tekst, wym, wyk) {
+  var t = ' ' + monNorm_(tekst) + ' ';
+  for (var i = 0; i < wym.length; i++) if (t.indexOf(wym[i]) < 0) return false;
+  for (var j = 0; j < wyk.length; j++) if (t.indexOf(' ' + wyk[j] + ' ') >= 0) return false;   // wykluczenia: całe słowa / frazy
+  return true;
+}
+function monHost_(url) { var m = String(url).match(/^https?:\/\/([^\/?#]+)/i); return m ? m[1].toLowerCase().replace(/^www\./, '') : ''; }
+function monOrigin_(url) { var m = String(url).match(/^(https?:\/\/[^\/?#]+)/i); return m ? m[1] : ''; }
+function monAbs_(base, href) {
+  href = String(href || '').replace(/&amp;/g, '&').trim();
+  if (/^https?:\/\//i.test(href)) return href;
+  if (href.indexOf('//') === 0) return 'https:' + href;
+  if (href.charAt(0) === '/') return monOrigin_(base) + href;
+  return base.replace(/[?#].*$/, '').replace(/\/[^\/]*$/, '/') + href;
+}
+function monTekst_(html) {
+  return String(html || '').replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&nbsp;|&#160;/g, ' ').replace(/\s+/g, ' ');
+}
+function monPobierz_(urls) {   // równolegle, bez wyjątków
+  if (!urls.length) return [];
+  var req = urls.map(function (u) { return { url: u, muteHttpExceptions: true, followRedirects: true, validateHttpsCertificates: true,
+    headers: { 'User-Agent': MON_UA, 'Accept': 'text/html,application/xhtml+xml', 'Accept-Language': 'pl-PL,pl;q=0.9' } }; });
+  var out = [];
+  for (var i = 0; i < req.length; i += 20) {
+    var part = req.slice(i, i + 20), res;
+    try { res = UrlFetchApp.fetchAll(part); }
+    catch (e) { res = part.map(function (r) { try { return UrlFetchApp.fetch(r.url, r); } catch (e2) { return null; } }); }
+    res.forEach(function (r) {
+      if (!r) return out.push({ kod: 0, html: '' });
+      var kod = r.getResponseCode(), html = '';
+      try { html = r.getContentText('UTF-8'); } catch (e) { try { html = r.getContentText(); } catch (e2) {} }
+      out.push({ kod: kod, html: html });
+    });
+  }
+  return out;
+}
+/* linki do produktów pasujących do frazy */
+function monLinki_(base, html, wym, wyk) {
+  var host = monHost_(base), re = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi, m, seen = {}, out = [];
+  while ((m = re.exec(html)) && out.length < 40) {
+    var attrs = m[1], hm = attrs.match(/href\s*=\s*["']([^"'#]+)["']/i); if (!hm) continue;
+    var href = hm[1]; if (/^(javascript|mailto|tel):/i.test(href)) continue;
+    var url = monAbs_(base, href); if (monHost_(url) !== host) continue;
+    if (/add-to-cart|addtocart|koszyk|basket|\/cart|wishlist|ulubion|compare|porown|controller=search|[?&](s|q|text|search)=|searchquery|\/szukaj|\/search/i.test(url)) continue;
+    var title = (attrs.match(/title\s*=\s*["']([^"']*)["']/i) || [])[1] || '';
+    var alt = (m[2].match(/alt\s*=\s*["']([^"']*)["']/i) || [])[1] || '';
+    var slug = decodeURIComponent(url.replace(/^https?:\/\/[^\/]+/, '').replace(/\?.*$/, '')).replace(/[-_\/.]+/g, ' ');
+    var tekst = monTekst_(m[2]) + ' ' + title + ' ' + alt + ' ' + slug;
+    if (!monPasuje_(tekst, wym, wyk)) continue;
+    var key = /\.php/i.test(url) ? url : url.replace(/\?.*$/, '');
+    if (seen[key]) continue; seen[key] = 1;
+    out.push({ url: key, tekst: monTekst_(m[2]).trim() || title || alt });
+  }
+  return out;
+}
+function monCzyJakasPanda_(html, szukaj) {   // czy strona wygląda na wyniki wyszukiwania (jest jakikolwiek link z frazą)
+  var q = monNorm_(szukaj).split(' ')[0] || 'panda';
+  return /<a\b/i.test(html) && monNorm_(monTekst_(html)).indexOf(q) >= 0 && (String(html).match(/<a\b/gi) || []).length > 20;
+}
+/* stan produktu ze strony produktu */
+function monProdukt_(html, slowo) {
+  var o = { stan: 'nieznany', cena: '', waluta: '', nazwa: '' }, m;
+  m = html.match(/"availability"\s*:\s*"(?:https?:\/\/schema\.org\/)?([A-Za-z]+)"/i)
+    || html.match(/itemprop=["']availability["'][^>]*(?:content|href)=["'](?:https?:\/\/schema\.org\/)?([A-Za-z]+)["']/i)
+    || html.match(/(?:content|href)=["'](?:https?:\/\/schema\.org\/)?([A-Za-z]+)["'][^>]*itemprop=["']availability["']/i);
+  if (m && MON_OK[m[1].toLowerCase()]) o.stan = MON_OK[m[1].toLowerCase()];
+  if (o.stan === 'nieznany') {
+    m = html.match(/property=["']product:availability["'][^>]*content=["']([^"']+)["']/i) || html.match(/content=["']([^"']+)["'][^>]*property=["']product:availability["']/i);
+    if (m) { var a = m[1].toLowerCase().replace(/[\s_-]/g, ''); o.stan = /instock|available$/.test(a) ? 'dostępny' : /preorder/.test(a) ? 'przedsprzedaż' : /backorder|availablefororder/.test(a) ? 'na zamówienie' : /outofstock|oos|soldout/.test(a) ? 'niedostępny' : 'nieznany'; }
+  }
+  if (o.stan === 'nieznany') {
+    var t = monNorm_(monTekst_(html));
+    if (/niedostepn|wyprzedan|brak w magazynie|brak towaru|chwilowo brak|powiadom o dostepnosci|powiadom mnie|sold out|out of stock|czekamy na dostaw/.test(t)) o.stan = 'niedostępny';
+    else if (/dodaj do koszyka|do koszyka|kup teraz|w magazynie|produkt dostepny|dostepna liczba/.test(t)) o.stan = 'dostępny';
+  }
+  m = html.match(/"price"\s*:\s*"?([\d][\d\s.,]*)"?/i) || html.match(/property=["']product:price:amount["'][^>]*content=["']([\d.,]+)["']/i)
+    || html.match(/itemprop=["']price["'][^>]*content=["']([\d.,]+)["']/i);
+  if (m) { var p = m[1].replace(/\s/g, ''); if (/,\d{1,2}$/.test(p)) p = p.replace(/\./g, '').replace(',', '.'); else p = p.replace(/,/g, ''); if (isFinite(Number(p)) && Number(p) > 0) o.cena = Number(p); }
+  if (!o.cena) { m = monTekst_(html).match(/(\d{1,3}(?:[ \u00a0]?\d{3})*[,.]\d{2})\s*(?:zł|pln)/i); if (m) o.cena = Number(m[1].replace(/[ \u00a0]/g, '').replace(',', '.')); }
+  m = html.match(/"priceCurrency"\s*:\s*"([A-Z]{3})"/) || html.match(/product:price:currency["'][^>]*content=["']([A-Z]{3})["']/i);
+  o.waluta = m ? m[1].toUpperCase() : (o.cena ? 'PLN' : '');
+  // nazwa: nagłówek h1, potem og:title i <title> – pierwsza, która zawiera główne słowo frazy (h1 rzadko zawiera nazwę sklepu)
+  var kand = [html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i), html.match(/property=["']og:title["'][^>]*content=["']([^"']+)["']/i), html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)]
+    .map(function (x) { return x ? monTekst_(x[1]).replace(/&#0?39;|&apos;/g, "'").replace(/&quot;/g, '"').trim() : ''; });
+  var glowne = slowo ? monNorm_(slowo) : '';
+  o.nazwa = kand.filter(function (x) { return x && (!glowne || monNorm_(x).indexOf(glowne) >= 0); })[0] || '';
+  return o;
+}
+
+/* ---------- główne sprawdzanie ---------- */
+function MONITOR_SKLEPOW() {
+  var start = Date.now(), u = monUst_(), props = PropertiesService.getScriptProperties();
+  // interwał ustawiony w aplikacji – skrypt sam poprawia wyzwalacz
+  var minWyzw = props.getProperty('mon_minuty');
+  if (minWyzw && Number(minWyzw) !== monMinuty_(u)) { WYLACZ_MONITOR(true); ScriptApp.newTrigger('MONITOR_SKLEPOW').timeBased().everyMinutes(monMinuty_(u)).create(); props.setProperty('mon_minuty', String(monMinuty_(u))); }
+  if (String(u.wlaczony) === 'NIE') return;
+  var wym = monLista_(u.wymagane), wyk = monLista_(u.wyklucz), q = encodeURIComponent(String(u.szukaj || 'panda'));
+  var sklepy = monSklepy_(), stanSklepu = {}, listy = [];   // listy: { s, url }
+  // 1) adresy list produktów
+  var doWykrycia = [];
+  sklepy.forEach(function (s) {
+    var a = s.adres; if (!/^https?:\/\//i.test(a)) a = 'https://' + a.replace(/^\/+/, '');
+    s.url = a;
+    if (s.typ === 'produkt') return;
+    if (s.typ === 'lista' || /[?]|\/.+/.test(a.replace(/^https?:\/\/[^\/]+/, '').replace(/^\/(pl\/?)?$/, ''))) { listy.push({ s: s, url: a.replace('{q}', q) }); return; }
+    var wz = props.getProperty('monpat_' + monHost_(a));
+    if (wz) { listy.push({ s: s, url: monOrigin_(a) + wz.replace('{q}', q), wz: wz }); return; }
+    var fail = {}; try { fail = JSON.parse(props.getProperty('monfail_' + monHost_(a)) || '{}'); } catch (e) {}
+    if (fail.t && Date.now() - fail.t < 6 * 3600e3 && fail.adres === s.adres) { stanSklepu[s.adres] = [s, fail.msg + ' (ponowna próba co 6 h)', '']; return; }   // nie męczymy sklepu co kilka minut
+    doWykrycia.push(s);
+  });
+  // 1a) wykrywanie wyszukiwarki (raz na sklep, wynik zapamiętany)
+  if (doWykrycia.length) {
+    var prob = []; doWykrycia.forEach(function (s) { MON_WZORY.forEach(function (w) { prob.push({ s: s, w: w, url: monOrigin_(s.url) + w.replace('{q}', q) }); }); });
+    var r0 = monPobierz_(prob.map(function (p) { return p.url; })), zn = {};
+    prob.forEach(function (p, i) {
+      if (zn[p.s.adres]) return; var r = r0[i];
+      if (r.kod === 200 && monCzyJakasPanda_(r.html, u.szukaj)) { zn[p.s.adres] = 1; props.setProperty('monpat_' + monHost_(p.s.url), p.w); listy.push({ s: p.s, url: p.url, html: r.html, wz: p.w }); }
+    });
+    doWykrycia.forEach(function (s) { if (!zn[s.adres]) {
+      var kody = prob.filter(function (p) { return p.s === s; }).map(function (p, i) { return r0[prob.indexOf(p)].kod; });
+      var msg = kody.every(function (k) { return k === 403 || k === 503 || k === 429; }) ? 'blokuje skrypt (HTTP ' + kody[0] + ') – wpisz adres strony produktu lub listy' : kody.every(function (k) { return k === 0; }) ? 'brak połączenia ze sklepem' : 'nie znaleziono wyszukiwarki – wpisz adres strony z listą produktów (typ „lista”)';
+      stanSklepu[s.adres] = [s, msg, '']; props.setProperty('monfail_' + monHost_(s.url), JSON.stringify({ t: Date.now(), msg: msg, adres: s.adres }));
+    } });
+  }
+  // 2) strony list (jeśli nie pobrane przy wykrywaniu)
+  var bez = listy.filter(function (l) { return !l.html; }), rl = monPobierz_(bez.map(function (l) { return l.url; }));
+  bez.forEach(function (l, i) { l.kod = rl[i].kod; l.html = rl[i].html; });
+  var kandydaci = [];   // { s, url, tekst }
+  listy.forEach(function (l) {
+    if (l.kod && l.kod !== 200) { if (l.wz) props.deleteProperty('monpat_' + monHost_(l.url)); stanSklepu[l.s.adres] = [l.s, 'błąd HTTP ' + l.kod + (l.kod === 403 ? ' (sklep blokuje skrypt)' : ''), l.url]; return; }
+    var L = monLinki_(l.url, l.html, wym, wyk).slice(0, 6);
+    L.forEach(function (x) { kandydaci.push({ s: l.s, url: x.url, tekst: x.tekst }); });
+    stanSklepu[l.s.adres] = [l.s, L.length ? 'OK – ' + L.length + ' pasujących' : 'OK – brak pasujących produktów', l.url];
+  });
+  sklepy.filter(function (s) { return s.typ === 'produkt'; }).forEach(function (s) { kandydaci.push({ s: s, url: s.url, tekst: s.sklep, bezFiltra: 1 }); stanSklepu[s.adres] = [s, 'strona produktu', s.url]; });
+  // 3) strony produktów
+  if (Date.now() - start > 240000) kandydaci = kandydaci.slice(0, 20);
+  var rp = monPobierz_(kandydaci.map(function (k) { return k.url; })), wyniki = [], nowe = [], teraz = new Date();
+  kandydaci.forEach(function (k, i) {
+    var r = rp[i], o = r.kod === 200 ? monProdukt_(r.html, wym[0]) : { stan: r.kod ? 'błąd HTTP ' + r.kod : 'brak połączenia', cena: '', waluta: '', nazwa: '' };
+    var nazwa = o.nazwa || k.tekst;
+    if (!k.bezFiltra && o.nazwa && !monPasuje_(o.nazwa, [], wyk)) return;   // pełna nazwa ma słowo wykluczone (np. kolorowana / złota)
+    var stan = o.stan, dobry = stan === 'dostępny' || (String(u.przedsprzedaz) !== 'NIE' && (stan === 'przedsprzedaż' || stan === 'na zamówienie'));
+    if (dobry && Number(u.cenaMax) > 0 && o.cena && (o.waluta === 'PLN' || !o.waluta) && o.cena > Number(u.cenaMax)) { stan += ' (za drogo)'; dobry = false; }
+    var key = 'mon_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, k.url)).slice(0, 22);
+    var prev = {}; try { prev = JSON.parse(props.getProperty(key) || '{}'); } catch (e) {}
+    if (prev.s !== stan) { if (dobry && !(prev.s && /^dostępny|^przedsprzedaż|^na zamówienie/.test(prev.s) && !/za drogo/.test(prev.s))) nowe.push({ sklep: k.s.sklep, nazwa: nazwa, stan: stan, cena: o.cena, waluta: o.waluta, url: k.url });
+      if (!/^błąd|^brak połączenia/.test(stan)) { prev = { s: stan, t: teraz.toISOString() }; props.setProperty(key, JSON.stringify(prev)); } }
+    wyniki.push([k.s.sklep, nazwa, stan, o.cena, o.waluta, k.url, prev.t ? new Date(prev.t) : '', teraz]);
+  });
+  // 4) zapis wyników
+  var ss = SpreadsheetApp.getActive(), ord = function (s) { return /^dostępny/.test(s) ? 0 : /^przedsprzedaż|^na zamówienie/.test(s) ? 1 : /^niedostępny/.test(s) ? 3 : 2; };
+  wyniki.sort(function (a, b) { return ord(a[2]) - ord(b[2]) || (Number(a[3]) || 9e9) - (Number(b[3]) || 9e9); });
+  var sh = ss.getSheetByName('Monitor – stan') || ss.insertSheet('Monitor – stan');
+  sh.clear(); sh.getRange(1, 1, 1, 8).setValues([['Sklep', 'Produkt', 'Stan', 'Cena', 'Waluta', 'Link', 'Stan od', 'Sprawdzono']]).setFontWeight('bold');
+  if (wyniki.length) sh.getRange(2, 1, wyniki.length, 8).setValues(wyniki);
+  var sk = Object.keys(stanSklepu).map(function (a) { var x = stanSklepu[a]; return [x[0].sklep, x[0].adres, x[1], x[2], teraz]; });
+  var sh2 = ss.getSheetByName('Monitor – sklepy') || ss.insertSheet('Monitor – sklepy');
+  sh2.clear(); sh2.getRange(1, 1, 1, 5).setValues([['Sklep', 'Adres', 'Stan', 'Sprawdzany adres', 'Sprawdzono']]).setFontWeight('bold');
+  if (sk.length) sh2.getRange(2, 1, sk.length, 5).setValues(sk);
+  // 5) powiadomienia
+  if (nowe.length) monWyslij_(u, nowe);
+}
+
+function monWyslij_(u, lista) {
+  var fmt = function (x) { return x.sklep + ': ' + x.nazwa + (x.cena ? ' – ' + x.cena + ' ' + (x.waluta || 'PLN') : '') + ' [' + x.stan + ']'; };
+  if (u.ntfy) lista.slice(0, 5).forEach(function (x) {
+    try {
+      UrlFetchApp.fetch('https://ntfy.sh/', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+        payload: JSON.stringify({ topic: String(u.ntfy).trim(), title: '🪙 ' + (x.stan === 'dostępny' ? 'Dostępna' : x.stan) + ': ' + x.sklep,
+          message: x.nazwa + (x.cena ? '\n' + x.cena + ' ' + (x.waluta || 'PLN') : '') + (lista.length > 5 ? '\n(+' + (lista.length - 5) + ' innych – zobacz arkusz)' : ''),
+          click: x.url, priority: 5, tags: ['coin'] }) });
+    } catch (e) {}
+  });
+  if (String(u.email) !== 'NIE') {
+    try { MailApp.sendEmail(Session.getEffectiveUser().getEmail(), '🪙 Monitor sklepów: ' + fmt(lista[0]).slice(0, 120) + (lista.length > 1 ? ' (+' + (lista.length - 1) + ')' : ''),
+      lista.map(function (x) { return fmt(x) + '\n  ' + x.url; }).join('\n\n') + '\n\nArkusz: ' + SpreadsheetApp.getActive().getUrl() + '\n(Monitor sklepów w Twoim arkuszu „Portfel”. Wyłączysz w menu Portfel → Wyłącz monitor sklepów.)'); } catch (e) {}
   }
 }

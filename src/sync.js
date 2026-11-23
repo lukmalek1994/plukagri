@@ -22,6 +22,8 @@ const TABLES = {
   paragony: { sheet: 'Paragony metale', cols: [['id', 'ID'], ['data', 'Data zakupu'], ['kierunek', 'Zakup / sprzedaż'], ['metal', 'Metal'], ['produkt', 'Produkt'], ['ilosc', 'Ilość'], ['kwota', 'Kwota'], ['waluta', 'Waluta'],
     ['sklep', 'Sklep / sprzedawca'], ['dokument', 'Rodzaj dokumentu'], ['numer', 'Numer'], ['transakcja', 'Transakcja (ID)'], ['notatka', 'Notatka'],
     ['plik', 'Plik'], ['plikUrl', 'Link do pliku (Google Drive)'], ['plikId', 'ID pliku'], ['plikTyp', 'Typ pliku']] },
+  monitor: { sheet: 'Monitor sklepów', cols: [['id', 'ID'], ['aktywny', 'Aktywny'], ['sklep', 'Sklep'], ['adres', 'Adres'], ['typ', 'Typ'], ['notatka', 'Notatka']] },
+  monitorUst: { sheet: 'Monitor – ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
   ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
 };
 const uid = () => Math.random().toString(36).slice(2, 10);

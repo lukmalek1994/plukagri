@@ -74,13 +74,14 @@ function renderNav() {
   };
   const nAl = C ? alertyAktywne().filter(x => x.e.stan === 'osiągnięty' || x.e.stan === 'blisko').length : 0;
   const nFin = (S.finanse || []).filter(f => !f.plikId).length;
+  const nMon = typeof monDobry === 'function' && MON.stan ? MON.stan.filter(x => monDobry(x.stan)).length : 0;
   $('#nav').innerHTML = `
     ${it('kokpit', '◧', 'Kokpit')}${it('portfel', '▤', 'Portfel – pozycje')}
     ${sec('konta', 'Konta i strategie', ['konto', 'strategia'], `${tree}
       ${sieroty.length ? `<div class="nav-h">Strategie bez konta</div>${sieroty.map(stLink).join('')}` : ''}
       <a class="add" onclick="editKonto()"><span class="ic">＋</span>Dodaj konto</a><a class="add" onclick="editStrategia()"><span class="ic">＋</span>Dodaj strategię</a>`)}
     ${sec('analizy', 'Analizy', ['waluta', 'porownanie', 'koszty', 'dochod', 'podatki', 'inflacja'], `${it('waluta', '¤', 'Wpływ waluty')}${it('porownanie', '⚖', 'Porównanie strategii')}${it('koszty', '−', 'Koszty i podatki')}${it('dochod', '◎', 'Dochód pasywny')}${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}`)}
-    ${sec('plan', 'Planowanie', ['symulator', 'fire', 'mapa', 'alerty'], `${it('symulator', '➚', 'Symulator przyszłości')}${it('fire', '🔥', 'FIRE – ile brakuje')}${it('mapa', '▦', 'Mapa portfela')}${it('alerty', '🔔', 'Alerty' + (nAl ? ` (${nAl})` : ''))}`, nAl ? '🔔 ' + nAl : '')}
+    ${sec('plan', 'Planowanie', ['symulator', 'fire', 'mapa', 'alerty', 'monitor'], `${it('symulator', '➚', 'Symulator przyszłości')}${it('fire', '🔥', 'FIRE – ile brakuje')}${it('mapa', '▦', 'Mapa portfela')}${it('alerty', '🔔', 'Alerty' + (nAl ? ` (${nAl})` : ''))}${it('monitor', '🪙', 'Monitor sklepów' + (nMon ? ` (${nMon} dostępne)` : ''))}`, nAl ? '🔔 ' + nAl : '')}
     ${sec('oper', 'Operacje', ['transakcje', 'dywidendy', 'wplaty'], `${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◈', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}`)}
     ${sec('fin', 'Moje finanse', ['finanse', 'dokumenty', 'paragony'], `${it('finanse', '🧾', 'Potwierdzenia przelewów' + (nFin ? ` (${nFin} bez pliku)` : ''))}${it('dokumenty', '📄', 'Dokumenty PIT')}${it('paragony', '🪙', 'Paragony – metale')}`)}
     ${sec('konf', 'Konfiguracja', ['instrumenty', 'import', 'ustawienia'], `${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('import', '⤓', 'Import')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`)}`;
@@ -120,7 +121,7 @@ function render() {
   C = calc(S, calcOpts());
   renderNav(); renderSyncBadge(); renderFxBadge();
   const V = { kokpit: vKokpit, portfel: vPortfel, strategia: vStrategia, konto: vKonto, transakcje: vTransakcje, dywidendy: vDywidendy, wplaty: vWplaty,
-    podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, fire: vFire, mapa: vMapa, import: vImport, alerty: vAlerty, finanse: vFinanse, dokumenty: vDokumenty, paragony: vParagony, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
+    podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, fire: vFire, mapa: vMapa, import: vImport, alerty: vAlerty, monitor: vMonitor, finanse: vFinanse, dokumenty: vDokumenty, paragony: vParagony, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
   const [title, sub, body, actions] = V();
   $('#title').innerHTML = `${esc(title)}<small>${sub || ''}</small>`;
   $('#topActions').innerHTML = walutaSeg() + (actions || `<button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`);
@@ -1191,6 +1192,7 @@ function boot() {
   let mig = false; S.instrumenty.forEach(i => { if (MIG[i.symbol]) { i.symbol = MIG[i.symbol]; mig = true; }
     if (i.klasa === 'Obligacje' && isOS(i)) { i.klasa = 'Obligacje skarbowe'; mig = true; } }); if (mig) changed('instrumenty');
   migrateCele(); if (!S.alerty) S.alerty = []; if (!S.finanse) S.finanse = []; if (!S.dokumenty) S.dokumenty = []; if (!S.paragony) S.paragony = [];
+  monInit();
   readHash(); render(); snapshot();
   if (CFG.demo) setSync('local', 'Tryb demo – nic nie zapisuje się w arkuszu');
   else if (CFG.clientId && CFG.connected) setSync('pending', 'Kliknij tutaj, aby połączyć z Google Sheets');
