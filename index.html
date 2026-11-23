@@ -126,7 +126,7 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 </head>
 <body>
 <div class="app">
-  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-23 20:13</div></aside>
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-23 20:21</div></aside>
   <main>
     <div class="top">
       <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
@@ -1784,12 +1784,12 @@ function vKonto() {
     ], strat, { empty: 'Żadna strategia nie jest przypisana do tego konta', click: s => `go('strategia','${s.id}')` })}</div>
       <div class="card"><h3>Struktura konta</h3>${struktura}</div></div>
     <div class="card" style="margin-top:16px"><h3>Portfel docelowy konta</h3>${modelCard(k.nazwa)}</div>
-    <div class="grid g2e" style="margin-top:16px"><div class="card"><h3>Pozycje <small>kliknij, aby rozwinąć zakupy</small></h3>${table([
+    <div class="grid g2" style="margin-top:16px"><div class="card"><h3>Pozycje <small>kliknij, aby rozwinąć zakupy</small></h3>${table([
       { h: 'Instrument', f: p => `<b>${esc(p.ticker)}</b> <span class="mut">${esc(p.strategia)}</span>` }, { h: 'Ilość', n: 1, f: p => nfq.format(p.ilosc) },
-      { h: 'Wartość ' + WL(), n: 1, f: p => zl(p.wartoscPLN) }, { h: 'Zysk ' + WL(), n: 1, f: p => `${pl(p.zyskPLN)}<br>${pp(p.kosztPLN ? p.zyskPLN / p.kosztPLN : 0)}` }, { h: '', f: pozAkcje },
+      { h: 'Wartość ' + WL(), n: 1, f: p => zl(p.wartoscPLN) }, { h: 'Zysk ' + WL(), n: 1, f: p => `${pl(p.zyskPLN)}<br>${pp(p.kosztPLN ? p.zyskPLN / p.kosztPLN : 0)}` }, { h: 'Rocznie', n: 1, f: p => roczCel(p.loty) }, { h: '', f: pozAkcje },
     ], poz, { empty: 'Brak otwartych pozycji', expand: { key: lotKey, sub: lotSub, cols: [
       { f: l => `${lotOpis(l)} <span class="mut">${esc(l.data)}</span>` }, { n: 1, f: l => nfq.format(l.ilosc) }, { n: 1, f: l => zl(l.wartoscPLN) },
-      { n: 1, f: l => `${pl(l.zyskPLN)}<br>${pp(l.kosztPLN ? l.zyskPLN / l.kosztPLN : 0)}` }, { f: lotAkcje }] } })}</div>
+      { n: 1, f: l => `${pl(l.zyskPLN)}<br>${pp(l.kosztPLN ? l.zyskPLN / l.kosztPLN : 0)}` }, { n: 1, f: l => roczCel([l]) }, { f: lotAkcje }] } })}</div>
       <div class="card"><h3>Wpłaty i wypłaty<span class="sp"></span><button class="btn sm ghost" onclick="editWplata(null,'${esc(k.nazwa)}')">＋ Wpłata</button></h3>${table([
       { h: 'Data', f: w => esc(w.data) }, { h: 'Kwota PLN', n: 1, f: w => plPLN(num(w.kwotaPLN)) },
       { h: 'W walucie konta', n: 1, f: w => has(w.kwotaWal) ? nf2.format(num(w.kwotaWal)) : '–' }, { h: 'Notatka', f: w => esc(w.notatka) },
