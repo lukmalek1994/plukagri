@@ -34,7 +34,7 @@ function vParagony() {
   const suma = rows.filter(p => parKier(p) === 'Zakup').reduce((a, p) => a + plnK(p), 0), sumaS = rows.filter(p => parKier(p) === 'Sprzedaż').reduce((a, p) => a + plnK(p), 0);
   const perMetal = {}; rows.forEach(p => { const m = p.metal || 'Inne'; perMetal[m] = (perMetal[m] || 0) + (parKier(p) === 'Sprzedaż' ? -1 : 1) * plnK(p); });
   const bezPliku = rows.filter(p => !p.plikId).length;
-  const plikCel = p => p.plikStan ? '<span class="mut">⏳ wysyłanie…</span>'
+  const plikCel = p => WYSYLANE.has(p.id) ? '<span class="mut">⏳ wysyłanie…</span>'
     : p.plikId ? `<a onclick="event.stopPropagation();parPodglad('${p.id}')" title="${esc(p.plik || '')}">📎 Podgląd</a>`
     : `<label class="fin-add" onclick="event.stopPropagation()">＋ dodaj plik<input type="file" accept="image/*,application/pdf" style="display:none" onchange="parPlikDoWpisu('${p.id}',this.files[0])"></label>`;
   const txOpis = p => { const t = p.transakcja && S.transakcje.find(x => x.id === p.transakcja); return t ? `<div class="mut" style="font-size:11.5px">⇄ ${t.typ === 'SPRZEDAŻ' ? 'sprzedaż' : 'kupno'} ${esc(t.ticker)} · ${esc(t.strategia)} · ${nfq.format(num(t.ilosc))} szt.</div>` : ''; };
@@ -60,8 +60,8 @@ function vParagony() {
   const metaleKpi = Object.entries(perMetal).sort((a, b) => b[1] - a[1]).map(([m, v]) => `${esc(m)}: ${zlPLN(v, 0)}`).join('<br>') || '–';
   return ['Paragony – metale fizyczne', 'Paragony i faktury z zakupu i sprzedaży złota, srebra i innych kruszców – dane w arkuszu, pliki na Twoim Google Drive', `${info}
     <div class="kpis">${kpi('Paragonów', rows.length, F.rok ? 'w ' + F.rok : 'łącznie', 'main')}${kpi('Wydano na zakupy', zlPLN(suma, 0))}${kpi('Uzyskano ze sprzedaży', zlPLN(sumaS, 0))}${kpi('Netto według metalu', metaleKpi, 'zakupy − sprzedaże')}${kpi('Transakcje bez paragonu', bez.length, bez.length ? 'z transakcji w aplikacji' : 'wszystko udokumentowane')}${bezPliku ? kpi('Wpisy bez pliku', bezPliku) : ''}</div>
-    <label class="dropzone" ondragover="event.preventDefault();this.classList.add('on')" ondragleave="this.classList.remove('on')" ondrop="event.preventDefault();this.classList.remove('on');editParagon(null,event.dataTransfer.files[0])">
-      <input type="file" accept="image/*,application/pdf" style="display:none" onchange="editParagon(null,this.files[0]);this.value=''">
+    <label class="dropzone" ondragover="event.preventDefault();this.classList.add('on')" ondragleave="this.classList.remove('on')" ondrop="event.preventDefault();this.classList.remove('on');plikiDodaj('paragony',event.dataTransfer.files)">
+      <input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="plikiDodaj('paragony',this.files);this.value=''">
       <b>🪙 Upuść tutaj paragon lub fakturę</b><span class="mut">zdjęcie z telefonu albo PDF – albo kliknij, aby wybrać plik</span></label>
     ${bezTbl}
     <div class="card" style="margin-top:16px"><h3>Paragony <small>${rows.length} poz.</small></h3>
@@ -69,7 +69,7 @@ function vParagony() {
         <select onchange="FILT.par.kier=this.value;render()">${opt('', F.kier || '', 'Zakupy i sprzedaże')}${PAR_KIER.map(k => opt(k, F.kier || '')).join('')}</select>
         <select onchange="FILT.par.metal=this.value;render()">${opt('', F.metal, 'Wszystkie metale')}${PAR_METALE.map(m => opt(m, F.metal)).join('')}</select>
         <input type="search" placeholder="Szukaj: sklep, produkt, notatka…" value="${esc(F.q || '')}" onchange="FILT.par.q=this.value;render()">
-        ${folder ? `<span class="sp" style="flex:1"></span><a class="btn ghost sm" href="https://drive.google.com/drive/folders/${esc(folder)}" target="_blank" rel="noopener">📁 Folder w Google Drive</a>` : ''}</div>
+        <span class="sp" style="flex:1"></span>${skanBtn('paragony')}${folder ? `<a class="btn ghost sm" href="https://drive.google.com/drive/folders/${esc(folder)}" target="_blank" rel="noopener">📁 Folder w Google Drive</a>` : ''}</div>
       ${tbl}</div>`,
     `<button class="btn" onclick="editParagon()">＋ Paragon</button>`];
 }
@@ -102,7 +102,7 @@ function editParagon(id, plikStart, txId) {
     let rec = p;
     if (id) Object.assign(p, o); else { rec = { id: uid(), ...o }; L.push(rec); }
     changed('paragony'); toast('Zapisano paragon');
-    if (plik) setTimeout(() => parDolaczPlik(rec, plik), 0);
+    if (plik) dolaczPlik('paragony', rec.id, plik);
   }, id ? () => {
     S.paragony = L.filter(x => x.id !== id); changed('paragony');
     if (p.plikId) { if (SYNC.token && SYNC.drive) driveDoKosza(p.plikId).then(() => toast('Plik przeniesiony do kosza Google Drive')).catch(() => toast('Wpis usunięty – plik został na Google Drive'));
@@ -140,21 +140,10 @@ const parNazwaPliku = (p, file) => {
   const ext = (String(file.name).match(/\.[a-z0-9]{1,5}$/i) || [''])[0].toLowerCase();
   return ([p.data, parKier(p) === 'Sprzedaż' ? 'sprzedaż' : '', p.metal, p.produkt, p.sklep].filter(Boolean).join(' ').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120) || 'paragon') + ext;
 };
-async function parDolaczPlik(p, file) {
-  const stary = p.plikId;
-  p.plikStan = 'wysyłanie'; render();
-  try {
-    const glowny = await driveFolder(PAR_FOLDER), rokF = await driveFolder(String(p.data || todayStr()).slice(0, 4), glowny);
-    const r = await driveWyslij(file, parNazwaPliku(p, file), rokF);
-    Object.assign(p, { plik: r.name, plikId: r.id, plikUrl: r.webViewLink || `https://drive.google.com/file/d/${r.id}/view`, plikTyp: r.mimeType || file.type || '' });
-    delete p.plikStan; changed('paragony'); render(); toast('Paragon zapisany w Google Drive ✓');
-    if (stary && stary !== r.id) driveDoKosza(stary).catch(() => {});
-  } catch (e) { delete p.plikStan; render(); toast('Nie udało się wysłać pliku: ' + e.message); }
-}
 function parPlikDoWpisu(id, file) {
   const p = parLista().find(x => x.id === id); if (!p || !file) return;
   if (file.size > 25 * 1024 * 1024) return toast('Plik jest za duży (maks. 25 MB)');
   if (!driveGotowy()) return;
-  parDolaczPlik(p, file);
+  dolaczPlik('paragony', p.id, file);
 }
 function parPodglad(id) { const p = parLista().find(x => x.id === id); if (p) podgladPliku(p, p.produkt || p.metal || 'Paragon', esc([p.data, p.sklep, has(p.kwota) ? money(num(p.kwota), p.waluta || 'PLN') : ''].filter(Boolean).join(' · '))); }

@@ -23,7 +23,9 @@ async function driveFetch(method, url, body, raw) {
   if (!r.ok) { let t = ''; try { t = (await r.json()).error.message; } catch (e) {} const er = new Error(`Google Drive ${r.status} ${t}`); er.status = r.status; throw er; }
   return raw ? r.blob() : r.json();
 }
-async function finFolder() {
+let FIN_PENDING = null;
+function finFolder() { return FIN_PENDING || (FIN_PENDING = _finFolder().finally(() => FIN_PENDING = null)); }
+async function _finFolder() {
   if (CFG.finFolderId) {
     try { const f = await driveFetch('GET', `${DRIVE}/${CFG.finFolderId}?fields=id,trashed`); if (!f.trashed) return f.id; } catch (e) { if (e.status !== 404) throw e; }
   }
@@ -34,7 +36,9 @@ async function finFolder() {
   CFG.finFolderId = id; saveCfg(); return id;
 }
 // dowolny folder (opcjonalnie wewnątrz innego), zapamiętany w CFG.driveDirs
-async function driveFolder(nazwa, parent) {
+const DIR_PENDING = {};
+function driveFolder(nazwa, parent) { const k = (parent || 'root') + '/' + nazwa; return DIR_PENDING[k] || (DIR_PENDING[k] = _driveFolder(nazwa, parent).finally(() => delete DIR_PENDING[k])); }
+async function _driveFolder(nazwa, parent) {
   const key = (parent || 'root') + '/' + nazwa; CFG.driveDirs = CFG.driveDirs || {};
   const znany = CFG.driveDirs[key];
   if (znany) { try { const f = await driveFetch('GET', `${DRIVE}/${znany}?fields=id,trashed`); if (!f.trashed) return f.id; } catch (e) { if (e.status !== 404) throw e; } }
@@ -49,26 +53,16 @@ const finNazwaPliku = (f, file) => {
   const cz = [f.data, f.kontrahent || f.typ, has(f.kwota) ? nf2.format(num(f.kwota)) + ' ' + (f.waluta || 'PLN') : ''].filter(Boolean).join(' ');
   return (cz.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'potwierdzenie') + ext;
 };
-async function driveWyslij(file, nazwa, folderId) {
+async function driveWyslij(file, nazwa, folderId, props) {
   const folder = folderId || await finFolder();
   const fd = new FormData();
-  fd.append('metadata', new Blob([JSON.stringify({ name: nazwa, parents: [folder] })], { type: 'application/json' }));
+  fd.append('metadata', new Blob([JSON.stringify(Object.assign({ name: nazwa, parents: [folder] }, props ? { appProperties: props } : {}))], { type: 'application/json' }));
   fd.append('file', file);
   return driveFetch('POST', `${DRIVE_UP}?uploadType=multipart&fields=id,name,webViewLink,mimeType`, fd);
 }
 async function driveDoKosza(id) { if (id) await driveFetch('PATCH', `${DRIVE}/${id}?fields=id`, { trashed: true }); }
 
 /* wysłanie pliku dla zapisanego wpisu (po zamknięciu formularza) */
-async function finDolaczPlik(f, file) {
-  const stary = f.plikId;
-  f.plikStan = 'wysyłanie'; render();
-  try {
-    const r = await driveWyslij(file, finNazwaPliku(f, file));
-    Object.assign(f, { plik: r.name, plikId: r.id, plikUrl: r.webViewLink || `https://drive.google.com/file/d/${r.id}/view`, plikTyp: r.mimeType || file.type || '' });
-    delete f.plikStan; changed('finanse'); render(); toast('Potwierdzenie zapisane w Google Drive ✓');
-    if (stary && stary !== r.id) driveDoKosza(stary).catch(() => {});
-  } catch (e) { delete f.plikStan; render(); toast('Nie udało się wysłać pliku: ' + e.message); }
-}
 
 /* ---------- widok ---------- */
 function vFinanse() {
@@ -88,8 +82,8 @@ function vFinanse() {
       <select onchange="FILT.fin.typ=this.value;render()">${opt('', F.typ, 'Wszystkie rodzaje')}${FIN_TYPY.map(t => opt(t, F.typ)).join('')}</select>
       <input type="search" placeholder="Szukaj: odbiorca, tytuł, kategoria…" value="${esc(F.q || '')}" onchange="FILT.fin.q=this.value;render()">
       <label class="chk"><input type="checkbox" ${F.brak ? 'checked' : ''} onchange="FILT.fin.brak=this.checked;render()"> tylko bez pliku</label>
-      ${CFG.finFolderId ? `<span class="sp" style="flex:1"></span><a class="btn ghost sm" href="https://drive.google.com/drive/folders/${esc(CFG.finFolderId)}" target="_blank" rel="noopener">📁 Folder w Google Drive</a>` : ''}</div>`;
-  const plikCel = f => f.plikStan ? '<span class="mut">⏳ wysyłanie…</span>'
+      <span class="sp" style="flex:1"></span>${skanBtn('finanse')}${CFG.finFolderId ? `<a class="btn ghost sm" href="https://drive.google.com/drive/folders/${esc(CFG.finFolderId)}" target="_blank" rel="noopener">📁 Folder w Google Drive</a>` : ''}</div>`;
+  const plikCel = f => WYSYLANE.has(f.id) ? '<span class="mut">⏳ wysyłanie…</span>'
     : f.plikId ? `<a onclick="event.stopPropagation();finPodglad('${f.id}')" title="${esc(f.plik || '')}">📎 Podgląd</a>`
     : `<label class="fin-add" onclick="event.stopPropagation()">＋ dodaj plik<input type="file" accept="image/*,application/pdf" style="display:none" onchange="finPlikDoWpisu('${f.id}',this.files[0])"></label>`;
   const wpl = f => { const w = f.wplata && S.wplaty.find(x => x.id === f.wplata); return w ? `<div class="mut" style="font-size:11.5px">↧ wpłata: ${esc(w.konto)}</div>` : ''; };
@@ -106,9 +100,9 @@ function vFinanse() {
     : SYNC.token && !SYNC.drive && !CFG.demo ? `<div class="alert">Aplikacja nie ma jeszcze zgody na zapis plików w Google Drive. Kliknij <a onclick="googleConnect(true)"><b>Zaloguj ponownie</b></a> i zaznacz dostęp do plików.</div>` : '';
   return ['Moje finanse', 'Potwierdzenia przelewów – dane w arkuszu, pliki na Twoim Google Drive', `${info}
     <div class="kpis">${kpi('Przelewów', rows.length, F.rok ? 'w ' + F.rok : 'łącznie', 'main')}${kpi('Wychodzące', sumy(rows, true))}${kpi('Przychodzące', sumy(rows, false))}${kpi('Bez pliku', brak, brak ? '<a onclick="FILT.fin.brak=true;render()">pokaż</a>' : 'wszystko ma potwierdzenie')}</div>
-    <label class="dropzone" ondragover="event.preventDefault();this.classList.add('on')" ondragleave="this.classList.remove('on')" ondrop="event.preventDefault();this.classList.remove('on');editFinanse(null,event.dataTransfer.files[0])">
-      <input type="file" accept="image/*,application/pdf" style="display:none" onchange="editFinanse(null,this.files[0]);this.value=''">
-      <b>🧾 Upuść tutaj potwierdzenie przelewu</b><span class="mut">PDF lub zdjęcie z telefonu – albo kliknij, aby wybrać plik</span></label>
+    <label class="dropzone" ondragover="event.preventDefault();this.classList.add('on')" ondragleave="this.classList.remove('on')" ondrop="event.preventDefault();this.classList.remove('on');plikiDodaj('finanse',event.dataTransfer.files)">
+      <input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="plikiDodaj('finanse',this.files);this.value=''">
+      <b>🧾 Upuść tutaj potwierdzenie przelewu</b><span class="mut">PDF lub zdjęcie z telefonu – albo kliknij, aby wybrać plik (można kilka naraz)</span></label>
     <div class="card" style="margin-top:16px"><h3>Przelewy <small>${rows.length} poz.</small></h3>${filtry}${tbl}</div>`,
     `<button class="btn" onclick="editFinanse()">＋ Potwierdzenie</button>`];
 }
@@ -144,7 +138,7 @@ function editFinanse(id, plikStart) {
     let rec = f;
     if (id) Object.assign(f, o); else { rec = { id: uid(), ...o }; L.push(rec); }
     changed('finanse'); toast('Zapisano przelew');
-    if (plik) setTimeout(() => finDolaczPlik(rec, plik), 0);
+    if (plik) dolaczPlik('finanse', rec.id, plik);
   }, id ? () => {
     S.finanse = L.filter(x => x.id !== id); changed('finanse');
     if (f.plikId) { if (SYNC.token && SYNC.drive) driveDoKosza(f.plikId).then(() => toast('Plik przeniesiony do kosza Google Drive')).catch(() => toast('Wpis usunięty – plik został na Google Drive'));
@@ -183,7 +177,7 @@ function finPlikDoWpisu(id, file) {
   const f = finLista().find(x => x.id === id); if (!f || !file) return;
   if (file.size > 25 * 1024 * 1024) return toast('Plik jest za duży (maks. 25 MB)');
   if (!driveGotowy()) return;
-  finDolaczPlik(f, file);
+  dolaczPlik('finanse', f.id, file);
 }
 
 /* ---------- podgląd ---------- */

@@ -108,3 +108,6 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 .pit-it{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #e3e9f2;border-radius:10px;font-size:13px}.pit-it>div{flex:1}
 .pit-it .pit-ic{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#eef2f7;color:#94a3b8;font-weight:700}
 .pit-it.ok{background:#f3fbf6;border-color:#cdebd8}.pit-it.ok .pit-ic{background:#16a34a;color:#fff}
+.skan{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto}
+.skan-it{display:grid;grid-template-columns:1fr auto 260px;gap:10px;align-items:center;padding:6px 8px;border:1px solid #e3e9f2;border-radius:8px;font-size:13px}
+.skan-it a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.skan-it select{padding:5px;border:1px solid #d6dee9;border-radius:6px;font:inherit;font-size:12.5px;min-width:0}

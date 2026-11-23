@@ -115,11 +115,14 @@ tr.drop-before td{box-shadow:inset 0 2px 0 #1565c0}tr.drop-after td{box-shadow:i
 .pit-it{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #e3e9f2;border-radius:10px;font-size:13px}.pit-it>div{flex:1}
 .pit-it .pit-ic{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#eef2f7;color:#94a3b8;font-weight:700}
 .pit-it.ok{background:#f3fbf6;border-color:#cdebd8}.pit-it.ok .pit-ic{background:#16a34a;color:#fff}
+.skan{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto}
+.skan-it{display:grid;grid-template-columns:1fr auto 260px;gap:10px;align-items:center;padding:6px 8px;border:1px solid #e3e9f2;border-radius:8px;font-size:13px}
+.skan-it a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.skan-it select{padding:5px;border:1px solid #d6dee9;border-radius:6px;font:inherit;font-size:12.5px;min-width:0}
 </style>
 </head>
 <body>
 <div class="app">
-  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-23 19:01</div></aside>
+  <aside id="side"><div class="brand"><div class="logo">📈</div>Mój portfel</div><nav class="nav" id="nav"></nav><div style="font-size:11px;color:#6f86a8;padding:16px 10px 4px">wersja 2026-11-23 19:27</div></aside>
   <main>
     <div class="top">
       <button class="btn ghost menu-btn" onclick="document.getElementById('side').classList.toggle('open')">☰</button>
@@ -533,7 +536,9 @@ const SYNC = { token: null, exp: 0, state: 'local', msg: 'Dane tylko w tej przeg
 
 function saveLocal() { lsSet(dataKey(), S); lsSet(dirtyKey(), [...DIRTY]); }
 function saveCfg() { lsSet(LS_CFG, CFG); }
-function changed(...tables) { tables.forEach(t => DIRTY.add(t)); saveLocal(); scheduleSync(); }
+// DVER: licznik zmian tabeli – zmiana w trakcie wysyłania nie może zostać „odhaczona” jako zapisana
+const DVER = {};
+function changed(...tables) { tables.forEach(t => { DIRTY.add(t); DVER[t] = (DVER[t] || 0) + 1; }); saveLocal(); scheduleSync(); }
 
 /* ---------- konwersja tabel <-> wiersze arkusza ---------- */
 function toRows(name) {
@@ -680,8 +685,8 @@ async function pushDirty() {
   if (CFG.demo) return;
   if (typeof prepAlerty === 'function' && C && prepAlerty()) { DIRTY.add('alerty'); saveLocal(); }
   if (!CFG.sheetId || !DIRTY.size) { setSync('ok', 'Zapisano w Google Sheets ✓'); return; }
-  if (SYNC.busy) return; SYNC.busy = true;
-  const names = [...DIRTY];
+  if (SYNC.busy) { SYNC.again = true; return; } SYNC.busy = true; SYNC.again = false;
+  const names = [...DIRTY], ver = Object.fromEntries(names.map(n => [n, DVER[n] || 0]));
   try {
     setSync('busy', 'Zapisywanie w Google Sheets…');
     await gapi('POST', `${SHEETS}/${CFG.sheetId}/values:batchClear`, { ranges: names.map(n => `'${TABLES[n].sheet}'!A1:Z5000`) });
@@ -694,13 +699,17 @@ async function pushDirty() {
       CFG.priceDay = day; saveCfg();
       if (vals.length) await gapi('POST', `${SHEETS}/${CFG.sheetId}/values:batchUpdate`, { valueInputOption: 'USER_ENTERED', data: [{ range: `'Instrumenty'!${col}2`, values: vals }] });
     }
-    names.forEach(n => DIRTY.delete(n)); saveLocal();
+    names.forEach(n => { if ((DVER[n] || 0) === ver[n]) DIRTY.delete(n); }); saveLocal();
     try { await buildSummary(false); } catch (e) { console.warn('Podsumowanie:', e); }
     try { await buildAnalizy(false); } catch (e) { console.warn('Analizy:', e); }
     setSync('ok', 'Zapisano w Google Sheets ✓ ' + new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }));
   } catch (e) {
     setSync('error', e.message + ' – zmiany czekają w przeglądarce');
-  } finally { SYNC.busy = false; }
+  } finally {
+    SYNC.busy = false;
+    // coś zmieniło się w trakcie zapisu -> wyślij jeszcze raz
+    if ((SYNC.again || names.some(n => DIRTY.has(n))) && SYNC.state !== 'error') { SYNC.again = false; setTimeout(() => pushDirty(), 400); }
+  }
 }
 function scheduleSync() {
   if (CFG.demo) { setSync('local', 'Tryb demo – nic nie zapisuje się w arkuszu'); return; }
@@ -3316,7 +3325,9 @@ async function driveFetch(method, url, body, raw) {
   if (!r.ok) { let t = ''; try { t = (await r.json()).error.message; } catch (e) {} const er = new Error(`Google Drive ${r.status} ${t}`); er.status = r.status; throw er; }
   return raw ? r.blob() : r.json();
 }
-async function finFolder() {
+let FIN_PENDING = null;
+function finFolder() { return FIN_PENDING || (FIN_PENDING = _finFolder().finally(() => FIN_PENDING = null)); }
+async function _finFolder() {
   if (CFG.finFolderId) {
     try { const f = await driveFetch('GET', `${DRIVE}/${CFG.finFolderId}?fields=id,trashed`); if (!f.trashed) return f.id; } catch (e) { if (e.status !== 404) throw e; }
   }
@@ -3327,7 +3338,9 @@ async function finFolder() {
   CFG.finFolderId = id; saveCfg(); return id;
 }
 // dowolny folder (opcjonalnie wewnątrz innego), zapamiętany w CFG.driveDirs
-async function driveFolder(nazwa, parent) {
+const DIR_PENDING = {};
+function driveFolder(nazwa, parent) { const k = (parent || 'root') + '/' + nazwa; return DIR_PENDING[k] || (DIR_PENDING[k] = _driveFolder(nazwa, parent).finally(() => delete DIR_PENDING[k])); }
+async function _driveFolder(nazwa, parent) {
   const key = (parent || 'root') + '/' + nazwa; CFG.driveDirs = CFG.driveDirs || {};
   const znany = CFG.driveDirs[key];
   if (znany) { try { const f = await driveFetch('GET', `${DRIVE}/${znany}?fields=id,trashed`); if (!f.trashed) return f.id; } catch (e) { if (e.status !== 404) throw e; } }
@@ -3342,26 +3355,16 @@ const finNazwaPliku = (f, file) => {
   const cz = [f.data, f.kontrahent || f.typ, has(f.kwota) ? nf2.format(num(f.kwota)) + ' ' + (f.waluta || 'PLN') : ''].filter(Boolean).join(' ');
   return (cz.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'potwierdzenie') + ext;
 };
-async function driveWyslij(file, nazwa, folderId) {
+async function driveWyslij(file, nazwa, folderId, props) {
   const folder = folderId || await finFolder();
   const fd = new FormData();
-  fd.append('metadata', new Blob([JSON.stringify({ name: nazwa, parents: [folder] })], { type: 'application/json' }));
+  fd.append('metadata', new Blob([JSON.stringify(Object.assign({ name: nazwa, parents: [folder] }, props ? { appProperties: props } : {}))], { type: 'application/json' }));
   fd.append('file', file);
   return driveFetch('POST', `${DRIVE_UP}?uploadType=multipart&fields=id,name,webViewLink,mimeType`, fd);
 }
 async function driveDoKosza(id) { if (id) await driveFetch('PATCH', `${DRIVE}/${id}?fields=id`, { trashed: true }); }
 
 /* wysłanie pliku dla zapisanego wpisu (po zamknięciu formularza) */
-async function finDolaczPlik(f, file) {
-  const stary = f.plikId;
-  f.plikStan = 'wysyłanie'; render();
-  try {
-    const r = await driveWyslij(file, finNazwaPliku(f, file));
-    Object.assign(f, { plik: r.name, plikId: r.id, plikUrl: r.webViewLink || `https://drive.google.com/file/d/${r.id}/view`, plikTyp: r.mimeType || file.type || '' });
-    delete f.plikStan; changed('finanse'); render(); toast('Potwierdzenie zapisane w Google Drive ✓');
-    if (stary && stary !== r.id) driveDoKosza(stary).catch(() => {});
-  } catch (e) { delete f.plikStan; render(); toast('Nie udało się wysłać pliku: ' + e.message); }
-}
 
 /* ---------- widok ---------- */
 function vFinanse() {
@@ -3381,8 +3384,8 @@ function vFinanse() {
       <select onchange="FILT.fin.typ=this.value;render()">${opt('', F.typ, 'Wszystkie rodzaje')}${FIN_TYPY.map(t => opt(t, F.typ)).join('')}</select>
       <input type="search" placeholder="Szukaj: odbiorca, tytuł, kategoria…" value="${esc(F.q || '')}" onchange="FILT.fin.q=this.value;render()">
       <label class="chk"><input type="checkbox" ${F.brak ? 'checked' : ''} onchange="FILT.fin.brak=this.checked;render()"> tylko bez pliku</label>
-      ${CFG.finFolderId ? `<span class="sp" style="flex:1"></span><a class="btn ghost sm" href="https://drive.google.com/drive/folders/${esc(CFG.finFolderId)}" target="_blank" rel="noopener">📁 Folder w Google Drive</a>` : ''}</div>`;
-  const plikCel = f => f.plikStan ? '<span class="mut">⏳ wysyłanie…</span>'
+      <span class="sp" style="flex:1"></span>${skanBtn('finanse')}${CFG.finFolderId ? `<a class="btn ghost sm" href="https://drive.google.com/drive/folders/${esc(CFG.finFolderId)}" target="_blank" rel="noopener">📁 Folder w Google Drive</a>` : ''}</div>`;
+  const plikCel = f => WYSYLANE.has(f.id) ? '<span class="mut">⏳ wysyłanie…</span>'
     : f.plikId ? `<a onclick="event.stopPropagation();finPodglad('${f.id}')" title="${esc(f.plik || '')}">📎 Podgląd</a>`
     : `<label class="fin-add" onclick="event.stopPropagation()">＋ dodaj plik<input type="file" accept="image/*,application/pdf" style="display:none" onchange="finPlikDoWpisu('${f.id}',this.files[0])"></label>`;
   const wpl = f => { const w = f.wplata && S.wplaty.find(x => x.id === f.wplata); return w ? `<div class="mut" style="font-size:11.5px">↧ wpłata: ${esc(w.konto)}</div>` : ''; };
@@ -3399,9 +3402,9 @@ function vFinanse() {
     : SYNC.token && !SYNC.drive && !CFG.demo ? `<div class="alert">Aplikacja nie ma jeszcze zgody na zapis plików w Google Drive. Kliknij <a onclick="googleConnect(true)"><b>Zaloguj ponownie</b></a> i zaznacz dostęp do plików.</div>` : '';
   return ['Moje finanse', 'Potwierdzenia przelewów – dane w arkuszu, pliki na Twoim Google Drive', `${info}
     <div class="kpis">${kpi('Przelewów', rows.length, F.rok ? 'w ' + F.rok : 'łącznie', 'main')}${kpi('Wychodzące', sumy(rows, true))}${kpi('Przychodzące', sumy(rows, false))}${kpi('Bez pliku', brak, brak ? '<a onclick="FILT.fin.brak=true;render()">pokaż</a>' : 'wszystko ma potwierdzenie')}</div>
-    <label class="dropzone" ondragover="event.preventDefault();this.classList.add('on')" ondragleave="this.classList.remove('on')" ondrop="event.preventDefault();this.classList.remove('on');editFinanse(null,event.dataTransfer.files[0])">
-      <input type="file" accept="image/*,application/pdf" style="display:none" onchange="editFinanse(null,this.files[0]);this.value=''">
-      <b>🧾 Upuść tutaj potwierdzenie przelewu</b><span class="mut">PDF lub zdjęcie z telefonu – albo kliknij, aby wybrać plik</span></label>
+    <label class="dropzone" ondragover="event.preventDefault();this.classList.add('on')" ondragleave="this.classList.remove('on')" ondrop="event.preventDefault();this.classList.remove('on');plikiDodaj('finanse',event.dataTransfer.files)">
+      <input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="plikiDodaj('finanse',this.files);this.value=''">
+      <b>🧾 Upuść tutaj potwierdzenie przelewu</b><span class="mut">PDF lub zdjęcie z telefonu – albo kliknij, aby wybrać plik (można kilka naraz)</span></label>
     <div class="card" style="margin-top:16px"><h3>Przelewy <small>${rows.length} poz.</small></h3>${filtry}${tbl}</div>`,
     `<button class="btn" onclick="editFinanse()">＋ Potwierdzenie</button>`];
 }
@@ -3437,7 +3440,7 @@ function editFinanse(id, plikStart) {
     let rec = f;
     if (id) Object.assign(f, o); else { rec = { id: uid(), ...o }; L.push(rec); }
     changed('finanse'); toast('Zapisano przelew');
-    if (plik) setTimeout(() => finDolaczPlik(rec, plik), 0);
+    if (plik) dolaczPlik('finanse', rec.id, plik);
   }, id ? () => {
     S.finanse = L.filter(x => x.id !== id); changed('finanse');
     if (f.plikId) { if (SYNC.token && SYNC.drive) driveDoKosza(f.plikId).then(() => toast('Plik przeniesiony do kosza Google Drive')).catch(() => toast('Wpis usunięty – plik został na Google Drive'));
@@ -3476,7 +3479,7 @@ function finPlikDoWpisu(id, file) {
   const f = finLista().find(x => x.id === id); if (!f || !file) return;
   if (file.size > 25 * 1024 * 1024) return toast('Plik jest za duży (maks. 25 MB)');
   if (!driveGotowy()) return;
-  finDolaczPlik(f, file);
+  dolaczPlik('finanse', f.id, file);
 }
 
 /* ---------- podgląd ---------- */
@@ -3543,7 +3546,7 @@ function vDokumenty() {
         ${d ? (d.plikId ? `<a onclick="pitPodglad('${d.id}')">Podgląd</a>` : `<a onclick="editDokument('${d.id}')">dodaj plik</a>`) : `<a onclick='editDokument(null,null,${esc(JSON.stringify({ rok: F.rok, rodzaj: p.rodz, konto: p.konto || '' }))})'>＋ dodaj</a>`}</div>`; }).join('')}</div>
       ${!konta.length ? '<div class="mut" style="font-size:12px;margin-top:8px">W tym roku nie ma sprzedaży ani dywidend na kontach „Opodatkowane” – PIT-8C nie powinny przyjść.</div>' : ''}`;
   }
-  const plikCel = d => d.plikStan ? '<span class="mut">⏳ wysyłanie…</span>'
+  const plikCel = d => WYSYLANE.has(d.id) ? '<span class="mut">⏳ wysyłanie…</span>'
     : d.plikId ? `<a onclick="event.stopPropagation();pitPodglad('${d.id}')" title="${esc(d.plik || '')}">📎 Podgląd</a>`
     : `<label class="fin-add" onclick="event.stopPropagation()">＋ dodaj plik<input type="file" accept="image/*,application/pdf" style="display:none" onchange="pitPlikDoWpisu('${d.id}',this.files[0])"></label>`;
   const tbl = table([
@@ -3561,13 +3564,13 @@ function vDokumenty() {
   return ['Dokumenty PIT', 'PIT-8C, zeznania, UPO i pisma z urzędu – dane w arkuszu, pliki na Twoim Google Drive', `${info}
     <div class="row fin-f"><select onchange="FILT.pit.rok=this.value;render()">${opt('', F.rok, 'Wszystkie lata')}${lata.map(r => opt(r, F.rok, 'Rok podatkowy ' + r)).join('')}</select>
       <input type="search" placeholder="Szukaj: dokument, wystawca, konto…" value="${esc(F.q || '')}" onchange="FILT.pit.q=this.value;render()">
-      ${folder ? `<span class="sp" style="flex:1"></span><a class="btn ghost sm" href="https://drive.google.com/drive/folders/${esc(folder)}" target="_blank" rel="noopener">📁 Folder w Google Drive</a>` : ''}</div>
+      <span class="sp" style="flex:1"></span>${skanBtn('dokumenty')}${folder ? `<a class="btn ghost sm" href="https://drive.google.com/drive/folders/${esc(folder)}" target="_blank" rel="noopener">📁 Folder w Google Drive</a>` : ''}</div>
     ${F.rok ? `<div class="grid g2"><div class="card"><h3>Lista kontrolna ${esc(F.rok)} <small>podpowiedź na podstawie Twoich kont i operacji</small></h3>${lista}</div>
       <div class="card"><h3>Rozliczenie ${esc(F.rok)} wg aplikacji <small><a onclick="FILT.rok='${esc(F.rok)}';go('podatki')">szczegóły PIT-38 →</a></small></h3>
         ${P ? `<div class="kpis" style="margin:0">${kpi('Podatek do zapłaty', zlPLN(P.razem, 0), 'papiery + dywidendy + krypto', 'main')}${kpi('Dochód z papierów', plPLN(P.dochod))}</div>
         <div class="mut" style="font-size:12px;margin-top:8px">Porównaj z kwotami z PIT-8C od brokera przed złożeniem PIT-38.</div>` : '<div class="empty">Brak danych</div>'}</div></div>` : ''}
-    <label class="dropzone" style="margin-top:16px" ondragover="event.preventDefault();this.classList.add('on')" ondragleave="this.classList.remove('on')" ondrop="event.preventDefault();this.classList.remove('on');editDokument(null,event.dataTransfer.files[0])">
-      <input type="file" accept="image/*,application/pdf" style="display:none" onchange="editDokument(null,this.files[0]);this.value=''">
+    <label class="dropzone" style="margin-top:16px" ondragover="event.preventDefault();this.classList.add('on')" ondragleave="this.classList.remove('on')" ondrop="event.preventDefault();this.classList.remove('on');plikiDodaj('dokumenty',event.dataTransfer.files)">
+      <input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="plikiDodaj('dokumenty',this.files);this.value=''">
       <b>📄 Upuść tutaj dokument PIT</b><span class="mut">PDF lub zdjęcie – albo kliknij, aby wybrać plik</span></label>
     <div class="card" style="margin-top:16px"><h3>Dokumenty <small>${rows.length} poz.</small></h3>${tbl}</div>`,
     `<button class="btn" onclick="editDokument()">＋ Dokument</button>`];
@@ -3591,7 +3594,7 @@ function editDokument(id, plikStart, preset) {
     if (id) Object.assign(d, o); else { rec = { id: uid(), ...o }; L.push(rec); }
     if (FILT.pit) FILT.pit.rok = o.rok;
     changed('dokumenty'); toast('Zapisano dokument');
-    if (plik) setTimeout(() => pitDolaczPlik(rec, plik), 0);
+    if (plik) dolaczPlik('dokumenty', rec.id, plik);
   }, id ? () => {
     S.dokumenty = L.filter(x => x.id !== id); changed('dokumenty');
     if (d.plikId) { if (SYNC.token && SYNC.drive) driveDoKosza(d.plikId).then(() => toast('Plik przeniesiony do kosza Google Drive')).catch(() => toast('Wpis usunięty – plik został na Google Drive'));
@@ -3625,22 +3628,11 @@ const pitNazwaPliku = (d, file) => {
   const ext = (String(file.name).match(/\.[a-z0-9]{1,5}$/i) || [''])[0].toLowerCase();
   return ([d.rok, pitKrotko(d.rodzaj), d.konto || d.wystawca, d.data].filter(Boolean).join(' ').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim() || 'dokument') + ext;
 };
-async function pitDolaczPlik(d, file) {
-  const stary = d.plikId;
-  d.plikStan = 'wysyłanie'; render();
-  try {
-    const glowny = await driveFolder(PIT_FOLDER), rokF = await driveFolder(String(d.rok), glowny);
-    const r = await driveWyslij(file, pitNazwaPliku(d, file), rokF);
-    Object.assign(d, { plik: r.name, plikId: r.id, plikUrl: r.webViewLink || `https://drive.google.com/file/d/${r.id}/view`, plikTyp: r.mimeType || file.type || '' });
-    delete d.plikStan; changed('dokumenty'); render(); toast('Dokument zapisany w Google Drive ✓');
-    if (stary && stary !== r.id) driveDoKosza(stary).catch(() => {});
-  } catch (e) { delete d.plikStan; render(); toast('Nie udało się wysłać pliku: ' + e.message); }
-}
 function pitPlikDoWpisu(id, file) {
   const d = pitLista().find(x => x.id === id); if (!d || !file) return;
   if (file.size > 25 * 1024 * 1024) return toast('Plik jest za duży (maks. 25 MB)');
   if (!driveGotowy()) return;
-  pitDolaczPlik(d, file);
+  dolaczPlik('dokumenty', d.id, file);
 }
 function pitPodglad(id) { const d = pitLista().find(x => x.id === id); if (d) podgladPliku(d, `${pitKrotko(d.rodzaj)} za ${d.rok}`, esc([d.wystawca, d.konto, d.data].filter(Boolean).join(' · '))); }
 
@@ -3680,7 +3672,7 @@ function vParagony() {
   const suma = rows.filter(p => parKier(p) === 'Zakup').reduce((a, p) => a + plnK(p), 0), sumaS = rows.filter(p => parKier(p) === 'Sprzedaż').reduce((a, p) => a + plnK(p), 0);
   const perMetal = {}; rows.forEach(p => { const m = p.metal || 'Inne'; perMetal[m] = (perMetal[m] || 0) + (parKier(p) === 'Sprzedaż' ? -1 : 1) * plnK(p); });
   const bezPliku = rows.filter(p => !p.plikId).length;
-  const plikCel = p => p.plikStan ? '<span class="mut">⏳ wysyłanie…</span>'
+  const plikCel = p => WYSYLANE.has(p.id) ? '<span class="mut">⏳ wysyłanie…</span>'
     : p.plikId ? `<a onclick="event.stopPropagation();parPodglad('${p.id}')" title="${esc(p.plik || '')}">📎 Podgląd</a>`
     : `<label class="fin-add" onclick="event.stopPropagation()">＋ dodaj plik<input type="file" accept="image/*,application/pdf" style="display:none" onchange="parPlikDoWpisu('${p.id}',this.files[0])"></label>`;
   const txOpis = p => { const t = p.transakcja && S.transakcje.find(x => x.id === p.transakcja); return t ? `<div class="mut" style="font-size:11.5px">⇄ ${t.typ === 'SPRZEDAŻ' ? 'sprzedaż' : 'kupno'} ${esc(t.ticker)} · ${esc(t.strategia)} · ${nfq.format(num(t.ilosc))} szt.</div>` : ''; };
@@ -3706,8 +3698,8 @@ function vParagony() {
   const metaleKpi = Object.entries(perMetal).sort((a, b) => b[1] - a[1]).map(([m, v]) => `${esc(m)}: ${zlPLN(v, 0)}`).join('<br>') || '–';
   return ['Paragony – metale fizyczne', 'Paragony i faktury z zakupu i sprzedaży złota, srebra i innych kruszców – dane w arkuszu, pliki na Twoim Google Drive', `${info}
     <div class="kpis">${kpi('Paragonów', rows.length, F.rok ? 'w ' + F.rok : 'łącznie', 'main')}${kpi('Wydano na zakupy', zlPLN(suma, 0))}${kpi('Uzyskano ze sprzedaży', zlPLN(sumaS, 0))}${kpi('Netto według metalu', metaleKpi, 'zakupy − sprzedaże')}${kpi('Transakcje bez paragonu', bez.length, bez.length ? 'z transakcji w aplikacji' : 'wszystko udokumentowane')}${bezPliku ? kpi('Wpisy bez pliku', bezPliku) : ''}</div>
-    <label class="dropzone" ondragover="event.preventDefault();this.classList.add('on')" ondragleave="this.classList.remove('on')" ondrop="event.preventDefault();this.classList.remove('on');editParagon(null,event.dataTransfer.files[0])">
-      <input type="file" accept="image/*,application/pdf" style="display:none" onchange="editParagon(null,this.files[0]);this.value=''">
+    <label class="dropzone" ondragover="event.preventDefault();this.classList.add('on')" ondragleave="this.classList.remove('on')" ondrop="event.preventDefault();this.classList.remove('on');plikiDodaj('paragony',event.dataTransfer.files)">
+      <input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="plikiDodaj('paragony',this.files);this.value=''">
       <b>🪙 Upuść tutaj paragon lub fakturę</b><span class="mut">zdjęcie z telefonu albo PDF – albo kliknij, aby wybrać plik</span></label>
     ${bezTbl}
     <div class="card" style="margin-top:16px"><h3>Paragony <small>${rows.length} poz.</small></h3>
@@ -3715,7 +3707,7 @@ function vParagony() {
         <select onchange="FILT.par.kier=this.value;render()">${opt('', F.kier || '', 'Zakupy i sprzedaże')}${PAR_KIER.map(k => opt(k, F.kier || '')).join('')}</select>
         <select onchange="FILT.par.metal=this.value;render()">${opt('', F.metal, 'Wszystkie metale')}${PAR_METALE.map(m => opt(m, F.metal)).join('')}</select>
         <input type="search" placeholder="Szukaj: sklep, produkt, notatka…" value="${esc(F.q || '')}" onchange="FILT.par.q=this.value;render()">
-        ${folder ? `<span class="sp" style="flex:1"></span><a class="btn ghost sm" href="https://drive.google.com/drive/folders/${esc(folder)}" target="_blank" rel="noopener">📁 Folder w Google Drive</a>` : ''}</div>
+        <span class="sp" style="flex:1"></span>${skanBtn('paragony')}${folder ? `<a class="btn ghost sm" href="https://drive.google.com/drive/folders/${esc(folder)}" target="_blank" rel="noopener">📁 Folder w Google Drive</a>` : ''}</div>
       ${tbl}</div>`,
     `<button class="btn" onclick="editParagon()">＋ Paragon</button>`];
 }
@@ -3748,7 +3740,7 @@ function editParagon(id, plikStart, txId) {
     let rec = p;
     if (id) Object.assign(p, o); else { rec = { id: uid(), ...o }; L.push(rec); }
     changed('paragony'); toast('Zapisano paragon');
-    if (plik) setTimeout(() => parDolaczPlik(rec, plik), 0);
+    if (plik) dolaczPlik('paragony', rec.id, plik);
   }, id ? () => {
     S.paragony = L.filter(x => x.id !== id); changed('paragony');
     if (p.plikId) { if (SYNC.token && SYNC.drive) driveDoKosza(p.plikId).then(() => toast('Plik przeniesiony do kosza Google Drive')).catch(() => toast('Wpis usunięty – plik został na Google Drive'));
@@ -3786,24 +3778,148 @@ const parNazwaPliku = (p, file) => {
   const ext = (String(file.name).match(/\.[a-z0-9]{1,5}$/i) || [''])[0].toLowerCase();
   return ([p.data, parKier(p) === 'Sprzedaż' ? 'sprzedaż' : '', p.metal, p.produkt, p.sklep].filter(Boolean).join(' ').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120) || 'paragon') + ext;
 };
-async function parDolaczPlik(p, file) {
-  const stary = p.plikId;
-  p.plikStan = 'wysyłanie'; render();
-  try {
-    const glowny = await driveFolder(PAR_FOLDER), rokF = await driveFolder(String(p.data || todayStr()).slice(0, 4), glowny);
-    const r = await driveWyslij(file, parNazwaPliku(p, file), rokF);
-    Object.assign(p, { plik: r.name, plikId: r.id, plikUrl: r.webViewLink || `https://drive.google.com/file/d/${r.id}/view`, plikTyp: r.mimeType || file.type || '' });
-    delete p.plikStan; changed('paragony'); render(); toast('Paragon zapisany w Google Drive ✓');
-    if (stary && stary !== r.id) driveDoKosza(stary).catch(() => {});
-  } catch (e) { delete p.plikStan; render(); toast('Nie udało się wysłać pliku: ' + e.message); }
-}
 function parPlikDoWpisu(id, file) {
   const p = parLista().find(x => x.id === id); if (!p || !file) return;
   if (file.size > 25 * 1024 * 1024) return toast('Plik jest za duży (maks. 25 MB)');
   if (!driveGotowy()) return;
-  parDolaczPlik(p, file);
+  dolaczPlik('paragony', p.id, file);
 }
 function parPodglad(id) { const p = parLista().find(x => x.id === id); if (p) podgladPliku(p, p.produkt || p.metal || 'Paragon', esc([p.data, p.sklep, has(p.kwota) ? money(num(p.kwota), p.waluta || 'PLN') : ''].filter(Boolean).join(' · '))); }
+
+/* ===================== PLIKI NA GOOGLE DRIVE – wspólne dla: potwierdzeń przelewów, dokumentów PIT, paragonów =====================
+   - wysyłka po kolei (kolejka), żeby równoległe wysyłki nie tworzyły podwójnych folderów
+   - po wysłaniu wpis odszukiwany po ID (synchronizacja mogła w międzyczasie podmienić tabelę)
+   - każdy plik dostaje w Drive appProperties {portfelTab, portfelId} – po nich „Sprawdź pliki” odnajduje zgubione powiązania */
+const WYSYLANE = new Set();
+let KOLEJKA_PLIKOW = Promise.resolve();
+function plikMod(tab) {
+  return {
+    finanse: { lista: finLista, tytul: 'potwierdzeń przelewów', folder: () => finFolder(), foldery: [FIN_FOLDER], podfoldery: false, nazwa: finNazwaPliku, ok: 'Potwierdzenie zapisane w Google Drive ✓',
+      opis: f => [f.data, f.kontrahent || f.typ, has(f.kwota) ? money(num(f.kwota), f.waluta || 'PLN') : ''].filter(Boolean).join(' · '),
+      nowy: file => ({ id: uid(), data: todayStr(), typ: 'Przelew wychodzący', waluta: 'PLN', kwota: '', notatka: 'do uzupełnienia – ' + file.name }) },
+    dokumenty: { lista: pitLista, tytul: 'dokumentów PIT', folder: async d => driveFolder(String(d.rok), await driveFolder(PIT_FOLDER)), foldery: [PIT_FOLDER], podfoldery: true, nazwa: pitNazwaPliku, ok: 'Dokument zapisany w Google Drive ✓',
+      opis: d => [d.rok, pitKrotko(d.rodzaj), d.konto || d.wystawca].filter(Boolean).join(' · '),
+      nowy: file => { const n = file.name.toUpperCase(), y = n.match(/20\d\d/); const hit = /UPO/.test(n) ? 2 : /8C/.test(n) ? 0 : /PIT.?38/.test(n) ? 1 : /PIT.?37/.test(n) ? 4 : /PIT.?11/.test(n) ? 6 : /ZG/.test(n) ? 7 : 11;
+        return { id: uid(), rok: y ? y[0] : pitRokDomyslny(), rodzaj: PIT_RODZAJE[hit], data: todayStr(), notatka: 'do uzupełnienia – ' + file.name }; } },
+    paragony: { lista: parLista, tytul: 'paragonów', folder: async p => driveFolder(String(p.data || todayStr()).slice(0, 4), await driveFolder(PAR_FOLDER)), foldery: [PAR_FOLDER], podfoldery: true, nazwa: parNazwaPliku, ok: 'Paragon zapisany w Google Drive ✓',
+      opis: p => [p.data, parKier(p), p.metal, p.produkt].filter(Boolean).join(' · '),
+      nowy: file => ({ id: uid(), data: todayStr(), kierunek: (FILT.par && FILT.par.kier) || 'Zakup', metal: 'Srebro', waluta: 'PLN', dokument: 'Paragon', notatka: 'do uzupełnienia – ' + file.name }) },
+  }[tab];
+}
+const ustawPlik = (rec, r, typ) => Object.assign(rec, { plik: r.name, plikId: r.id, plikUrl: r.webViewLink || `https://drive.google.com/file/d/${r.id}/view`, plikTyp: r.mimeType || typ || '' });
+
+function dolaczPlik(tab, id, file) {
+  WYSYLANE.add(id); render();
+  KOLEJKA_PLIKOW = KOLEJKA_PLIKOW.then(() => _dolaczPlik(tab, id, file)).catch(() => {});
+  return KOLEJKA_PLIKOW;
+}
+async function _dolaczPlik(tab, id, file) {
+  const M = plikMod(tab);
+  try {
+    let rec = M.lista().find(x => x.id === id); if (!rec) return;
+    const r = await driveWyslij(file, M.nazwa(rec, file), await M.folder(rec), { portfelTab: tab, portfelId: id });
+    rec = M.lista().find(x => x.id === id);
+    if (!rec) { driveDoKosza(r.id).catch(() => {}); return; }   // wpis usunięty w trakcie wysyłania
+    const stary = rec.plikId;
+    ustawPlik(rec, r, file.type); changed(tab); toast(M.ok);
+    if (stary && stary !== r.id) driveDoKosza(stary).catch(() => {});
+  } catch (e) { toast('Nie udało się wysłać pliku: ' + e.message); }
+  finally { WYSYLANE.delete(id); render(); }
+}
+
+/* kilka plików naraz: 1 plik -> formularz; więcej -> osobny wpis dla każdego (do uzupełnienia) */
+function plikiDodaj(tab, files) {
+  files = [...(files || [])].filter(f => f && f.size); if (!files.length) return;
+  const edit = { finanse: editFinanse, dokumenty: editDokument, paragony: editParagon }[tab];
+  if (files.length === 1) return edit(null, files[0]);
+  const zaDuze = files.filter(f => f.size > 25 * 1024 * 1024); files = files.filter(f => f.size <= 25 * 1024 * 1024);
+  if (zaDuze.length) toast(`Pominięto za duże pliki (maks. 25 MB): ${zaDuze.map(f => f.name).join(', ')}`);
+  if (!files.length || !driveGotowy()) return;
+  if (!confirm(`Dodać ${files.length} plików jako ${files.length} osobne wpisy?\n\nKażdy wpis dostanie notatkę „do uzupełnienia” – kwotę i resztę danych wpiszesz potem, klikając wiersz.`)) return;
+  const M = plikMod(tab);
+  files.forEach(file => { const rec = M.nowy(file); M.lista().push(rec); dolaczPlik(tab, rec.id, file); });
+  changed(tab); render(); toast(`Dodano ${files.length} wpisy – pliki wysyłają się po kolei`);
+}
+
+/* ---------- „Sprawdź pliki na Drive”: odnajduje pliki bez wpisu i wpisy ze zgubionym plikiem ---------- */
+const skanBtn = tab => CFG.demo ? '' : `<button class="btn ghost sm" onclick="skanujPliki('${tab}')" title="Porównuje pliki w Twoim Google Drive z wpisami w aplikacji i naprawia zgubione powiązania">🔍 Sprawdź pliki na Drive</button>`;
+async function driveLista(q) {
+  const out = []; let page = '';
+  do {
+    const r = await driveFetch('GET', `${DRIVE}?q=${encodeURIComponent(q)}&fields=nextPageToken,files(id,name,webViewLink,mimeType,appProperties,createdTime,parents)&pageSize=1000&spaces=drive${page ? '&pageToken=' + page : ''}`);
+    out.push(...(r.files || [])); page = r.nextPageToken || '';
+  } while (page);
+  return out;
+}
+async function skanujPliki(tab) {
+  if (!driveGotowy()) return;
+  const M = plikMod(tab), L = M.lista();
+  toast('Sprawdzam pliki na Google Drive…');
+  let pliki = [];
+  try {
+    const FOLDER = "mimeType='application/vnd.google-apps.folder'";
+    // wszystkie foldery o tej nazwie (wcześniej mogło powstać kilka) + ich podfoldery lat
+    let foldery = [];
+    for (const n of M.foldery) foldery.push(...await driveLista(`name='${n}' and ${FOLDER} and trashed=false`));
+    if (M.podfoldery && foldery.length) foldery.push(...await driveLista(`(${foldery.map(f => `'${f.id}' in parents`).join(' or ')}) and ${FOLDER} and trashed=false`));
+    if (foldery.length) pliki = await driveLista(`(${foldery.map(f => `'${f.id}' in parents`).join(' or ')}) and not ${FOLDER} and trashed=false`);
+    // pliki tej sekcji, które trafiły gdzie indziej (rozpoznane po appProperties)
+    const znane = new Set(pliki.map(p => p.id));
+    (await driveLista(`appProperties has { key='portfelTab' and value='${tab}' } and trashed=false`)).forEach(p => { if (!znane.has(p.id)) pliki.push(p); });
+  } catch (e) { return toast('Nie udało się sprawdzić plików: ' + e.message); }
+
+  const naDrive = new Map(pliki.map(p => [p.id, p]));
+  const uzyte = new Set([...finLista(), ...pitLista(), ...parLista()].map(x => x.plikId).filter(Boolean));
+  let naprawione = 0;
+  // 1) wpisy wskazujące na plik, którego już nie ma (usunięty / w koszu) -> czyścimy powiązanie
+  const zgubione = L.filter(x => x.plikId && !naDrive.has(x.plikId) && !WYSYLANE.has(x.id));
+  // 2) pliki bez wpisu: najpierw dopasowanie po ID wpisu zapisanym przy wysyłce
+  let sieroty = pliki.filter(p => !uzyte.has(p.id));
+  sieroty = sieroty.filter(p => {
+    const rec = p.appProperties && p.appProperties.portfelTab === tab && L.find(x => x.id === p.appProperties.portfelId);
+    if (rec && (!rec.plikId || !naDrive.has(rec.plikId))) { ustawPlik(rec, p); naprawione++; return false; }
+    return true;
+  });
+  if (naprawione) changed(tab);
+  render();
+  if (!zgubione.filter(x => !naDrive.has(x.plikId)).length && !sieroty.length) {
+    return toast(naprawione ? `Naprawiono ${naprawione} powiązań – wszystko się zgadza ✓` : `Wszystko się zgadza ✓ (${pliki.length} plików na Drive)`);
+  }
+  pokazSkan(tab, sieroty, zgubione.filter(x => !uzyte.has(x.plikId) || !naDrive.has(x.plikId)), naprawione, pliki.length);
+}
+function pokazSkan(tab, sieroty, zgubione, naprawione, ile) {
+  const M = plikMod(tab), L = M.lista();
+  const bezPliku = () => L.filter(x => !x.plikId || zgubione.includes(x));
+  const opcje = bezPliku().map(x => [x.id, M.opis(x)]);
+  const bg = document.createElement('div'); bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal" style="width:min(760px,96vw)"><h2>Pliki ${esc(M.tytul)} na Google Drive</h2>
+    <p class="mut" style="margin-top:0;font-size:13px">Na Drive jest ${ile} plików.${naprawione ? ` Automatycznie naprawiono ${naprawione} powiązań.` : ''}</p>
+    ${sieroty.length ? `<h3 style="font-size:14px;margin:12px 0 6px">Pliki bez wpisu w aplikacji (${sieroty.length})</h3>
+      <div class="skan">${sieroty.map(p => `<div class="skan-it"><a href="${esc(p.webViewLink || '#')}" target="_blank" rel="noopener">📎 ${esc(p.name)}</a>
+        <span class="mut" style="font-size:11.5px">${esc(String(p.createdTime || '').slice(0, 10))}</span>
+        <select data-f="${esc(p.id)}"><option value="__new">＋ utwórz nowy wpis</option>${opcje.map(([v, l]) => `<option value="${esc(v)}">przypisz do: ${esc(l)}</option>`).join('')}<option value="">pomiń</option></select></div>`).join('')}</div>` : ''}
+    ${zgubione.length ? `<h3 style="font-size:14px;margin:14px 0 6px">Wpisy, których pliku nie ma już na Drive (${zgubione.length})</h3>
+      <div class="mut" style="font-size:12.5px">${zgubione.map(x => '• ' + esc(M.opis(x)) + ' – ' + esc(x.plik || '')).join('<br>')}</div>
+      <label class="chk" style="display:flex;gap:6px;align-items:center;margin-top:8px;font-size:13px"><input type="checkbox" data-a="czysc" checked> usuń w tych wpisach martwy link (plik możesz potem dodać ponownie)</label>` : ''}
+    <div class="actions"><span class="sp"></span><button class="btn ghost" data-a="cancel">Anuluj</button><button class="btn" data-a="ok">Zastosuj</button></div></div>`;
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.addEventListener('click', e => { if (e.target === bg) close(); }); bg.querySelector('[data-a=cancel]').onclick = close;
+  bg.querySelector('[data-a=ok]').onclick = () => {
+    let n = 0, uzyteWpisy = new Set();
+    const cz = bg.querySelector('[data-a=czysc]');
+    if (cz && cz.checked) zgubione.forEach(x => { ['plik', 'plikId', 'plikUrl', 'plikTyp'].forEach(k => x[k] = ''); n++; });
+    bg.querySelectorAll('select[data-f]').forEach(sel => {
+      const p = sieroty.find(s => s.id === sel.dataset.f), v = sel.value; if (!p || !v) return;
+      let rec;
+      if (v === '__new') { rec = M.nowy({ name: p.name }); L.push(rec); }
+      else { if (uzyteWpisy.has(v)) return; rec = L.find(x => x.id === v); }
+      if (!rec) return; uzyteWpisy.add(rec.id); ustawPlik(rec, p); n++;
+      driveFetch('PATCH', `${DRIVE}/${p.id}?fields=id`, { appProperties: { portfelTab: tab, portfelId: rec.id } }).catch(() => {});
+    });
+    close(); if (n) { changed(tab); render(); toast(`Zapisano ${n} zmian`); }
+  };
+}
 
 boot();
 </script>

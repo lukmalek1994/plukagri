@@ -35,7 +35,9 @@ const SYNC = { token: null, exp: 0, state: 'local', msg: 'Dane tylko w tej przeg
 
 function saveLocal() { lsSet(dataKey(), S); lsSet(dirtyKey(), [...DIRTY]); }
 function saveCfg() { lsSet(LS_CFG, CFG); }
-function changed(...tables) { tables.forEach(t => DIRTY.add(t)); saveLocal(); scheduleSync(); }
+// DVER: licznik zmian tabeli – zmiana w trakcie wysyłania nie może zostać „odhaczona” jako zapisana
+const DVER = {};
+function changed(...tables) { tables.forEach(t => { DIRTY.add(t); DVER[t] = (DVER[t] || 0) + 1; }); saveLocal(); scheduleSync(); }
 
 /* ---------- konwersja tabel <-> wiersze arkusza ---------- */
 function toRows(name) {
@@ -182,8 +184,8 @@ async function pushDirty() {
   if (CFG.demo) return;
   if (typeof prepAlerty === 'function' && C && prepAlerty()) { DIRTY.add('alerty'); saveLocal(); }
   if (!CFG.sheetId || !DIRTY.size) { setSync('ok', 'Zapisano w Google Sheets ✓'); return; }
-  if (SYNC.busy) return; SYNC.busy = true;
-  const names = [...DIRTY];
+  if (SYNC.busy) { SYNC.again = true; return; } SYNC.busy = true; SYNC.again = false;
+  const names = [...DIRTY], ver = Object.fromEntries(names.map(n => [n, DVER[n] || 0]));
   try {
     setSync('busy', 'Zapisywanie w Google Sheets…');
     await gapi('POST', `${SHEETS}/${CFG.sheetId}/values:batchClear`, { ranges: names.map(n => `'${TABLES[n].sheet}'!A1:Z5000`) });
@@ -196,13 +198,17 @@ async function pushDirty() {
       CFG.priceDay = day; saveCfg();
       if (vals.length) await gapi('POST', `${SHEETS}/${CFG.sheetId}/values:batchUpdate`, { valueInputOption: 'USER_ENTERED', data: [{ range: `'Instrumenty'!${col}2`, values: vals }] });
     }
-    names.forEach(n => DIRTY.delete(n)); saveLocal();
+    names.forEach(n => { if ((DVER[n] || 0) === ver[n]) DIRTY.delete(n); }); saveLocal();
     try { await buildSummary(false); } catch (e) { console.warn('Podsumowanie:', e); }
     try { await buildAnalizy(false); } catch (e) { console.warn('Analizy:', e); }
     setSync('ok', 'Zapisano w Google Sheets ✓ ' + new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }));
   } catch (e) {
     setSync('error', e.message + ' – zmiany czekają w przeglądarce');
-  } finally { SYNC.busy = false; }
+  } finally {
+    SYNC.busy = false;
+    // coś zmieniło się w trakcie zapisu -> wyślij jeszcze raz
+    if ((SYNC.again || names.some(n => DIRTY.has(n))) && SYNC.state !== 'error') { SYNC.again = false; setTimeout(() => pushDirty(), 400); }
+  }
 }
 function scheduleSync() {
   if (CFG.demo) { setSync('local', 'Tryb demo – nic nie zapisuje się w arkuszu'); return; }
