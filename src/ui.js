@@ -64,16 +64,32 @@ function renderNav() {
       ${open ? ss.map(stLink).join('') : ''}`;
   }).join('');
   const sieroty = S.strategie.filter(s => !S.konta.some(k => k.nazwa === s.konto));
+  // zwijane sekcje menu: stan w CFG.navSec (true = zwinięta); domyślnie zwinięte wszystkie poza kontami; sekcja z otwartą stroną zawsze rozwinięta
+  CFG.navSec = CFG.navSec || {};
+  const sec = (id, tytul, routes, html, znacznik = '') => {
+    const akt = routes.includes(ROUTE);
+    if (akt && NAV_ROUTE !== ROUTE + '/' + PARAM) CFG.navSec[id] = false;   // po przejściu na stronę jej sekcja się rozwija
+    const zw = CFG.navSec[id] ?? id !== 'konta';
+    return `<div class="nav-h sec ${zw ? '' : 'open'} ${akt ? 'akt' : ''}" onclick="toggleSec('${id}')"><span class="chev ${zw ? '' : 'open'}">▸</span><span class="nm">${tytul}</span>${zw && znacznik ? `<span class="cnt warn">${znacznik}</span>` : ''}</div>${zw ? '' : `<div class="nav-sec">${html}</div>`}`;
+  };
+  const nAl = C ? alertyAktywne().filter(x => x.e.stan === 'osiągnięty' || x.e.stan === 'blisko').length : 0;
+  const nFin = (S.finanse || []).filter(f => !f.plikId).length;
   $('#nav').innerHTML = `
     ${it('kokpit', '◧', 'Kokpit')}${it('portfel', '▤', 'Portfel – pozycje')}
-    <div class="nav-h">Konta i strategie</div>${tree}
-    ${sieroty.length ? `<div class="nav-h">Strategie bez konta</div>${sieroty.map(stLink).join('')}` : ''}
-    <a class="add" onclick="editKonto()"><span class="ic">＋</span>Dodaj konto</a><a class="add" onclick="editStrategia()"><span class="ic">＋</span>Dodaj strategię</a>
-    <div class="nav-h">Analizy</div>${it('waluta', '¤', 'Wpływ waluty')}${it('porownanie', '⚖', 'Porównanie strategii')}${it('koszty', '−', 'Koszty i podatki')}${it('dochod', '◎', 'Dochód pasywny')}${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}
-    <div class="nav-h">Planowanie</div>${it('symulator', '➚', 'Symulator przyszłości')}${it('fire', '🔥', 'FIRE – ile brakuje')}${it('mapa', '▦', 'Mapa portfela')}${it('alerty', '🔔', 'Alerty' + (() => { const n = C ? alertyAktywne().filter(x => x.e.stan === 'osiągnięty' || x.e.stan === 'blisko').length : 0; return n ? ` (${n})` : ''; })())}
-    <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◈', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}
-    <div class="nav-h">Moje finanse</div>${it('finanse', '🧾', 'Potwierdzenia przelewów' + (() => { const n = (S.finanse || []).filter(f => !f.plikId).length; return n ? ` (${n} bez pliku)` : ''; })())}${it('dokumenty', '📄', 'Dokumenty PIT')}${it('paragony', '🪙', 'Paragony – metale')}
-    <div class="nav-h">Konfiguracja</div>${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('import', '⤓', 'Import')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`;
+    ${sec('konta', 'Konta i strategie', ['konto', 'strategia'], `${tree}
+      ${sieroty.length ? `<div class="nav-h">Strategie bez konta</div>${sieroty.map(stLink).join('')}` : ''}
+      <a class="add" onclick="editKonto()"><span class="ic">＋</span>Dodaj konto</a><a class="add" onclick="editStrategia()"><span class="ic">＋</span>Dodaj strategię</a>`)}
+    ${sec('analizy', 'Analizy', ['waluta', 'porownanie', 'koszty', 'dochod', 'podatki', 'inflacja'], `${it('waluta', '¤', 'Wpływ waluty')}${it('porownanie', '⚖', 'Porównanie strategii')}${it('koszty', '−', 'Koszty i podatki')}${it('dochod', '◎', 'Dochód pasywny')}${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}`)}
+    ${sec('plan', 'Planowanie', ['symulator', 'fire', 'mapa', 'alerty'], `${it('symulator', '➚', 'Symulator przyszłości')}${it('fire', '🔥', 'FIRE – ile brakuje')}${it('mapa', '▦', 'Mapa portfela')}${it('alerty', '🔔', 'Alerty' + (nAl ? ` (${nAl})` : ''))}`, nAl ? '🔔 ' + nAl : '')}
+    ${sec('oper', 'Operacje', ['transakcje', 'dywidendy', 'wplaty'], `${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◈', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}`)}
+    ${sec('fin', 'Moje finanse', ['finanse', 'dokumenty', 'paragony'], `${it('finanse', '🧾', 'Potwierdzenia przelewów' + (nFin ? ` (${nFin} bez pliku)` : ''))}${it('dokumenty', '📄', 'Dokumenty PIT')}${it('paragony', '🪙', 'Paragony – metale')}`)}
+    ${sec('konf', 'Konfiguracja', ['instrumenty', 'import', 'ustawienia'], `${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('import', '⤓', 'Import')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`)}`;
+  NAV_ROUTE = ROUTE + '/' + PARAM;
+}
+let NAV_ROUTE = '';
+function toggleSec(id) {
+  CFG.navSec = CFG.navSec || {};
+  CFG.navSec[id] = !(CFG.navSec[id] ?? id !== 'konta'); saveCfg(); renderNav();
 }
 function toggleNav(id) { CFG.navClosed = CFG.navClosed || {}; CFG.navClosed[id] = !CFG.navClosed[id]; saveCfg(); renderNav(); }
 const KICON = { 'Opodatkowane': '▣', 'IKE': '◈', 'IKZE': '◈', 'Poza PIT-38': '◇' };
