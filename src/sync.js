@@ -19,6 +19,9 @@ const TABLES = {
     ['kategoria', 'Kategoria'], ['bank', 'Z konta / bank'], ['wplata', 'Powiązana wpłata (ID)'], ['notatka', 'Notatka'], ['plik', 'Plik'], ['plikUrl', 'Link do pliku (Google Drive)'], ['plikId', 'ID pliku'], ['plikTyp', 'Typ pliku']] },
   dokumenty: { sheet: 'Dokumenty PIT', cols: [['id', 'ID'], ['rok', 'Rok podatkowy'], ['rodzaj', 'Rodzaj dokumentu'], ['wystawca', 'Wystawca'], ['konto', 'Konto'], ['data', 'Data'], ['kwota', 'Kwota'],
     ['notatka', 'Notatka'], ['plik', 'Plik'], ['plikUrl', 'Link do pliku (Google Drive)'], ['plikId', 'ID pliku'], ['plikTyp', 'Typ pliku']] },
+  paragony: { sheet: 'Paragony metale', cols: [['id', 'ID'], ['data', 'Data zakupu'], ['metal', 'Metal'], ['produkt', 'Produkt'], ['ilosc', 'Ilość'], ['kwota', 'Kwota'], ['waluta', 'Waluta'],
+    ['sklep', 'Sklep / sprzedawca'], ['dokument', 'Rodzaj dokumentu'], ['numer', 'Numer'], ['transakcja', 'Transakcja (ID)'], ['notatka', 'Notatka'],
+    ['plik', 'Plik'], ['plikUrl', 'Link do pliku (Google Drive)'], ['plikId', 'ID pliku'], ['plikTyp', 'Typ pliku']] },
   ustawienia: { sheet: 'Ustawienia', cols: [['klucz', 'Klucz'], ['wartosc', 'Wartość']] },
 };
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -42,7 +45,7 @@ function toRows(name) {
     const u = S.ustawienia; list = [{ klucz: 'stawka', wartosc: u.stawka }, { klucz: 'kursyData', wartosc: u.kursyData || '' },
       ...Object.entries(u.kursy || {}).map(([k, v]) => ({ klucz: 'kurs_' + k, wartosc: v }))];
   } else list = S[name] || [];
-  const cell = (k, v) => { if (k === 'cenaAuto') return ''; v = v ?? ''; if (typeof v === 'string' && !['id', 'miesiac', 'data', 'dataCeny', 'klucz', 'ticker', 'nazwa', 'plikId', 'tytul', 'wplata'].includes(k) && /^-?\d+(\.\d+)?$/.test(v.trim())) return Number(v); return v; };
+  const cell = (k, v) => { if (k === 'cenaAuto') return ''; v = v ?? ''; if (typeof v === 'string' && !['id', 'miesiac', 'data', 'dataCeny', 'klucz', 'ticker', 'nazwa', 'plikId', 'tytul', 'wplata', 'transakcja', 'numer', 'produkt'].includes(k) && /^-?\d+(\.\d+)?$/.test(v.trim())) return Number(v); return v; };
   return [T.cols.map(c => c[1]), ...list.map(o => T.cols.map(([k]) => cell(k, o[k])))];
 }
 function fromRows(name, rows) {

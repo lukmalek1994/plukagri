@@ -83,6 +83,13 @@ Zakładka **Moje finanse → Dokumenty PIT** przechowuje PIT-8C, zeznania PIT-38
 - Dane dokumentu trafiają do zakładki **Dokumenty PIT** w arkuszu, a plik na Twój Google Drive do folderu „Portfel – dokumenty PIT/<rok>”.
 - Dla wybranego roku aplikacja pokazuje listę kontrolną: PIT-8C od każdego konta „Opodatkowane” ze sprzedażą lub dywidendami w tym roku, PIT-38, UPO i potwierdzenie zapłaty (gdy jest podatek do zapłaty), obok podatku wyliczonego przez aplikację.
 
+## Moje finanse – paragony z zakupu metali
+
+Zakładka **Moje finanse → Paragony – metale** przechowuje paragony i faktury z zakupu złota, srebra i innych kruszców (zdjęcie lub PDF).
+
+- Dane trafiają do zakładki **Paragony metale** w arkuszu, a plik na Google Drive do folderu „Portfel – paragony metale/<rok>”.
+- Paragon można powiązać z transakcją kupna metalu. Aplikacja pokazuje listę „Zakupy metali bez paragonu” (jednym kliknięciem tworzy paragon z danymi z transakcji), a przy zakupie w pozycjach portfela pojawia się ikonka 🧾.
+
 ## Jak to działa na co dzień
 
 - **Zapis:** każda zmiana w aplikacji trafia do arkusza w ciągu 1–2 sekund. Stan widać w plakietce u góry („Zapisano w Google Sheets ✓”).

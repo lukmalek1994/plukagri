@@ -72,7 +72,7 @@ function renderNav() {
     <div class="nav-h">Analizy</div>${it('waluta', '¤', 'Wpływ waluty')}${it('porownanie', '⚖', 'Porównanie strategii')}${it('koszty', '−', 'Koszty i podatki')}${it('dochod', '◎', 'Dochód pasywny')}${it('podatki', '§', 'Podatki PIT-38')}${it('inflacja', '↗', 'Inflacja')}
     <div class="nav-h">Planowanie</div>${it('symulator', '➚', 'Symulator przyszłości')}${it('fire', '🔥', 'FIRE – ile brakuje')}${it('mapa', '▦', 'Mapa portfela')}${it('alerty', '🔔', 'Alerty' + (() => { const n = C ? alertyAktywne().filter(x => x.e.stan === 'osiągnięty' || x.e.stan === 'blisko').length : 0; return n ? ` (${n})` : ''; })())}
     <div class="nav-h">Operacje</div>${it('transakcje', '⇄', 'Transakcje')}${it('dywidendy', '◈', 'Dywidendy i odsetki')}${it('wplaty', '↧', 'Wpłaty i wypłaty')}
-    <div class="nav-h">Moje finanse</div>${it('finanse', '🧾', 'Potwierdzenia przelewów' + (() => { const n = (S.finanse || []).filter(f => !f.plikId).length; return n ? ` (${n} bez pliku)` : ''; })())}${it('dokumenty', '📄', 'Dokumenty PIT')}
+    <div class="nav-h">Moje finanse</div>${it('finanse', '🧾', 'Potwierdzenia przelewów' + (() => { const n = (S.finanse || []).filter(f => !f.plikId).length; return n ? ` (${n} bez pliku)` : ''; })())}${it('dokumenty', '📄', 'Dokumenty PIT')}${it('paragony', '🪙', 'Paragony – metale')}
     <div class="nav-h">Konfiguracja</div>${it('instrumenty', '◇', 'Instrumenty i ceny')}${it('import', '⤓', 'Import')}${it('ustawienia', '⚙', 'Ustawienia i Google')}`;
 }
 function toggleNav(id) { CFG.navClosed = CFG.navClosed || {}; CFG.navClosed[id] = !CFG.navClosed[id]; saveCfg(); renderNav(); }
@@ -100,11 +100,11 @@ function renderPoKursie() {
 }
 
 function render() {
-  if (!S.finanse) S.finanse = []; if (!S.dokumenty) S.dokumenty = [];
+  if (!S.finanse) S.finanse = []; if (!S.dokumenty) S.dokumenty = []; if (!S.paragony) S.paragony = [];
   C = calc(S, calcOpts());
   renderNav(); renderSyncBadge(); renderFxBadge();
   const V = { kokpit: vKokpit, portfel: vPortfel, strategia: vStrategia, konto: vKonto, transakcje: vTransakcje, dywidendy: vDywidendy, wplaty: vWplaty,
-    podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, fire: vFire, mapa: vMapa, import: vImport, alerty: vAlerty, finanse: vFinanse, dokumenty: vDokumenty, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
+    podatki: vPodatki, inflacja: vInflacja, waluta: vWaluta, porownanie: vPorownanie, koszty: vKoszty, dochod: vDochod, symulator: vSymulator, fire: vFire, mapa: vMapa, import: vImport, alerty: vAlerty, finanse: vFinanse, dokumenty: vDokumenty, paragony: vParagony, instrumenty: vInstrumenty, ustawienia: vUstawienia }[ROUTE] || vKokpit;
   const [title, sub, body, actions] = V();
   $('#title').innerHTML = `${esc(title)}<small>${sub || ''}</small>`;
   $('#topActions').innerHTML = walutaSeg() + (actions || `<button class="btn" onclick="editTransakcja()">＋ Transakcja</button>`);
@@ -169,7 +169,8 @@ const ROZW = new Set();
 function toggleRozw(k) { ROZW.has(k) ? ROZW.delete(k) : ROZW.add(k); render(); }
 const lotKey = p => 'poz|' + p.strategia + '|' + p.ticker;
 const lotSub = p => p.loty.length > 1 || (p.loty[0] && p.loty[0].ilosc < p.loty[0].ilosc0 - 1e-9) ? p.loty.map(l => ({ ...l, _p: p })) : [];
-const lotOpis = l => `<span class="mut">↳ zakup${l._p && ROUTE === 'portfel' ? ' ' + esc(l.data) : ''}</span>${l.notatka && !/^XTB#/.test(l.notatka) ? ` <span style="font-size:12.5px">${esc(String(l.notatka).replace(/\s*XTB#\S+/, ''))}</span>` : ''}${l.ilosc < l.ilosc0 - 1e-9 ? ` <span class="mut" style="font-size:11px" title="część tego zakupu została już sprzedana">(z ${nfq.format(l.ilosc0)})</span>` : ''}`;
+const lotParagon = l => { const p = (S.paragony || []).find(x => x.transakcja === l.id); return p ? ` <a title="Paragon: ${esc(p.produkt || p.sklep || '')}" onclick="event.stopPropagation();${p.plikId ? `parPodglad('${p.id}')` : `editParagon('${p.id}')`}">🧾</a>` : ''; };
+const lotOpis = l => lotParagon(l) + `<span class="mut">↳ zakup${l._p && ROUTE === 'portfel' ? ' ' + esc(l.data) : ''}</span>${l.notatka && !/^XTB#/.test(l.notatka) ? ` <span style="font-size:12.5px">${esc(String(l.notatka).replace(/\s*XTB#\S+/, ''))}</span>` : ''}${l.ilosc < l.ilosc0 - 1e-9 ? ` <span class="mut" style="font-size:11px" title="część tego zakupu została już sprzedana">(z ${nfq.format(l.ilosc0)})</span>` : ''}`;
 const lotAkcje = l => `<span class="akcje"><a onclick="zamknijPozycje('${esc(l._p.strategia)}','${esc(l._p.ticker)}',${l.ilosc},'${l.id}')">zamknij</a> · <a onclick="editTransakcja('${l.id}')">edytuj</a></span>`;
 const osKupno = p => `${money(p.koszt, p.waluta)}<br><span class="mut" style="font-size:11px">wartość kupna</span>`;
 const osInput = (ticker, l) => `<input class="cell" type="number" step="0.01" style="width:110px" value="${l.lz ? '' : r2(l.wartosc)}" placeholder="wpisz z banku" title="Aktualna wartość obligacji z tego zakupu (z banku / obligacjeskarbowe.pl)" onclick="event.stopPropagation()" onchange="setLotOS('${esc(ticker)}','${l.id}',this.value)">${l.lz ? '<br><span class="mut" style="font-size:11px">na razie = kupno</span>' : ''}`;
@@ -1160,7 +1161,7 @@ function boot() {
   const MIG = { 'CURRENCY:XAUUSD': 'YAHOO:GC=F', 'CURRENCY:XAGUSD': 'YAHOO:SI=F', 'CURRENCY:BTCUSD': 'YAHOO:BTC-USD' };
   let mig = false; S.instrumenty.forEach(i => { if (MIG[i.symbol]) { i.symbol = MIG[i.symbol]; mig = true; }
     if (i.klasa === 'Obligacje' && isOS(i)) { i.klasa = 'Obligacje skarbowe'; mig = true; } }); if (mig) changed('instrumenty');
-  migrateCele(); if (!S.alerty) S.alerty = []; if (!S.finanse) S.finanse = []; if (!S.dokumenty) S.dokumenty = [];
+  migrateCele(); if (!S.alerty) S.alerty = []; if (!S.finanse) S.finanse = []; if (!S.dokumenty) S.dokumenty = []; if (!S.paragony) S.paragony = [];
   readHash(); render(); snapshot();
   if (CFG.demo) setSync('local', 'Tryb demo – nic nie zapisuje się w arkuszu');
   else if (CFG.clientId && CFG.connected) setSync('pending', 'Kliknij tutaj, aby połączyć z Google Sheets');
